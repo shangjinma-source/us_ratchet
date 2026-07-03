@@ -1,0 +1,96 @@
+# us_ratchet 配置（零硬编码：策略与数据参数全部从此文件读取）
+# 哲学：美股科技/AI/芯片为结构性上行漂移资产 → 只增不主动减（棘轮核心 + 回撤分档加仓）。
+
+# ---------------------------------------------------------------------------
+# 数据层
+# ---------------------------------------------------------------------------
+data:
+  # 东财 push2his 历史K线在部分国内网络被稳定掐断(RemoteDisconnected) → 默认弃用，
+  # 改用新浪 + 自动前复权(拆股检测)。东财能用的环境可改回 [eastmoney, sina, local_cache]。
+  fallback_chain: [sina, local_cache]
+  auto_split_adjust: true      # 新浪原始不复权 → 自动检测拆股做前复权
+  split_detect_tol: 0.06       # 拆股比例匹配容差(只认整数倍 N:1 / 1:N)
+  fqt: 1                       # 仅东财用: 0=不复权 1=前复权 2=后复权
+  auto_adjust: true            # 仅 yfinance 用
+  start_date: "2015-01-01"
+  end_date: null               # null = 至今
+  cache_dir: "data/cache"      # 成功抓取后写穿缓存（相对项目根）
+  proxy:
+    enabled: false
+    url: "http://127.0.0.1:7890"   # 遇到过 7890/7897 不一致，按需改
+    bypass_for_data_hosts: true    # 给数据域名加 NO_PROXY，绕过系统代理
+  validation:
+    # 复权校验：相邻收盘价跳变超过此值视为「疑似未复权的拆股」，报告里标红
+    split_continuity_jump_pct: 0.35
+    # 跨源一致性：两个 provider 的复权收盘价偏差超过此值则告警
+    max_provider_divergence_pct: 0.03
+
+# ---------------------------------------------------------------------------
+# 组合 / 策略参数（默认值，全部可调）
+# ---------------------------------------------------------------------------
+portfolio:
+  core_ratio: 0.90                 # 计划资金中先建核心的比例（近全仓，sleeve 求进攻）
+  injection_core_ratio: 0.90       # 每笔注资中立即买核心的比例
+  inject_skip_core_near_high: false  # 接近 ATH 不买核心、全转储备的保护开关（默认关）
+
+  # 注资处理：默认立即买核心；仅当单笔注资的核心部分相对现有核心仓位过大时自动分批
+  injection_mode: lump_core              # lump_core / all_reserve / ladder_core
+  injection_ladder_trigger_ratio: 0.50   # 0.65Δ 超过当前核心仓位此比例 → 自动分批
+  injection_ladder_tranches: 4           # 分几批
+  injection_ladder_spacing_days: 5       # 每批间隔交易日
+
+  high_definition: since_inception   # H 定义：since_inception / ath / rolling
+  high_basis: close                  # H 基准：close（推荐，抗上影线毛刺）/ high
+  rolling_window_days: 252           # 仅 high_definition=rolling 时生效
+
+  rearm:
+    mode: new_high                   # 创新高才全部重置（保守，省弹药）
+    new_high_epsilon_pct: 0.005      # 新高需比旧 H 高出 ≥0.5% 才算数，防毛刺重置
+    hysteresis_same_day_block: true  # 同一档触发后当日不可再触发
+
+  drawdown_tiers:
+    thresholds:   [-0.25, -0.45]                  # 两个深档，跳过频繁浅回撤
+    deploy_ratios: [0.40, 0.60]                    # 越跌越狠
+    # 想恢复四档可改回: thresholds [-0.10,-0.20,-0.30,-0.40] / ratios [0.25,0.25,0.25,0.25]
+
+  manual_override:
+    default_action: freeze           # 人工剔除默认动作：freeze（冻结，不清仓）
+
+# ---------------------------------------------------------------------------
+# 标的篮子
+# 每只只需写 cap_total（你预期的金额上限）。系统自动推导：
+#   weight       = cap_total / Σcap_total
+#   core_target  = cap_total * core_ratio
+#   reserve_quota= cap_total * (1 - core_ratio)
+# 本金增加 = 在此调高某只的 cap_total（即一次注资）。
+# ---------------------------------------------------------------------------
+
+# === 回测专用篮子: 纳指100 科技硬件 24 名 (来源: 6/14 整理截面) ===
+# cap_total = 权重(内部归一)。当前=等权(各100000)。
+# 想要你的'子板块均衡 NVDA 5.6%'方案: 把各行 cap_total 改成对应权重比例即可。
+# 行末注释是当时的纳指100指数权重%, 仅供参考(不是当前cap_total)。
+symbols:
+  - {ticker: NVDA,  cap_total: 100000}   # 指数权重 12.83% · 芯片设计/IDM
+  - {ticker: AVGO,  cap_total: 100000}   # 指数权重 4.69% · 芯片设计/IDM
+  - {ticker: AMD,   cap_total: 100000}   # 指数权重 2.15% · 芯片设计/IDM
+  - {ticker: INTC,  cap_total: 100000}   # 指数权重 1.61% · 芯片设计/IDM
+  - {ticker: ARM,   cap_total: 100000}   # 指数权重 1.06% · 芯片设计/IDM
+  - {ticker: TXN,   cap_total: 100000}   # 指数权重 0.71% · 芯片设计/IDM
+  - {ticker: MRVL,  cap_total: 100000}   # 指数权重 0.63% · 芯片设计/IDM
+  - {ticker: QCOM,  cap_total: 100000}   # 指数权重 0.58% · 芯片设计/IDM
+  - {ticker: ADI,   cap_total: 100000}   # 指数权重 0.53% · 芯片设计/IDM
+  - {ticker: MPWR,  cap_total: 100000}   # 指数权重 0.20% · 芯片设计/IDM
+  - {ticker: NXPI,  cap_total: 100000}   # 指数权重 0.20% · 芯片设计/IDM
+  - {ticker: MCHP,  cap_total: 100000}   # 指数权重 0.13% · 芯片设计/IDM
+  - {ticker: ASML,  cap_total: 100000}   # 指数权重 1.85% · 设备
+  - {ticker: LRCX,  cap_total: 100000}   # 指数权重 1.19% · 设备
+  - {ticker: AMAT,  cap_total: 100000}   # 指数权重 1.16% · 设备
+  - {ticker: KLAC,  cap_total: 100000}   # 指数权重 0.85% · 设备
+  - {ticker: CDNS,  cap_total: 100000}   # 指数权重 0.27% · EDA
+  - {ticker: SNPS,  cap_total: 100000}   # 指数权重 0.22% · EDA
+  - {ticker: MU,    cap_total: 100000}   # 指数权重 2.86% · 存储
+  - {ticker: SNDK,  cap_total: 100000}   # 指数权重 0.76% · 存储
+  - {ticker: STX,   cap_total: 100000}   # 指数权重 0.54% · 存储
+  - {ticker: WDC,   cap_total: 100000}   # 指数权重 0.50% · 存储
+  - {ticker: LITE,  cap_total: 100000}   # 指数权重 0.18% · 光模块
+  - {ticker: CSCO,  cap_total: 100000}   # 指数权重 1.24% · 网络

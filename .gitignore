@@ -1,0 +1,9 @@
+﻿__pycache__/
+*.pyc
+venv/
+.idea/
+.vscode/
+data/cache/*.csv
+data/state.json
+data/state.json.bak
+data/audit.jsonl
