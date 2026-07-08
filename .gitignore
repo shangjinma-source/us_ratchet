@@ -4,6 +4,10 @@ venv/
 .idea/
 .vscode/
 data/cache/*.csv
+data/cache/*.tmp
+data/cache/**/*.csv
+data/cache/**/*.tmp
+data/*.tmp
 data/state.json
 data/state.json.bak
 data/audit.jsonl

@@ -23,6 +23,7 @@ from core.config import load_config, Symbol
 from core.helpers import setup_logging, resolve
 from core import engine as eng
 from core import live
+from core.admission import AdmissionProfile, apply_admissions
 from core.persist import load_portfolio, save_portfolio, backup_state, audit_log
 from core.state import CashFlow, Portfolio, SymbolState, TierFire, TacticalFill
 from backtest.engine import (
@@ -35,9 +36,18 @@ from backtest.engine import (
     run_tactical_overlay_ab,
     _align_prices,
 )
+from backtest.fund_mirror import run_fund_mirror_research, run_fund_quarterly_mirror_research
+from backtest.universe import cached_universe, run_universe_research
+from backtest.preference import run_preference_portfolio_research
+from backtest.preference_walkforward import (
+    run_preference_rebalance_research,
+    run_preference_walkforward_research,
+)
+from backtest.live_gate import run_preference_live_gate
+from backtest.candidate_registry import build_candidate_registry, build_static_candidate_registry
 from data.fetch import get_bars
 from data.quotes import fetch_sina_quotes
-from datetime import date
+from datetime import date, timedelta
 
 setup_logging(logging.WARNING)
 app = FastAPI(title="us_ratchet")
@@ -53,10 +63,78 @@ _crash_cache: dict = {}       # {(monthly, state_mtime): result_dict}
 _param_cache: dict = {}       # {(monthly, state_mtime): result_dict}
 _inject_mode_cache: dict = {} # {(monthly, state_mtime): result_dict}
 _tactical_cache: dict = {}    # {(monthly, state_mtime): result_dict}
+_research_candidate_cache: dict = {}  # {(monthly, include_heavy, state_mtime, ...): result_dict}
 _safe_cache: dict = {}        # {"price": SGOV 最新收盘}
 _bars_cache: dict = {}        # ticker -> OHLCV DataFrame
 _quote_cache: dict = {}       # {key: (ts, quotes)}
 QUOTE_TTL_SEC = 12
+BACKTEST_BASELINES = {"012922", "QQQ", "SPY"}
+
+
+def _clean_backtest_date(value: str | None, field: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return ""
+    try:
+        date.fromisoformat(value)
+    except ValueError as e:
+        raise ValueError(f"{field} must be YYYY-MM-DD") from e
+    return value
+
+
+def _clean_backtest_baseline(value: str | None) -> str:
+    baseline = (value or "012922").strip().upper()
+    return baseline if baseline in BACKTEST_BASELINES else "012922"
+
+ADMISSION_PROFILES = {
+    "trend_reduction": AdmissionProfile(
+        name="trend_reduction",
+        benchmark="长期持有",
+        x_field="xirr_vs_hold",
+        dd_field="dd_relief_vs_hold",
+        market_mode="downshift",
+        live_block="涉及主动降低风险仓位；当前纪律不允许市场层主动卖出或减仓。",
+    ),
+    "trend_execution": AdmissionProfile(
+        name="trend_execution",
+        benchmark="纯棘轮",
+        x_field="xirr_vs_risk",
+        dd_field="dd_relief_vs_risk",
+        rolling_x_field="xirr_vs_hold",
+        rolling_dd_field="dd_relief_vs_hold",
+        market_mode="downshift",
+    ),
+    "crash_sleeve": AdmissionProfile(
+        name="crash_sleeve",
+        benchmark="纯棘轮",
+        x_field="xirr_vs_risk",
+        dd_field="dd_relief_vs_risk",
+        market_mode="crash",
+        live_block="缺少独立 crash cash 实盘账户和成交回填，不能直接进入今日建议。",
+    ),
+    "param_scan": AdmissionProfile(
+        name="param_scan",
+        benchmark="当前参数",
+        x_field="xirr_vs_current",
+        dd_field="dd_relief_vs_current",
+        market_mode="structural",
+    ),
+    "injection_mode": AdmissionProfile(
+        name="injection_mode",
+        benchmark="当前注资模式",
+        x_field="xirr_vs_current",
+        dd_field="dd_relief_vs_current",
+        market_mode="structural",
+    ),
+    "tactical_overlay": AdmissionProfile(
+        name="tactical_overlay",
+        benchmark="关闭战术单",
+        x_field="xirr_vs_baseline",
+        dd_field="dd_relief_vs_baseline",
+        min_dd=-0.001,
+        market_mode="tactical",
+    ),
+}
 
 
 def _state_mtime_ns() -> int:
@@ -115,6 +193,28 @@ def _history_high_since(ticker: str, buy_date: str) -> float:
         raise ValueError(f"{ticker} 在 {buy_date} 之后没有可用行情")
     col = "High" if CFG.portfolio.high_basis == "high" and "High" in d2.columns else "Close"
     return float(d2[col].max())
+
+
+def _initial_high_since_buy(ticker: str, buy_date: str, buy_price: float) -> tuple[float, dict]:
+    """Calculate H for a real broker position, tolerating same-day buys before daily bars land."""
+    try:
+        return _history_high_since(ticker, buy_date), {"source": "daily_history"}
+    except ValueError as e:
+        msg = str(e)
+        try:
+            d0 = date.fromisoformat(str(buy_date)[:10])
+        except ValueError:
+            raise
+        if "没有可用行情" not in msg or d0 < date.today() - timedelta(days=1):
+            raise
+        q = _quotes_for([ticker]).get(str(ticker).upper())
+        live_price = float(q.price) if q and getattr(q, "price", 0) and q.price > 0 else None
+        h = max([float(buy_price)] + ([live_price] if live_price else []))
+        return h, {
+            "source": "intraday_fallback",
+            "reason": msg,
+            "live_price": round(live_price, 4) if live_price else None,
+        }
 
 
 _TRADE_LINE_RE = re.compile(
@@ -722,6 +822,26 @@ def _market_phase_payload(cfg, latest_prices: dict | None = None,
     }
 
 
+def _admission_market(cfg) -> dict:
+    """Daily-close market phase used only to annotate research admission."""
+    try:
+        market = _market_phase_payload(cfg)
+    except Exception as e:
+        return {
+            "enabled": False,
+            "regime": "UNKNOWN",
+            "label": "未知",
+            "rule": "市场阶段取数失败；研究准入不因未知阶段放大信号。",
+            "error": str(e),
+        }
+    return market or {
+        "enabled": False,
+        "regime": "UNKNOWN",
+        "label": "未知",
+        "rule": "市场层未启用。",
+    }
+
+
 def _tactical_order(ticker: str, st, live_price: float, cfg, market: dict | None = None,
                     price_info: dict | None = None) -> dict:
     tc = getattr(cfg, "tactical_orders", None)
@@ -854,9 +974,9 @@ def _symbol_advice(sig, tactical=None):
         return {**tactical, "immediate": immediate, "triggered": triggered,
                 "next_order": next_order}
     if next_order:
-        prefix = "等待战术信号" if tactical else "等待"
+        prefix = "战术单等待" if tactical else "等待"
         return {"action": "WAIT",
-                "text": f"{prefix}；深跌棘轮 ${next_order['limit']:.2f}",
+                "text": f"{prefix}；长期极深预挂 ${next_order['limit']:.2f}",
                 "immediate": immediate, "triggered": triggered, "next_order": next_order}
     return {"action": "WAIT", "text": "无活跃买入建议", "immediate": immediate,
             "triggered": triggered, "next_order": next_order}
@@ -941,6 +1061,361 @@ def _apply_tactical_fill(pf: Portfolio, body: dict, cfg) -> dict:
     }
 
 
+def _tactical_rule_label(cfg) -> str:
+    tc = getattr(cfg, "tactical_orders", None)
+    if tc is None or not getattr(tc, "enabled", False):
+        return "战术限价关闭"
+    return (f"{tc.ma_short}/{tc.ma_mid}+ATR 固定限价；牛市 {tc.bull_atr_mult:g}ATR，"
+            f"震荡 {tc.neutral_atr_mult:g}ATR，熊市 {tc.bear_atr_mult:g}ATR")
+
+
+def _config_health_payload(cfg, safe: dict | None, market: dict | None,
+                           execution: dict | None) -> dict:
+    p = cfg.portfolio
+    sl = getattr(cfg, "safe_leg", None)
+    tc = getattr(cfg, "tactical_orders", None)
+    tier_text = "/".join(f"{x:.0%}" for x in p.tiers.thresholds)
+    deploy_text = "/".join(f"{x:.0%}" for x in p.tiers.deploy_ratios)
+    stages = []
+    stages.append({
+        "name": "核心棘轮",
+        "status": "active",
+        "summary": (
+            f"core_ratio {p.core_ratio:.0%}；回撤档 {tier_text}；部署 {deploy_text}。"
+        ),
+    })
+    if sl is not None:
+        weight = (safe or {}).get("weight")
+        stages.append({
+            "name": "防御层",
+            "status": "active" if safe else "pending",
+            "summary": (
+                f"{sl.ticker} 目标 W={sl.target_weight:.0%}，执行带 ±{sl.exec_band:.0%}"
+                + (f"；当前 {float(weight):.1%}。" if weight is not None else "。")
+            ),
+        })
+    else:
+        stages.append({"name": "防御层", "status": "off", "summary": "未启用 safe_leg。"})
+    stages.append({
+        "name": "战术限价",
+        "status": "active" if tc is not None and getattr(tc, "enabled", False) else "off",
+        "summary": _tactical_rule_label(cfg),
+    })
+    stages.append({
+        "name": "研究隔离",
+        "status": "locked",
+        "summary": "研究候选不读取到 /api/state；未人工确认前不写 config.yaml。",
+    })
+    actionable = int((execution or {}).get("actionable_count") or 0)
+    market_label = (market or {}).get("label") or "未知"
+    summary = (
+        f"当前配置仍是实盘基线；市场阶段 {market_label}；"
+        f"今日可执行项 {actionable} 条。"
+    )
+    return {
+        "status": "active_incumbent",
+        "summary": summary,
+        "does_use_research_candidate": False,
+        "checks": stages,
+        "next_review": "只有候选库进入 config_candidate，并完成今日建议差异检查后，才考虑人工替换配置。",
+    }
+
+
+def _account_readiness_payload(syms: list[dict], safe: dict | None) -> dict:
+    active = []
+    confirmed = []
+    unconfirmed = []
+    for s in syms:
+        is_confirmed = bool(s.get("entry_date"))
+        has_position = (
+            float(s.get("book_shares", s.get("shares")) or 0.0) > 1e-9
+            or float(s.get("book_cost_basis", s.get("cost_basis")) or 0.0) > 1e-9
+        )
+        if not has_position:
+            continue
+        row = {
+            "ticker": s.get("ticker"),
+            "shares": s.get("real_shares") if is_confirmed else 0.0,
+            "market_value": s.get("real_market_value") if is_confirmed else 0.0,
+            "cost_basis": s.get("real_cost_basis") if is_confirmed else 0.0,
+            "book_shares": s.get("book_shares", s.get("shares")),
+            "book_market_value": s.get("book_market_value", s.get("market_value")),
+            "book_cost_basis": s.get("book_cost_basis", s.get("cost_basis")),
+            "position_status": s.get("position_status"),
+            "reserve": s.get("reserve"),
+            "entry_date": s.get("entry_date"),
+            "entry_price": s.get("entry_price"),
+        }
+        active.append(row)
+        if is_confirmed:
+            confirmed.append(row)
+        else:
+            unconfirmed.append(row)
+    reserve_total = sum(float(s.get("reserve") or 0.0) for s in syms)
+    pending_total = sum(float(s.get("pending_core_cash") or 0.0) for s in syms)
+    confirmed_tickers = ", ".join(str(x["ticker"]) for x in confirmed) or "无"
+    unconfirmed_tickers = ", ".join(str(x["ticker"]) for x in unconfirmed[:8])
+    if len(unconfirmed) > 8:
+        unconfirmed_tickers += f" 等{len(unconfirmed)}个"
+    summary = (
+        f"按买入日识别，当前真实持仓 {len(confirmed)} 个（{confirmed_tickers}）。"
+        + (
+            f"另有 {len(unconfirmed)} 个无买入日的账本持仓（{unconfirmed_tickers}），"
+            "买入计划中视为待建仓/未确认。"
+            if unconfirmed else ""
+        )
+    )
+    return {
+        "status": "cash_needed" if confirmed else "needs_broker_confirmation",
+        "summary": summary,
+        "state_position_count": len(active),
+        "state_positions": active,
+        "confirmed_position_count": len(confirmed),
+        "confirmed_positions": confirmed,
+        "unconfirmed_position_count": len(unconfirmed),
+        "unconfirmed_positions": unconfirmed,
+        "safe_position": safe,
+        "reserve_book_cash": round(reserve_total, 0),
+        "pending_core_cash": round(pending_total, 0),
+        "needs_cash_input": True,
+        "position_rule": "有买入日的标的视为券商真实持仓；无买入日的账本持仓不作为真实持仓。",
+        "cash_source": (
+            "券商可用现金未从 state 自动读取；reserve_cash 是策略账本里的储备配额，"
+            "不等同于券商账户真实可动用现金。"
+        ),
+        "next_step": "生成正式买入股数前，请输入本次可动用现金；如有新增真实持仓，再补买入日校准。",
+    }
+
+
+def _date_only(value: str) -> date | None:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
+
+
+def _quality_close_at(df, pos: int) -> float | None:
+    if pos < 0 or pos >= len(df):
+        return None
+    try:
+        v = float(df["Close"].iloc[pos])
+    except Exception:
+        return None
+    return v if np.isfinite(v) and v > 0 else None
+
+
+def _bar_num(row, key: str) -> float | None:
+    try:
+        v = float(row.get(key))
+    except Exception:
+        return None
+    return v if np.isfinite(v) and v > 0 else None
+
+
+def _fill_quality_row(ticker: str, fill: TacticalFill, df, prev_fill_date: date | None) -> dict:
+    fill_date = _date_only(fill.date)
+    idx = None
+    if fill_date is not None:
+        dates = [d.date() for d in df.index]
+        for i, d in enumerate(dates):
+            if d >= fill_date:
+                idx = i
+                break
+    if idx is None:
+        return {
+            "ticker": ticker,
+            "date": fill.date,
+            "error": "成交日期之后没有可用日线",
+            "amount": round(float(fill.amount), 0),
+            "fill_price": round(float(fill.fill_price), 4),
+            "limit_price": round(float(fill.limit_price), 4),
+        }
+
+    bar = df.iloc[idx]
+    prev_close = _quality_close_at(df, idx - 1)
+    fill_price = float(fill.fill_price)
+    open_px = _bar_num(bar, "Open")
+    low_px = _bar_num(bar, "Low")
+    close_px = _bar_num(bar, "Close")
+    close20 = _quality_close_at(df, idx + 20)
+    close60 = _quality_close_at(df, idx + 60)
+    repeat_days = None
+    if prev_fill_date is not None and fill_date is not None:
+        repeat_days = (fill_date - prev_fill_date).days
+
+    def rel(base):
+        if base is None or base <= 0 or fill_price <= 0:
+            return None
+        return fill_price / base - 1.0
+
+    return {
+        "ticker": ticker,
+        "date": fill.date,
+        "bar_date": df.index[idx].strftime("%Y-%m-%d"),
+        "amount": round(float(fill.amount), 0),
+        "shares": round(float(fill.shares), 3),
+        "limit_price": round(float(fill.limit_price), 4),
+        "fill_price": round(fill_price, 4),
+        "basis_price": round(float(fill.basis_price), 4) if fill.basis_price else None,
+        "prev_close": round(prev_close, 4) if prev_close is not None else None,
+        "open": round(open_px, 4) if open_px is not None else None,
+        "low": round(low_px, 4) if low_px is not None else None,
+        "close": round(close_px, 4) if close_px is not None else None,
+        "discount_vs_prev_close": rel(prev_close),
+        "fill_vs_open": rel(open_px),
+        "fill_vs_low": rel(low_px),
+        "fill_vs_close": rel(close_px),
+        "return_20d": (close20 / fill_price - 1.0) if close20 and fill_price > 0 else None,
+        "return_60d": (close60 / fill_price - 1.0) if close60 and fill_price > 0 else None,
+        "repeat_days": repeat_days,
+        "regime": fill.regime,
+        "reason": fill.reason,
+        "note": fill.note,
+    }
+
+
+def _avg(nums: list[float | None]) -> float | None:
+    vals = [float(x) for x in nums if x is not None and np.isfinite(float(x))]
+    return float(np.mean(vals)) if vals else None
+
+
+def _tactical_quality_payload(pf: Portfolio, cfg) -> dict:
+    prices, price_meta = _latest_prices(cfg, include_safe=True)
+    market = _market_phase_payload(cfg, prices, price_meta)
+    rows: list[dict] = []
+    by_symbol: list[dict] = []
+    current_limits: list[dict] = []
+
+    for sym in cfg.symbols:
+        ticker = sym.ticker
+        st = pf.symbols.get(ticker)
+        if st is None:
+            continue
+        try:
+            df = _bars_for(ticker, cfg)
+        except Exception as e:
+            by_symbol.append({
+                "ticker": ticker,
+                "fill_count": 0,
+                "assessment": "取数失败",
+                "note": str(e),
+            })
+            continue
+
+        fills = sorted(getattr(st, "tactical_fills", []) or [], key=lambda f: str(f.date))
+        prev_date = None
+        symbol_rows = []
+        for fill in fills:
+            row = _fill_quality_row(ticker, fill, df, prev_date)
+            rows.append(row)
+            symbol_rows.append(row)
+            parsed = _date_only(fill.date)
+            if parsed is not None:
+                prev_date = parsed
+
+        info = ((price_meta or {}).get("items") or {}).get(ticker, {})
+        live_price = float(prices.get(ticker) or 0)
+        tactical = _tactical_order(ticker, st, live_price, cfg, market, info)
+        latest_bar = df.iloc[-1]
+        latest_low = _bar_num(latest_bar, "Low")
+        latest_close = _bar_num(latest_bar, "Close")
+        limit = float(tactical.get("limit") or 0.0)
+        unfilled = None
+        if tactical.get("action") == "PLACE_LIMIT" and limit > 0:
+            touched = latest_low is not None and latest_low <= limit
+            unfilled = {
+                "ticker": ticker,
+                "limit": round(limit, 4),
+                "latest_low": round(latest_low, 4) if latest_low is not None else None,
+                "latest_close": round(latest_close, 4) if latest_close is not None else None,
+                "touched_by_latest_daily_low": bool(touched),
+                "gap_to_low": (latest_low / limit - 1.0) if latest_low and limit > 0 else None,
+                "close_vs_limit": (latest_close / limit - 1.0) if latest_close and limit > 0 else None,
+                "opportunity_cost_note": (
+                    "最近日线 low 已触及限价但没有对应回填，需核对券商是否成交。"
+                    if touched else "最近日线 low 仍高于限价，未成交主要是限价偏深。"
+                ),
+            }
+            current_limits.append(unfilled)
+
+        avg_discount = _avg([r.get("discount_vs_prev_close") for r in symbol_rows])
+        avg_vs_low = _avg([r.get("fill_vs_low") for r in symbol_rows])
+        avg_r20 = _avg([r.get("return_20d") for r in symbol_rows])
+        avg_r60 = _avg([r.get("return_60d") for r in symbol_rows])
+        avg_repeat = _avg([r.get("repeat_days") for r in symbol_rows])
+        fill_count = len(symbol_rows)
+        if fill_count == 0 and unfilled and (unfilled.get("close_vs_limit") or 0) > 0.05:
+            assessment = "偏保守"
+            note = "尚无战术成交，当前限价离收盘价较远，可能买不到。"
+        elif avg_discount is not None and avg_discount > -0.005:
+            assessment = "偏激进"
+            note = "成交价相对前收折价不足，接近追价。"
+        elif avg_vs_low is not None and avg_vs_low > 0.035:
+            assessment = "可优化"
+            note = "成交价离当日低点较远，后续看是否可提高耐心。"
+        elif avg_r20 is not None and avg_r20 < -0.03:
+            assessment = "需复核"
+            note = "成交后 20 日表现偏弱，可能买早了。"
+        elif fill_count > 0:
+            assessment = "正常"
+            note = "有成交记录，折价和后续表现未显示明显异常。"
+        else:
+            assessment = "样本不足"
+            note = "还没有足够战术成交样本。"
+
+        by_symbol.append({
+            "ticker": ticker,
+            "fill_count": fill_count,
+            "fill_amount": round(sum(float(r.get("amount") or 0.0) for r in symbol_rows), 0),
+            "avg_discount_vs_prev_close": avg_discount,
+            "avg_fill_vs_low": avg_vs_low,
+            "avg_return_20d": avg_r20,
+            "avg_return_60d": avg_r60,
+            "avg_repeat_days": avg_repeat,
+            "assessment": assessment,
+            "note": note,
+            "current_unfilled": unfilled,
+        })
+
+    recent_rows = sorted(rows, key=lambda r: (str(r.get("date") or ""), str(r.get("ticker") or "")), reverse=True)
+    filled_rows = [r for r in rows if not r.get("error")]
+    avg_discount = _avg([r.get("discount_vs_prev_close") for r in filled_rows])
+    avg_r20 = _avg([r.get("return_20d") for r in filled_rows])
+    avg_r60 = _avg([r.get("return_60d") for r in filled_rows])
+    touched_unfilled = sum(1 for x in current_limits if x.get("touched_by_latest_daily_low"))
+    conservative_unfilled = sum(1 for x in current_limits if (x.get("gap_to_low") or 0) > 0.02)
+    if not filled_rows:
+        verdict = "样本不足：还没有战术成交记录。"
+    elif avg_discount is not None and avg_discount > -0.005:
+        verdict = "偏激进：平均折价不足，需观察是否接近追价。"
+    elif conservative_unfilled >= max(2, len(current_limits) // 2):
+        verdict = "偏保守：较多当前限价明显低于最近日线 low，可能买不到。"
+    else:
+        verdict = "当前样本未显示需要替换战术规则；继续按现行 5/20+ATR 观察。"
+
+    return {
+        "research_only": True,
+        "does_change_today_advice": False,
+        "as_of": date.today().isoformat(),
+        "price_as_of": (price_meta or {}).get("as_of"),
+        "summary": {
+            "fill_count": len(filled_rows),
+            "symbol_count": len(by_symbol),
+            "current_unfilled_count": len(current_limits),
+            "touched_unfilled_count": touched_unfilled,
+            "avg_discount_vs_prev_close": avg_discount,
+            "avg_return_20d": avg_r20,
+            "avg_return_60d": avg_r60,
+            "verdict": verdict,
+            "rule_comparison": "当前 5/20+ATR 仍来自 tactical_overlay_ab 的最佳实盘配置；本页只做实盘成交质量反馈。",
+            "limitation": "没有持久化未成交订单流水；未成交机会成本仅基于当前可挂限价和最近日线 low/close 粗估。",
+        },
+        "by_symbol": sorted(by_symbol, key=lambda x: (x.get("assessment") == "正常", x.get("ticker") or "")),
+        "recent_fills": recent_rows[:20],
+        "current_unfilled": current_limits,
+    }
+
+
 def _execution_payload(symbols: list[dict], defensive: dict | None, price_meta: dict | None) -> dict:
     """统一生成今日可执行建议；研究层规则不得在这里改变实盘动作。"""
     items: list[dict] = []
@@ -966,6 +1441,7 @@ def _execution_payload(symbols: list[dict], defensive: dict | None, price_meta: 
             "status": status,
             "reason": reason,
             "text": text,
+            "explanation": "",
         })
 
     for s in symbols:
@@ -1055,6 +1531,58 @@ def _execution_payload(symbols: list[dict], defensive: dict | None, price_meta: 
             )
 
     items.sort(key=lambda x: (x["priority"], x["ticker"], x["source"]))
+
+    def execution_level(item: dict) -> dict:
+        source = item.get("source")
+        action = item.get("action")
+        if source in {"defensive_safe", "defensive_basket"}:
+            return {"label": "需确认", "note": "防御层再平衡预览，确认后才落盘。"}
+        if source == "pending_core":
+            return {"label": "核心到期", "note": "既有分批核心现金到期，优先级高于挂单参考。"}
+        if source == "ratchet_trigger":
+            return {"label": "深跌触发", "note": "已跌破棘轮档位限价，属于主策略即时买入。"}
+        if source == "tactical_limit" and action == "BUY_NOW":
+            return {"label": "战术触发", "note": "盘中价已触发当前固定战术限价。"}
+        if source == "tactical_limit":
+            return {"label": "战术预挂", "note": "当前固定战术限价，可预先挂单。"}
+        if source == "ratchet_next":
+            return {"label": "长期深跌预挂", "note": "下一档极深棘轮限价，不属于今日战术挂单。"}
+        if action == "FROZEN":
+            return {"label": "冻结", "note": "冻结标的不自动买入。"}
+        return {"label": "观察", "note": "当前无可执行动作。"}
+
+    def explain_item(item: dict) -> str:
+        source = item.get("source")
+        ticker = item.get("ticker") or "该标的"
+        if source == "pending_core":
+            return f"{ticker} 的分批核心现金到期，属于既有注资计划兑现，不是研究层新增买入。"
+        if source == "ratchet_trigger":
+            return (
+                f"{ticker} 已跌到已装填深跌棘轮档位；限价来自 H×(1+回撤阈值)，"
+                "只买不主动卖。"
+            )
+        if source == "tactical_limit":
+            return (
+                f"{ticker} 使用当前 config 的固定战术限价；限价由前收/日线 MA/ATR 锚定，"
+                "盘中价只判断是否触发。"
+            )
+        if source == "ratchet_next":
+            return (
+                f"{ticker} 尚未触发深跌档位；这里显示下一档可预挂限价，"
+                "不是今日战术限价，也不是立即追价买入。"
+            )
+        if source in {"defensive_safe", "defensive_basket"}:
+            return "防御层偏离执行带，需要人工确认后才会落盘；棘轮 H 和档位状态不因此重置。"
+        if source == "symbol_wait":
+            return f"{ticker} 没有核心到期、深跌触发或战术买入信号，继续观察。"
+        return item.get("text") or item.get("reason") or "按当前实盘配置生成。"
+
+    for it in items:
+        lvl = execution_level(it)
+        it["execution_level"] = lvl["label"]
+        it["sort_note"] = lvl["note"]
+        it["explanation"] = explain_item(it)
+
     counts = {"buy_now": 0, "place_limit": 0, "rebalance": 0, "wait": 0}
     for it in items:
         action = it.get("action")
@@ -1069,7 +1597,7 @@ def _execution_payload(symbols: list[dict], defensive: dict | None, price_meta: 
 
     actionable = counts["buy_now"] + counts["place_limit"] + counts["rebalance"]
     if actionable:
-        summary = (f"今日执行层：立即买入 {counts['buy_now']} 条，固定/深跌限价 "
+        summary = (f"今日执行层：立即买入 {counts['buy_now']} 条，战术/长期深跌限价 "
                    f"{counts['place_limit']} 条，防御再平衡 {counts['rebalance']} 条。")
     else:
         summary = "今日执行层：无立即买入、无防御再平衡；仅保留观察。"
@@ -1080,6 +1608,16 @@ def _execution_payload(symbols: list[dict], defensive: dict | None, price_meta: 
         "actionable_count": actionable,
         "summary": summary,
         "items": items,
+        "explanation": {
+            "summary": summary,
+            "rule_stack": [
+                "待分批核心：按既有注资计划到期买入。",
+                "深跌棘轮：按 H 与回撤档位触发，只买不主动卖。",
+                "战术限价：使用当前 config 的 5/20+ATR 固定限价，盘中价不改变锚点。",
+                "防御层：只在安全腿偏离执行带时预览再平衡，确认后才落盘。",
+            ],
+            "research_boundary": "研究层结果不会自动进入今日执行建议。",
+        },
         "research_note": "MA门控、崩盘sleeve、参数扫描、注资模式A/B和战术挂单A/B仍是研究层；未显式接入前不会改变今日建议。",
     }
 
@@ -1099,6 +1637,7 @@ def refresh():
     _param_cache.clear()
     _inject_mode_cache.clear()
     _tactical_cache.clear()
+    _research_candidate_cache.clear()
     _safe_cache.clear()
     _bars_cache.clear()
     _quote_cache.clear()
@@ -1106,9 +1645,26 @@ def refresh():
 
 
 @app.get("/api/backtest")
-def api_backtest(monthly: float = 3000.0):
+def api_backtest(
+    monthly: float = 3000.0,
+    start: str = "2022-01-11",
+    end: str = "",
+    baseline_ticker: str = "012922",
+):
+    try:
+        start_date = _clean_backtest_date(start, "start")
+        end_date = _clean_backtest_date(end, "end")
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if start_date and end_date and start_date > end_date:
+        return JSONResponse({"error": "start must be earlier than or equal to end"}, status_code=400)
+    baseline = _clean_backtest_baseline(baseline_ticker)
     bt_cfg = _backtest_cfg()
-    key = (round(monthly, 2), _state_mtime_ns())
+    if start_date:
+        bt_cfg.data.start_date = start_date
+    if end_date:
+        bt_cfg.data.end_date = end_date
+    key = (round(monthly, 2), start_date, end_date, baseline, _state_mtime_ns())
     if key in _bt_cache:
         return _bt_cache[key]
     try:
@@ -1116,7 +1672,9 @@ def api_backtest(monthly: float = 3000.0):
                             safe_weight=(bt_cfg.safe_leg.target_weight
                                          if bt_cfg.safe_leg else 0.0),
                             safe_annual=0.04, rebal_days=21,
-                            rebal_band=0.0, benchmark_tickers=("QQQ", "SPY"))
+                            rebal_band=0.0,
+                            benchmark_tickers=("QQQ", "SPY", "012922"),
+                            baseline_ticker=baseline)
     except Exception as e:
         return JSONResponse({"error": f"回测失败: {e}"}, status_code=500)
 
@@ -1130,13 +1688,60 @@ def api_backtest(monthly: float = 3000.0):
     dlabels = [dates[i].strftime("%Y-%m-%d") for i in idx]
 
     def curve(arr):
-        return [round(float(arr[i]), 4) for i in idx]
+        out = []
+        for i in idx:
+            v = float(arr[i])
+            out.append(round(v, 4) if np.isfinite(v) else None)
+        return out
+
+    def first_valid_index(arr):
+        for i, v in enumerate(arr):
+            try:
+                fv = float(v)
+            except Exception:
+                continue
+            if np.isfinite(fv) and fv > 0:
+                return i
+        return None
+
+    def display_curves():
+        """Chart-only view: mid-history benchmarks start at the strategy NAV level.
+
+        Metrics remain untouched.  This prevents a 2022-inception benchmark from
+        being visually compared as if it had compounded since 2015.
+        """
+        strategy_item = res["curves"].get(res["strategy_label"])
+        if not strategy_item:
+            return {name: curve(item["nav"]) for name, item in res["curves"].items()}, {}
+        strategy_nav = np.asarray(strategy_item["nav"], dtype=float)
+        chart = {}
+        meta = {}
+        for name, item in res["curves"].items():
+            nav = np.asarray(item["nav"], dtype=float)
+            shown = nav.copy()
+            start_i = first_valid_index(shown)
+            if start_i is not None and start_i > 0:
+                base_nav = float(shown[start_i])
+                anchor_nav = float(strategy_nav[start_i])
+                if np.isfinite(base_nav) and base_nav > 0 and np.isfinite(anchor_nav) and anchor_nav > 0:
+                    shown[start_i:] = shown[start_i:] * (anchor_nav / base_nav)
+                    meta[name] = {
+                        "start": dates[start_i].strftime("%Y-%m-%d"),
+                        "anchor": res["strategy_label"],
+                        "anchor_nav": round(anchor_nav, 4),
+                        "original_nav": round(base_nav, 4),
+                        "scale": round(anchor_nav / base_nav, 6),
+                    }
+            chart[name] = curve(shown)
+        return chart, meta
 
     order = list(res["curves"].keys())
     summary = {name: item["metrics"] for name, item in res["curves"].items()}
+    chart_series, rebased = display_curves()
     out = {
         "dates": dlabels,
         "series": {name: curve(item["nav"]) for name, item in res["curves"].items()},
+        "chart_series": chart_series,
         "summary": summary,
         "order": order,
         "baseline": res["baseline_label"],
@@ -1146,9 +1751,17 @@ def api_backtest(monthly: float = 3000.0):
         "tier_contrib": res.get("tier_contrib", {}),
         "meta": {
             "unit": "NAV",
+            "request": {
+                "monthly": monthly,
+                "start": start_date,
+                "end": end_date,
+                "baseline_ticker": baseline,
+            },
             "safe_weight": res["safe_weight"],
             "safe_annual": res["safe_annual"],
             "benchmark_errors": res.get("benchmark_errors", {}),
+            "chart_rebased": rebased,
+            "chart_note": "Chart uses the selected backtest window. If a benchmark starts after the window start, only the chart is rebased from its first valid date; metrics keep the real cash-flow path.",
         },
     }
     _bt_cache[key] = out
@@ -1167,7 +1780,7 @@ def api_rolling_starts(monthly: float = 3000.0, min_years: float = 3.0):
             bt_cfg, monthly=monthly, min_years=min_years,
             safe_weight=(bt_cfg.safe_leg.target_weight if bt_cfg.safe_leg else 0.0),
             safe_annual=0.04, rebal_days=21, rebal_band=0.0,
-            benchmark_tickers=("QQQ", "SPY"), baseline_ticker="QQQ")
+            benchmark_tickers=("QQQ", "SPY", "012922"), baseline_ticker="012922")
     except Exception as e:
         return JSONResponse({"error": f"滚动回测失败: {e}"}, status_code=500)
 
@@ -1205,14 +1818,25 @@ def api_trend_ab(monthly: float = 3000.0):
     except Exception as e:
         return JSONResponse({"error": f"趋势门控 A/B 失败: {e}"}, status_code=500)
 
+    rows = res.get("rows", [])
+    execution_rows = res.get("execution_rows", [])
+    summary = dict(res.get("summary", {}) or {})
+    market = _admission_market(bt_cfg)
+    summary["admission"] = {
+        "trend_reduction": apply_admissions(
+            rows, ADMISSION_PROFILES["trend_reduction"], market),
+        "trend_execution": apply_admissions(
+            execution_rows, ADMISSION_PROFILES["trend_execution"], market),
+    }
     out = {
-        "summary": res.get("summary", {}),
+        "summary": summary,
         "baselines": res.get("baselines", {}),
-        "rows": res.get("rows", []),
-        "execution_rows": res.get("execution_rows", []),
+        "rows": rows,
+        "execution_rows": execution_rows,
         "range": [res["grid"][0].strftime("%Y-%m-%d"), res["grid"][-1].strftime("%Y-%m-%d")]
         if len(res.get("grid", [])) else None,
         "contributed": res.get("contributed"),
+        "market": market,
         "meta": {"unit": "NAV", "research_only": True},
     }
     _trend_cache[key] = out
@@ -1237,14 +1861,20 @@ def api_crash_sleeve(monthly: float = 3000.0):
     except Exception as e:
         return JSONResponse({"error": f"崩盘 sleeve A/B 失败: {e}"}, status_code=500)
 
+    rows = res.get("rows", [])
+    summary = dict(res.get("summary", {}) or {})
+    market = _admission_market(bt_cfg)
+    summary["admission"] = apply_admissions(
+        rows, ADMISSION_PROFILES["crash_sleeve"], market)
     out = {
-        "summary": res.get("summary", {}),
+        "summary": summary,
         "baselines": res.get("baselines", {}),
-        "rows": res.get("rows", []),
+        "rows": rows,
         "correlation": res.get("correlation", {}),
         "range": [res["grid"][0].strftime("%Y-%m-%d"), res["grid"][-1].strftime("%Y-%m-%d")]
         if len(res.get("grid", [])) else None,
         "contributed": res.get("contributed"),
+        "market": market,
         "meta": {
             "unit": "NAV",
             "research_only": True,
@@ -1270,13 +1900,19 @@ def api_param_scan(monthly: float = 3000.0):
     except Exception as e:
         return JSONResponse({"error": f"参数扫描失败: {e}"}, status_code=500)
 
+    rows = res.get("rows", [])
+    summary = dict(res.get("summary", {}) or {})
+    market = _admission_market(bt_cfg)
+    summary["admission"] = apply_admissions(
+        rows, ADMISSION_PROFILES["param_scan"], market)
     out = {
-        "summary": res.get("summary", {}),
+        "summary": summary,
         "baselines": res.get("baselines", {}),
-        "rows": res.get("rows", []),
+        "rows": rows,
         "range": [res["grid"][0].strftime("%Y-%m-%d"), res["grid"][-1].strftime("%Y-%m-%d")]
         if len(res.get("grid", [])) else None,
         "contributed": res.get("contributed"),
+        "market": market,
         "meta": {"unit": "NAV", "research_only": True},
     }
     _param_cache[key] = out
@@ -1298,13 +1934,19 @@ def api_injection_ab(monthly: float = 3000.0):
     except Exception as e:
         return JSONResponse({"error": f"注资模式 A/B 失败: {e}"}, status_code=500)
 
+    rows = res.get("rows", [])
+    summary = dict(res.get("summary", {}) or {})
+    market = _admission_market(bt_cfg)
+    summary["admission"] = apply_admissions(
+        rows, ADMISSION_PROFILES["injection_mode"], market)
     out = {
-        "summary": res.get("summary", {}),
+        "summary": summary,
         "baselines": res.get("baselines", {}),
-        "rows": res.get("rows", []),
+        "rows": rows,
         "range": [res["grid"][0].strftime("%Y-%m-%d"), res["grid"][-1].strftime("%Y-%m-%d")]
         if len(res.get("grid", [])) else None,
         "contributed": res.get("contributed"),
+        "market": market,
         "meta": {"unit": "NAV", "research_only": True},
     }
     _inject_mode_cache[key] = out
@@ -1327,16 +1969,431 @@ def api_tactical_ab(monthly: float = 3000.0):
     except Exception as e:
         return JSONResponse({"error": f"战术挂单 A/B 失败: {e}"}, status_code=500)
 
+    rows = res.get("rows", [])
+    summary = dict(res.get("summary", {}) or {})
+    market = _admission_market(bt_cfg)
+    summary["admission"] = apply_admissions(
+        rows, ADMISSION_PROFILES["tactical_overlay"], market)
     out = {
-        "summary": res.get("summary", {}),
+        "summary": summary,
         "baselines": res.get("baselines", {}),
-        "rows": res.get("rows", []),
+        "rows": rows,
         "range": [res["grid"][0].strftime("%Y-%m-%d"), res["grid"][-1].strftime("%Y-%m-%d")]
         if len(res.get("grid", [])) else None,
         "contributed": res.get("contributed"),
+        "market": market,
         "meta": {"unit": "NAV", "research_only": True},
     }
     _tactical_cache[key] = out
+    return out
+
+
+@app.get("/api/universe_candidates")
+def api_universe_candidates():
+    return {
+        "tickers": cached_universe(CFG.cache_dir),
+        "source": "data/cache",
+        "note": "默认排除 QQQ/SPY/SGOV/SMH/XSD；显式传入 /api/universe_research?tickers=... 可覆盖。",
+    }
+
+
+@app.get("/api/universe_research")
+def api_universe_research(tickers: str = "", total_cap: float = 37000.0,
+                          monthly: float = 3000.0, top_n: int = 8,
+                          max_weight: float = 0.22, min_weight: float = 0.04,
+                          max_pair_corr: float = 0.92,
+                          min_years: float = 2.0,
+                          drawdown_budget: float = 0.35,
+                          local_only: bool = True,
+                          include_backtest: bool = True):
+    """候选美股池诊断/动态篮子建议。研究层，不改 state/config/今日建议。"""
+    bt_cfg = _backtest_cfg()
+    if not str(tickers or "").strip():
+        tickers = ",".join(cached_universe(bt_cfg.cache_dir))
+    try:
+        return run_universe_research(
+            bt_cfg, tickers,
+            total_cap=float(total_cap),
+            monthly=float(monthly),
+            top_n=max(1, min(20, int(top_n))),
+            min_history_years=max(0.5, float(min_years)),
+            max_weight=max(0.05, min(0.60, float(max_weight))),
+            min_weight=max(0.0, min(0.20, float(min_weight))),
+            max_pair_corr=max(0.50, min(0.99, float(max_pair_corr))),
+            drawdown_budget=max(0.05, min(0.80, float(drawdown_budget))),
+            local_only=bool(local_only),
+            include_backtest=bool(include_backtest),
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"候选池研究失败: {e}"}, status_code=500)
+
+
+@app.get("/api/preference_portfolio_research")
+def api_preference_portfolio_research(tickers: str = "", groups: str = "",
+                                      total_cap: float = 37000.0,
+                                      monthly: float = 3000.0,
+                                      target_benchmark: str = "012922",
+                                      min_years: float = 3.0,
+                                      safe_weights: str = "0,0.14,0.26",
+                                      include_voltarget: bool = False,
+                                      voltarget_top_k: int = 4,
+                                      local_only: bool = True):
+    """自选美股池/分组组合 A/B。研究层，不改 state/config/今日建议。"""
+    bt_cfg = _backtest_cfg()
+    if not str(tickers or "").strip() and not str(groups or "").strip():
+        tickers = ",".join(cached_universe(bt_cfg.cache_dir))
+    try:
+        return run_preference_portfolio_research(
+            bt_cfg,
+            tickers=tickers,
+            groups=groups,
+            total_cap=float(total_cap),
+            monthly=float(monthly),
+            local_only=bool(local_only),
+            min_years=max(1.0, float(min_years)),
+            safe_weights=safe_weights,
+            include_voltarget=bool(include_voltarget),
+            voltarget_top_k=max(0, min(12, int(voltarget_top_k))),
+            target_benchmark=str(target_benchmark or "012922").upper(),
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"自选组合研究失败: {e}"}, status_code=500)
+
+
+@app.get("/api/fund_mirror_research")
+def api_fund_mirror_research(fund_code: str = "012922",
+                             report_date: str = "",
+                             total_cap: float = 37000.0,
+                             monthly: float = 3000.0,
+                             target_benchmark: str = "012922",
+                             min_years: float = 3.0,
+                             top_n: int = 10,
+                             safe_weights: str = "0,0.14,0.26,0.40",
+                             core_ratios: str = "0.90,0.95",
+                             include_equal: bool = True,
+                             local_only: bool = False):
+    """镜像目标基金最新披露 US 持仓做研究；不改 state/config/今日建议。"""
+    bt_cfg = _backtest_cfg()
+    try:
+        return run_fund_mirror_research(
+            bt_cfg,
+            fund_code=str(fund_code or "012922"),
+            report_date=(report_date or None),
+            total_cap=float(total_cap),
+            monthly=float(monthly),
+            target_benchmark=str(target_benchmark or "012922").upper(),
+            min_years=max(1.0, float(min_years)),
+            top_n=max(1, min(30, int(top_n))),
+            safe_weights=safe_weights,
+            core_ratios=core_ratios,
+            include_equal=bool(include_equal),
+            local_only=bool(local_only),
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"基金持仓镜像研究失败: {e}"}, status_code=500)
+
+
+@app.get("/api/fund_quarterly_mirror_research")
+def api_fund_quarterly_mirror_research(fund_code: str = "012922",
+                                       total_cap: float = 37000.0,
+                                       monthly: float = 3000.0,
+                                       target_benchmark: str = "012922",
+                                       min_years: float = 3.0,
+                                       start_year: int = 2021,
+                                       end_year: int = 0,
+                                       top_ns: str = "4,6,8",
+                                       weight_modes: str = "fund_weight,capped_fund_weight,score_risk",
+                                       safe_weights: str = "0.26,0.34,0.40",
+                                       core_ratios: str = "0.90,0.95",
+                                       max_weight: float = 0.30,
+                                       min_weight: float = 0.04,
+                                       availability_delay_days: int = 30,
+                                       rebalance_months: int = 3,
+                                       rebalance_same_report: bool = False,
+                                       trade_cost_bps: float = 10.0,
+                                       step_months: int = 3,
+                                       max_windows: int = 0,
+                                       local_only: bool = False,
+                                       include_samples: bool = False):
+    """按历史季度披露点时镜像目标基金 US 持仓；研究层，不改今日建议。"""
+    bt_cfg = _backtest_cfg()
+    try:
+        return run_fund_quarterly_mirror_research(
+            bt_cfg,
+            fund_code=str(fund_code or "012922"),
+            total_cap=float(total_cap),
+            monthly=float(monthly),
+            target_benchmark=str(target_benchmark or "012922").upper(),
+            min_years=max(1.0, float(min_years)),
+            start_year=(int(start_year) if int(start_year) > 0 else None),
+            end_year=(int(end_year) if int(end_year) > 0 else None),
+            top_ns=top_ns,
+            weight_modes=weight_modes,
+            safe_weights=safe_weights,
+            core_ratios=core_ratios,
+            max_weight=max(0.05, min(1.0, float(max_weight))),
+            min_weight=max(0.0, min(0.25, float(min_weight))),
+            availability_delay_days=max(0, min(120, int(availability_delay_days))),
+            rebalance_months=max(1, min(12, int(rebalance_months))),
+            rebalance_same_report=bool(rebalance_same_report),
+            trade_cost_bps=max(0.0, min(200.0, float(trade_cost_bps))),
+            step_months=max(1, min(12, int(step_months))),
+            max_windows=max(0, int(max_windows)),
+            local_only=bool(local_only),
+            include_samples=bool(include_samples),
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"季度持仓点时镜像研究失败: {e}"}, status_code=500)
+
+
+@app.get("/api/preference_walkforward")
+def api_preference_walkforward(tickers: str = "", groups: str = "",
+                               total_cap: float = 37000.0,
+                               monthly: float = 3000.0,
+                               target_benchmark: str = "012922",
+                               min_years: float = 3.0,
+                               lookback_years: float = 3.0,
+                               min_history_years: float = 2.0,
+                               safe_weights: str = "0,0.26",
+                               modes: str = "",
+                               step_months: int = 1,
+                               max_windows: int = 0,
+                               local_only: bool = True,
+                               include_samples: bool = False):
+    """点时动态篮子 walk-forward。研究层，不改 state/config/今日建议。"""
+    bt_cfg = _backtest_cfg()
+    if not str(tickers or "").strip() and not str(groups or "").strip():
+        tickers = ",".join(cached_universe(bt_cfg.cache_dir))
+    try:
+        return run_preference_walkforward_research(
+            bt_cfg,
+            tickers=tickers,
+            groups=groups,
+            total_cap=float(total_cap),
+            monthly=float(monthly),
+            target_benchmark=str(target_benchmark or "012922").upper(),
+            min_years=max(1.0, float(min_years)),
+            lookback_years=max(0.5, float(lookback_years)),
+            min_history_years=max(0.5, float(min_history_years)),
+            safe_weights=safe_weights,
+            modes=(modes or None),
+            step_months=max(1, min(12, int(step_months))),
+            max_windows=max(0, int(max_windows)),
+            local_only=bool(local_only),
+            include_samples=bool(include_samples),
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"点时动态篮子回放失败: {e}"}, status_code=500)
+
+
+@app.get("/api/preference_rebalance")
+def api_preference_rebalance(tickers: str = "", groups: str = "",
+                             total_cap: float = 37000.0,
+                             monthly: float = 3000.0,
+                             target_benchmark: str = "012922",
+                             min_years: float = 3.0,
+                             lookback_years: float = 3.0,
+                             min_history_years: float = 2.0,
+                             safe_weights: str = "0,0.26",
+                             modes: str = "",
+                             rebalance_months: str = "6,12",
+                             trade_cost_bps: float = 10.0,
+                             step_months: int = 1,
+                             max_windows: int = 0,
+                             local_only: bool = True,
+                             include_samples: bool = False):
+    """低频主动重选/调仓成本回放。研究层，不改 state/config/今日建议。"""
+    bt_cfg = _backtest_cfg()
+    if not str(tickers or "").strip() and not str(groups or "").strip():
+        tickers = ",".join(cached_universe(bt_cfg.cache_dir))
+    try:
+        return run_preference_rebalance_research(
+            bt_cfg,
+            tickers=tickers,
+            groups=groups,
+            total_cap=float(total_cap),
+            monthly=float(monthly),
+            target_benchmark=str(target_benchmark or "012922").upper(),
+            min_years=max(1.0, float(min_years)),
+            lookback_years=max(0.5, float(lookback_years)),
+            min_history_years=max(0.5, float(min_history_years)),
+            safe_weights=safe_weights,
+            modes=(modes or None),
+            rebalance_months=rebalance_months,
+            trade_cost_bps=max(0.0, float(trade_cost_bps)),
+            step_months=max(1, min(12, int(step_months))),
+            max_windows=max(0, int(max_windows)),
+            local_only=bool(local_only),
+            include_samples=bool(include_samples),
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"低频主动重选回放失败: {e}"}, status_code=500)
+
+
+@app.get("/api/preference_live_gate")
+def api_preference_live_gate(tickers: str = "", groups: str = "",
+                             total_cap: float = 37000.0,
+                             monthly: float = 3000.0,
+                             target_benchmark: str = "012922",
+                             min_years: float = 3.0,
+                             safe_weights: str = "0,0.14,0.26",
+                             include_voltarget: bool = False,
+                             voltarget_top_k: int = 4,
+                             local_only: bool = True,
+                             include_research: bool = False):
+    """Read-only gate before any dynamic basket can touch live advice."""
+    bt_cfg = _backtest_cfg()
+    if not str(tickers or "").strip() and not str(groups or "").strip():
+        tickers = ",".join(cached_universe(bt_cfg.cache_dir))
+    try:
+        return run_preference_live_gate(
+            bt_cfg,
+            tickers=tickers,
+            groups=groups,
+            total_cap=float(total_cap),
+            monthly=float(monthly),
+            target_benchmark=str(target_benchmark or "012922").upper(),
+            min_years=max(1.0, float(min_years)),
+            safe_weights=safe_weights,
+            include_voltarget=bool(include_voltarget),
+            voltarget_top_k=max(0, min(12, int(voltarget_top_k))),
+            local_only=bool(local_only),
+            market=_admission_market(bt_cfg),
+            include_research=bool(include_research),
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"动态篮子实盘准入预检失败: {e}"}, status_code=500)
+
+
+def _source_result(label: str, fn):
+    try:
+        res = fn()
+    except Exception as e:
+        return None, f"{label}: {e}"
+    if isinstance(res, JSONResponse):
+        try:
+            text = res.body.decode("utf-8", errors="replace")
+        except Exception:
+            text = repr(res)
+        return None, f"{label}: {text}"
+    return res, None
+
+
+@app.get("/api/research_candidates")
+def api_research_candidates(tickers: str = "", groups: str = "",
+                            monthly: float = 3000.0,
+                            total_cap: float = 37000.0,
+                            target_benchmark: str = "012922",
+                            min_years: float = 3.0,
+                            compute: bool = False,
+                            include_dynamic: bool = True,
+                            include_heavy: bool = False,
+                            include_voltarget: bool = True,
+                            local_only: bool = True):
+    """只读配置候选库/观察项汇总；不写 config/state，不接入今日建议。"""
+    bt_cfg = _backtest_cfg()
+    key = (
+        round(float(monthly), 2), round(float(total_cap), 2),
+        str(target_benchmark or "012922").upper(), round(float(min_years), 2),
+        bool(compute), bool(include_dynamic), bool(include_heavy), bool(include_voltarget),
+        bool(local_only), str(tickers or ""), str(groups or ""), _state_mtime_ns(),
+    )
+    if key in _research_candidate_cache:
+        return _research_candidate_cache[key]
+
+    market = _admission_market(bt_cfg)
+    if not compute:
+        out = build_static_candidate_registry(
+            market=market,
+            as_of=date.today().isoformat(),
+        )
+        _research_candidate_cache[key] = out
+        return out
+
+    source_errors: dict[str, str] = {}
+
+    param_scan, err = _source_result("param_scan", lambda: api_param_scan(monthly=monthly))
+    if err:
+        source_errors["param_scan"] = err
+    injection_ab, err = _source_result("injection_ab", lambda: api_injection_ab(monthly=monthly))
+    if err:
+        source_errors["injection_ab"] = err
+    tactical_ab, err = _source_result("tactical_ab", lambda: api_tactical_ab(monthly=monthly))
+    if err:
+        source_errors["tactical_ab"] = err
+
+    preference_gate = None
+    if include_dynamic:
+        preference_gate, err = _source_result(
+            "preference_live_gate",
+            lambda: api_preference_live_gate(
+                tickers=tickers, groups=groups, total_cap=total_cap, monthly=monthly,
+                target_benchmark=target_benchmark, min_years=min_years,
+                safe_weights="0,0.14,0.26", include_voltarget=include_voltarget,
+                local_only=local_only, include_research=False,
+            ),
+        )
+        if err:
+            source_errors["preference_live_gate"] = err
+
+    preference_walkforward = preference_rebalance = fund_mirror = fund_quarterly = None
+    if include_heavy:
+        preference_walkforward, err = _source_result(
+            "preference_walkforward",
+            lambda: api_preference_walkforward(
+                tickers=tickers, groups=groups, total_cap=total_cap, monthly=monthly,
+                target_benchmark=target_benchmark, min_years=min_years,
+                safe_weights="0,0.26", local_only=local_only, include_samples=False,
+            ),
+        )
+        if err:
+            source_errors["preference_walkforward"] = err
+        preference_rebalance, err = _source_result(
+            "preference_rebalance",
+            lambda: api_preference_rebalance(
+                tickers=tickers, groups=groups, total_cap=total_cap, monthly=monthly,
+                target_benchmark=target_benchmark, min_years=min_years,
+                safe_weights="0,0.26", local_only=local_only, include_samples=False,
+            ),
+        )
+        if err:
+            source_errors["preference_rebalance"] = err
+        fund_mirror, err = _source_result(
+            "fund_mirror_research",
+            lambda: api_fund_mirror_research(
+                fund_code=target_benchmark, total_cap=total_cap, monthly=monthly,
+                target_benchmark=target_benchmark, min_years=min_years,
+                top_n=10, local_only=local_only,
+            ),
+        )
+        if err:
+            source_errors["fund_mirror_research"] = err
+        fund_quarterly, err = _source_result(
+            "fund_quarterly_mirror_research",
+            lambda: api_fund_quarterly_mirror_research(
+                fund_code=target_benchmark, total_cap=total_cap, monthly=monthly,
+                target_benchmark=target_benchmark, min_years=min_years,
+                local_only=local_only, include_samples=False,
+            ),
+        )
+        if err:
+            source_errors["fund_quarterly_mirror_research"] = err
+
+    out = build_candidate_registry(
+        preference_gate=preference_gate,
+        tactical_ab=tactical_ab,
+        param_scan=param_scan,
+        injection_ab=injection_ab,
+        preference_walkforward=preference_walkforward,
+        preference_rebalance=preference_rebalance,
+        fund_mirror=fund_mirror,
+        fund_quarterly=fund_quarterly,
+        source_errors=source_errors,
+        market=market,
+        include_heavy=include_heavy,
+        as_of=date.today().isoformat(),
+    )
+    _research_candidate_cache[key] = out
     return out
 
 
@@ -1356,12 +2413,23 @@ def _state_payload(pf):
     thr = cfg.portfolio.tiers.thresholds
     syms = []
     tot_mv = tot_res = tot_pending = tot_cost = tot_injected = 0.0
+    real_mv = real_cost = 0.0
+    book_only_mv = book_only_cost = 0.0
     for sig in signals:
         st = preview.symbols[sig.ticker]
         info = ((price_meta or {}).get("items") or {}).get(sig.ticker, {})
         tactical = _tactical_order(sig.ticker, st, sig.last_close, cfg, market, info)
         advice = _symbol_advice(sig, tactical)
         avg_price = (st.cost_basis / st.shares) if st.shares > 0 else None
+        is_real_position = bool(st.entry_date)
+        real_market_value = sig.market_value if is_real_position else 0.0
+        real_cost_basis = st.cost_basis if is_real_position else 0.0
+        if is_real_position:
+            real_mv += real_market_value
+            real_cost += real_cost_basis
+        else:
+            book_only_mv += sig.market_value
+            book_only_cost += st.cost_basis
         tot_mv += sig.market_value
         tot_res += sig.reserve_cash
         tot_pending += st.pending_core_cash
@@ -1373,10 +2441,20 @@ def _state_payload(pf):
             **info,
             "ticker": sig.ticker, "last_close": round(sig.last_close, 2),
             "H": round(sig.H, 2), "drawdown": round(sig.drawdown, 4),
+            "position_status": "real" if is_real_position else "book_only",
+            "is_real_position": is_real_position,
             "reserve": round(sig.reserve_cash, 0), "shares": round(sig.shares, 3),
+            "book_shares": round(sig.shares, 3),
+            "real_shares": round(sig.shares, 3) if is_real_position else 0.0,
             "pending_core_cash": round(st.pending_core_cash, 0),
             "market_value": round(sig.market_value, 0), "cost_basis": round(st.cost_basis, 0),
+            "book_market_value": round(sig.market_value, 0),
+            "book_cost_basis": round(st.cost_basis, 0),
+            "real_market_value": round(real_market_value, 0),
+            "real_cost_basis": round(real_cost_basis, 0),
             "avg_price": round(avg_price, 4) if avg_price is not None else None,
+            "book_avg_price": round(avg_price, 4) if avg_price is not None else None,
+            "real_avg_price": round(avg_price, 4) if is_real_position and avg_price is not None else None,
             "entry_date": st.entry_date,
             "entry_price": round(st.entry_price, 4) if st.entry_price else None,
             "cap_total": round(st.cap_total, 0), "cum_injected": round(st.cum_injected, 0),
@@ -1397,6 +2475,8 @@ def _state_payload(pf):
                         "limit": round(e.limit_price, 2), "amount": round(e.amount, 0),
                         "shares": round(e.shares, 3)} for e in sig.ladder],
             "pnl": round(sig.market_value - st.cost_basis, 0),
+            "book_pnl": round(sig.market_value - st.cost_basis, 0),
+            "real_pnl": round(real_market_value - real_cost_basis, 0),
         })
     safe_value = (pf.safe_shares * safe_px) if safe_px else 0.0
     total_value = tot_mv + tot_res + tot_pending + safe_value
@@ -1414,6 +2494,9 @@ def _state_payload(pf):
                 "weight": round(safe_value / total_value, 4) if total_value > 0 else 0.0,
                 "exec_band": round(getattr(CFG.safe_leg, "exec_band", 0.0), 4)}
     defensive = _defensive_payload(dfn)
+    execution = _execution_payload(syms, defensive, price_meta)
+    config_health = _config_health_payload(cfg, safe, market, execution)
+    account_readiness = _account_readiness_payload(syms, safe)
     return {
         "initialized": True, "symbols": syms, "safe": safe, "market": market,
         "price_meta": price_meta,
@@ -1422,7 +2505,20 @@ def _state_payload(pf):
         "preview_day_index": preview.day_index,
         "needs_daily_update": pf.last_run_date != date.today().isoformat(),
         "defensive": defensive,
-        "execution": _execution_payload(syms, defensive, price_meta),
+        "execution": execution,
+        "config_health": config_health,
+        "account_readiness": account_readiness,
+        "explanation": {
+            "summary": execution.get("summary"),
+            "market_state": {
+                "label": (market or {}).get("label"),
+                "regime": (market or {}).get("regime"),
+                "rule": (market or {}).get("rule"),
+            },
+            "today_advice_impact": "今日建议只来自当前实盘配置；研究候选不改变动作。",
+            "why_current_config": config_health.get("summary"),
+            "research_boundary": "研究层必须先通过 A/B、多起点、点时验证、当前配置对照和今日 diff。",
+        },
         "totals": {"market_value": round(tot_mv, 0), "reserve": round(tot_res, 0),
                    "pending_core_cash": round(tot_pending, 0),
                    "cost_basis": round(tot_cost, 0),
@@ -1430,7 +2526,14 @@ def _state_payload(pf):
                    "basket_value": round(tot_mv + tot_res + tot_pending, 0),
                    "safe_value": round(safe_value, 0),
                    "total_value": round(total_value, 0),
-                   "pnl": round(tot_mv - tot_cost, 0)},
+                   "pnl": round(tot_mv - tot_cost, 0),
+                   "real_market_value": round(real_mv, 0),
+                   "real_cost_basis": round(real_cost, 0),
+                   "real_pnl": round(real_mv - real_cost, 0),
+                   "real_total_value": round(real_mv + safe_value, 0),
+                   "book_only_market_value": round(book_only_mv, 0),
+                   "book_only_cost_basis": round(book_only_cost, 0),
+                   "book_only_pnl": round(book_only_mv - book_only_cost, 0)},
     }
 
 
@@ -1445,6 +2548,17 @@ def api_state():
         return _state_payload(pf)
     except Exception as e:
         return JSONResponse({"error": f"取最新价失败: {e}"}, status_code=500)
+
+
+@app.get("/api/tactical_quality")
+def api_tactical_quality():
+    pf = load_portfolio(resolve(STATE_PATH))
+    if pf is None:
+        return {"initialized": False, "summary": {"verdict": "尚未建仓，暂无战术成交质量。"}}
+    try:
+        return {"initialized": True, **_tactical_quality_payload(pf, _cfg_for_portfolio(pf))}
+    except Exception as e:
+        return JSONResponse({"error": f"战术成交质量评估失败: {e}"}, status_code=500)
 
 
 @app.post("/api/daily_update")
@@ -1656,7 +2770,7 @@ def api_add_symbol(body: dict = Body(...)):
     if ticker in pf.symbols:
         return JSONResponse({"error": f"{ticker} 已在当前持仓中，请用校准持仓或加本金"}, status_code=400)
     try:
-        h = _history_high_since(ticker, buy_date)
+        h, h_meta = _initial_high_since_buy(ticker, buy_date, buy_price)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -1683,7 +2797,7 @@ def api_add_symbol(body: dict = Body(...)):
     audit_log("add_symbol",
               {"ticker": ticker, "buy_date": st.entry_date, "buy_price": buy_price,
                "shares": shares, "reserve_cash": reserve_cash,
-               "cap_total": round(cap_total, 2), "H": round(h, 4)},
+               "cap_total": round(cap_total, 2), "H": round(h, 4), "H_meta": h_meta},
               "前端新增持仓")
     return _state_payload(pf)
 
@@ -1765,7 +2879,7 @@ def api_sync_trades(body: dict = Body(...)):
             buy_date = g.get("first_date") or (source.entry_date if source else None)
             if not buy_date:
                 return JSONResponse({"error": f"{ticker} 缺少买入日期，无法重算 H"}, status_code=400)
-            h = _history_high_since(ticker, buy_date)
+            h, h_meta = _initial_high_since_buy(ticker, buy_date, float(g["avg_price"]))
             old_snapshot = source.to_dict() if source else None
 
             if source is None:
@@ -1800,6 +2914,7 @@ def api_sync_trades(body: dict = Body(...)):
                 "reserve_cash": round(st.reserve_cash, 2),
                 "cap_total": round(st.cap_total, 2),
                 "H": round(st.H, 4),
+                "H_meta": h_meta,
                 "first_date": st.entry_date,
                 "old": old_snapshot,
             })
@@ -1841,7 +2956,7 @@ def api_set_position(body: dict = Body(...)):
     if buy_price <= 0 or shares <= 0:
         return JSONResponse({"error": "股数和买入价必须 > 0"}, status_code=400)
     try:
-        h = _history_high_since(ticker, buy_date)
+        h, h_meta = _initial_high_since_buy(ticker, buy_date, buy_price)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
@@ -1867,9 +2982,12 @@ def api_set_position(body: dict = Body(...)):
                "shares": shares, "sync_cap": sync_cap, "old": old,
                "new": {"cost_basis": round(st.cost_basis, 2), "H": round(st.H, 4),
                        "cap_total": round(st.cap_total, 2),
-                       "cum_injected": round(st.cum_injected, 2)}},
+                       "cum_injected": round(st.cum_injected, 2)},
+               "H_meta": h_meta},
               "前端校准当前持仓")
-    return _state_payload(pf)
+    payload = _state_payload(pf)
+    payload["set_position"] = {"ticker": ticker, "H_meta": h_meta}
+    return payload
 
 
 @app.post("/api/set_cost")

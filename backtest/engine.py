@@ -17,6 +17,7 @@ from core import engine as eng
 from core.config import Symbol
 from core.state import CashFlow, Portfolio, SymbolState
 from data.fetch import get_bars, DataError
+from data.funds import get_fund_nav
 from backtest import metrics as M
 from backtest.benchmarks import run_benchmark
 
@@ -323,14 +324,68 @@ def _run_single_asset_fund(grid, close, flows):
     return nav, equity
 
 
+def _is_fund_code(ticker: str) -> bool:
+    tk = str(ticker or "").strip()
+    return len(tk) == 6 and tk.isdigit()
+
+
+def _benchmark_label(ticker: str) -> str:
+    tk = str(ticker or "").upper().strip()
+    if tk == "QQQ":
+        return "纳指100(QQQ)"
+    if tk == "SPY":
+        return "标普500(SPY)"
+    if _is_fund_code(tk):
+        return f"{tk}基金"
+    return tk
+
+
 def _fetch_benchmark_close(ticker, cfg, grid):
     """抓外部基准标的日线、对齐到 grid 收盘价数组(ffill/bfill)。返回 (close_arr, meta)。
     失败由调用方捕获(基准缺失不应让整份回测崩)。"""
-    df, meta = get_bars(ticker, cfg)
+    tk = str(ticker).upper().strip()
+    if _is_fund_code(tk):
+        df, meta = get_fund_nav(tk, cfg)
+        s = df["Close"].copy()
+        s.index = pd.to_datetime(s.index)
+        # 基金成立前不 bfill，避免把未来第一天净值带回成立前窗口。
+        aligned = s.reindex(pd.to_datetime(grid)).ffill()
+        return aligned.to_numpy(dtype=float), meta
+    df, meta = get_bars(tk, cfg)
     s = df["Close"].copy()
     s.index = pd.to_datetime(s.index)
     aligned = s.reindex(pd.to_datetime(grid)).ffill().bfill()
     return aligned.to_numpy(dtype=float), meta
+
+
+def _first_valid_price_i(close) -> int | None:
+    arr = np.asarray(close, dtype=float)
+    ok = np.isfinite(arr) & (arr > 0)
+    if not bool(ok.any()):
+        return None
+    return int(np.argmax(ok))
+
+
+def _benchmark_run_inputs(close, flows):
+    """Prepare benchmark close/flows without pre-inception look-ahead.
+
+    If a benchmark starts after the strategy grid, earlier contributions are
+    rolled into the benchmark's first available day.  Display callers can hide
+    the pre-inception flat portion with the returned start index.
+    """
+    arr = np.asarray(close, dtype=float).copy()
+    start_i = _first_valid_price_i(arr)
+    if start_i is None:
+        raise DataError("基准没有可用正价格")
+    if start_i == 0:
+        return arr, list(flows), start_i
+    prior = sum(float(a) for i, a in flows if i < start_i)
+    adjusted = []
+    if prior > 0:
+        adjusted.append((start_i, prior))
+    adjusted.extend((i, a) for i, a in flows if i >= start_i)
+    arr[:start_i] = arr[start_i]
+    return arr, adjusted, start_i
 
 
 def _drawdown_curve(nav) -> np.ndarray:
@@ -443,14 +498,77 @@ def _tactical_ab_specs(cfg):
             "bull_ratio": 0.22, "neutral_ratio": 0.10, "bear_ratio": 0.0,
             "min_discount": float(tc.min_discount_pct), "cooldown": 5,
         },
+        {
+            "mode": "prev_close_1pct",
+            "label": "前收折价 · 1%",
+            "operation": "不追 MA，只在前收下方约1%才挂浅层战术单；检验纯前收锚点是否改善成交质量。",
+            "bull_anchor": "prev_close", "neutral_anchor": "ma20_atr", "bear_anchor": "ma50_atr",
+            "bull_atr": 0.0, "neutral_atr": 1.2, "bear_atr": 2.0,
+            "bull_ratio": 0.16, "neutral_ratio": 0.08, "bear_ratio": 0.0,
+            "min_discount": max(float(tc.min_discount_pct), 0.010), "cooldown": 5,
+        },
+        {
+            "mode": "open_gap",
+            "label": "开盘锚点 · 缺口回补",
+            "operation": "开盘后再定当日固定限价：牛市接受低开即买，震荡要求低于开盘且有ATR缓冲。",
+            "bull_anchor": "open", "neutral_anchor": "open_atr", "bear_anchor": "ma50_atr",
+            "bull_atr": 0.0, "neutral_atr": 0.8, "bear_atr": 2.0,
+            "bull_ratio": 0.18, "neutral_ratio": 0.08, "bear_ratio": 0.0,
+            "min_discount": float(tc.min_discount_pct), "cooldown": 5,
+        },
+        {
+            "mode": "quality_pullback",
+            "label": "质量回踩 · 20日缓冲",
+            "operation": "牛市不直接追5日线，要求接近20日线或0.8ATR回落；用更少成交换更高折价质量。",
+            "bull_anchor": "ma20_atr", "neutral_anchor": "ma20_atr", "bear_anchor": "ma50_atr",
+            "bull_atr": 0.8, "neutral_atr": 1.5, "bear_atr": 2.0,
+            "bull_ratio": 0.14, "neutral_ratio": 0.07, "bear_ratio": 0.0,
+            "min_discount": max(float(tc.min_discount_pct), 0.010), "cooldown": 15,
+        },
+        {
+            "mode": "prev_close_2pct",
+            "label": "前收折价 · 2%",
+            "operation": "牛市也至少等前收下方2%才动用浅层战术单，用于测试减少追价后的成交质量。",
+            "bull_anchor": "prev_close", "neutral_anchor": "ma20_atr", "bear_anchor": "ma50_atr",
+            "bull_atr": 0.0, "neutral_atr": 1.4, "bear_atr": 2.0,
+            "bull_ratio": 0.14, "neutral_ratio": 0.07, "bear_ratio": 0.0,
+            "min_discount": max(float(tc.min_discount_pct), 0.020), "cooldown": 10,
+        },
+        {
+            "mode": "ma50_light",
+            "label": "耐心50日 · 轻仓",
+            "operation": "仍等50日线/深ATR，但降低单次动用比例，检验少量高质量成交能否改善回撤拖累。",
+            "bull_anchor": "ma50_atr", "neutral_anchor": "ma50_atr", "bear_anchor": "ma50_atr",
+            "bull_atr": 1.1, "neutral_atr": 1.7, "bear_atr": 2.2,
+            "bull_ratio": 0.16, "neutral_ratio": 0.10, "bear_ratio": 0.0,
+            "min_discount": max(float(tc.min_discount_pct), 0.012), "cooldown": 20,
+        },
+        {
+            "mode": "bull_ma5_neutral20_cd10",
+            "label": "牛市5日 · 震荡20日",
+            "operation": "牛市保持较快5日回踩，震荡切到20日/ATR缓冲，并加10日冷却，测试强趋势与震荡的折中。",
+            "bull_anchor": "ma5_atr", "neutral_anchor": "ma20_atr", "bear_anchor": "ma50_atr",
+            "bull_atr": 0.6, "neutral_atr": 1.2, "bear_atr": 2.0,
+            "bull_ratio": 0.18, "neutral_ratio": 0.08, "bear_ratio": 0.0,
+            "min_discount": max(float(tc.min_discount_pct), 0.006), "cooldown": 10,
+        },
     ]
 
 
 def _tactical_anchor(style: str, basis: float, ma5: float, ma20: float,
-                     ma50: float, atr: float, atr_mult: float) -> float | None:
+                     ma50: float, atr: float, atr_mult: float,
+                     open_price: float | None = None) -> float | None:
     vals = [basis, atr]
     if any(v is None or not np.isfinite(v) or v <= 0 for v in vals):
         return None
+    if style == "prev_close":
+        return float(basis)
+    if style in {"open", "open_atr"}:
+        if open_price is None or not np.isfinite(open_price) or open_price <= 0:
+            return None
+        if style == "open":
+            return float(open_price)
+        return min(float(open_price), basis - atr_mult * atr)
     if style == "current":
         xs = [ma5, ma20, basis - atr_mult * atr]
         xs = [float(x) for x in xs if x is not None and np.isfinite(x) and x > 0]
@@ -472,20 +590,21 @@ def _tactical_anchor(style: str, basis: float, ma5: float, ma20: float,
 
 def _tactical_limit_for_spec(spec: dict, basis: float, ma5: float, ma20: float,
                              ma50: float, ma200: float, atr: float,
-                             stock_regime: str, market_regime: str | None):
+                             stock_regime: str, market_regime: str | None,
+                             open_price: float | None = None):
     regime = _worse_regime(stock_regime, market_regime)
     if regime == "BULL":
         ratio = float(spec["bull_ratio"])
         anchor = _tactical_anchor(spec["bull_anchor"], basis, ma5, ma20, ma50, atr,
-                                  float(spec["bull_atr"]))
+                                  float(spec["bull_atr"]), open_price)
     elif regime == "NEUTRAL":
         ratio = float(spec["neutral_ratio"])
         anchor = _tactical_anchor(spec["neutral_anchor"], basis, ma5, ma20, ma50, atr,
-                                  float(spec["neutral_atr"]))
+                                  float(spec["neutral_atr"]), open_price)
     else:
         ratio = float(spec["bear_ratio"])
         anchor = _tactical_anchor(spec["bear_anchor"], basis, ma5, ma20, ma50, atr,
-                                  float(spec["bear_atr"]))
+                                  float(spec["bear_atr"]), open_price)
     if ratio <= 0 or anchor is None or not np.isfinite(anchor) or anchor <= 0:
         return None, 0.0, regime
     cap = basis * (1.0 - float(spec["min_discount"]))
@@ -611,7 +730,8 @@ def _run_strategy_fund_tactical(grid, panels, listing_i, last_i, caps, monthly, 
                     mreg = str(market_regime[i])
                     mreg = None if mreg == "UNKNOWN" else mreg
                     limit, ratio, regime = _tactical_limit_for_spec(
-                        spec, basis, ma5, ma20, ma50, ma200, atr, stock_regime, mreg)
+                        spec, basis, ma5, ma20, ma50, ma200, atr, stock_regime, mreg,
+                        open_price=o)
                     if limit is not None and lo <= limit:
                         fill_price = min(o, limit) if o > 0 else limit
                         amount = min(st.reserve_cash, st.reserve_cash * ratio)
@@ -1432,10 +1552,9 @@ def run_crash_sleeve_ab(cfg, monthly: float = 0.0, *,
 
     benchmark_close = {}
     benchmark_errors = {}
-    bench_label = {"QQQ": "纳指100(QQQ)", "SPY": "标普500(SPY)"}
     for ticker in benchmark_tickers:
         tk = str(ticker).upper()
-        label = bench_label.get(tk, tk)
+        label = _benchmark_label(tk)
         try:
             close, meta = _fetch_benchmark_close(tk, cfg, grid)
             benchmark_close[label] = {"close": close, "source": getattr(meta, "source", "?")}
@@ -2306,6 +2425,9 @@ def run_tactical_overlay_ab(cfg, monthly: float = 0.0, *,
             rolling_samples[spec["label"]].append({
                 "xirr_vs_baseline": xdiff,
                 "dd_relief_vs_baseline": ddiff,
+                "xirr": m2.get("xirr"),
+                "maxdd": m2.get("maxdd"),
+                "fills": stats2.get("fills", 0),
                 "candidate": bool(xdiff is not None and xdiff >= 0
                                   and ddiff is not None and ddiff >= -0.001
                                   and stats2.get("fills", 0) > 0),
@@ -2314,6 +2436,80 @@ def run_tactical_overlay_ab(cfg, monthly: float = 0.0, *,
     rolling = {label: rollup(samples) for label, samples in rolling_samples.items()}
     for r in rows:
         r["rolling"] = rolling.get(r["label"])
+
+    current_row = next((r for r in rows if r.get("mode") == "current"), None)
+    current_samples = rolling_samples.get(current_row["label"], []) if current_row else []
+
+    def rollup_vs_current(samples, base_samples):
+        xs = []
+        dds = []
+        candidates = []
+        for s, b in zip(samples, base_samples):
+            sx = s.get("xirr")
+            bx = b.get("xirr")
+            sd = s.get("maxdd")
+            bd = b.get("maxdd")
+            xdiff = (sx - bx) if sx is not None and bx is not None else None
+            ddiff = (bd - sd) if sd is not None and bd is not None else None
+            xs.append(xdiff)
+            dds.append(ddiff)
+            candidates.append(bool(
+                xdiff is not None and xdiff >= 0
+                and ddiff is not None and ddiff >= -0.001
+                and s.get("fills", 0) > 0
+            ))
+        valid_x = [v for v in xs if v is not None and np.isfinite(v)]
+        valid_dd = [v for v in dds if v is not None and np.isfinite(v)]
+        windows = min(len(samples), len(base_samples))
+        candidate_rate = (sum(1 for v in candidates if v) / windows) if windows else None
+        win_rate = (sum(1 for v in valid_x if v >= 0) / len(valid_x)) if valid_x else None
+        dd_win_rate = (sum(1 for v in valid_dd if v >= 0) / len(valid_dd)) if valid_dd else None
+        return {
+            "windows": windows,
+            "win_rate": win_rate,
+            "dd_win_rate": dd_win_rate,
+            "candidate_rate": candidate_rate,
+            "xirr_vs_current": {"p10": q(xs, 0.10), "p50": q(xs, 0.50), "p90": q(xs, 0.90)},
+            "dd_relief_vs_current": {"p10": q(dds, 0.10), "p50": q(dds, 0.50), "p90": q(dds, 0.90)},
+        }
+
+    current_metrics = (current_row or {}).get("metrics") or {}
+    for r in rows:
+        m = r.get("metrics") or {}
+        xcur = (m.get("xirr") - current_metrics.get("xirr")
+                if m.get("xirr") is not None and current_metrics.get("xirr") is not None else None)
+        ddcur = (current_metrics.get("maxdd") - m.get("maxdd")
+                 if m.get("maxdd") is not None and current_metrics.get("maxdd") is not None else None)
+        r["xirr_vs_current_tactical"] = xcur
+        r["dd_relief_vs_current_tactical"] = ddcur
+        r["rolling_vs_current"] = rollup_vs_current(
+            rolling_samples.get(r["label"], []), current_samples) if current_samples else None
+
+        rv = r.get("rolling_vs_current") or {}
+        rx = (rv.get("xirr_vs_current") or {}).get("p50")
+        rd = (rv.get("dd_relief_vs_current") or {}).get("p50")
+        full_ok = xcur is not None and xcur >= 0 and ddcur is not None and ddcur >= -0.001
+        rolling_ok = (rv.get("candidate_rate") is not None and rv.get("candidate_rate") >= 0.50
+                      and rx is not None and rx >= 0 and rd is not None and rd >= -0.001)
+        if r.get("mode") == "current":
+            stage = "current"
+            verdict2 = "当前实盘配置"
+        elif full_ok and rolling_ok:
+            stage = "candidate"
+            verdict2 = "配置候选：可进入人工替换评审"
+        elif (xcur is not None and xcur > 0) or (rv.get("win_rate") is not None and rv.get("win_rate") >= 0.60):
+            stage = "watch"
+            verdict2 = "配置观察：收益有进步但滚动/回撤不足"
+        elif (ddcur is not None and ddcur > 0) or (rv.get("dd_win_rate") is not None and rv.get("dd_win_rate") >= 0.60):
+            stage = "watch"
+            verdict2 = "配置观察：回撤更浅但收益成本待评估"
+        else:
+            stage = "reject"
+            verdict2 = "不替换当前配置"
+        r["promotion_stage"] = stage
+        r["promotion_verdict"] = verdict2
+        r["promotion_note"] = "仅进入配置评审，不自动写 config 或今日建议。"
+
     rolling_candidates = [label for label, item in rolling.items()
                           if item and item.get("candidate_rate") is not None
                           and item["candidate_rate"] >= 0.50]
@@ -2324,6 +2520,14 @@ def run_tactical_overlay_ab(cfg, monthly: float = 0.0, *,
         key=lambda r: ((r["xirr_vs_baseline"] or -999)
                        + min(0.0, r["dd_relief_vs_baseline"] or 0.0) * 0.5)
     ) if rows else None
+    promotion_candidates = [r for r in rows if r.get("promotion_stage") == "candidate"]
+    promotion_watch = [r for r in rows if r.get("promotion_stage") == "watch"]
+    best_promotion = max(
+        [r for r in rows if r.get("mode") != "current"],
+        key=lambda r: ((r.get("xirr_vs_current_tactical") or -999)
+                       + min(0.0, r.get("dd_relief_vs_current_tactical") or 0.0) * 0.5
+                       + (((r.get("rolling_vs_current") or {}).get("xirr_vs_current") or {}).get("p50") or -9))
+    ) if any(r.get("mode") != "current" for r in rows) else None
     return {"grid": grid, "coverage": coverage, "dropped": dropped,
             "contributed": contributed,
             "baselines": {
@@ -2338,10 +2542,13 @@ def run_tactical_overlay_ab(cfg, monthly: float = 0.0, *,
                         "rolling_step_months": int(rolling_step_months),
                         "best_xirr": best_xirr["label"] if best_xirr else None,
                         "best_score": best_score["label"] if best_score else None,
+                        "promotion_candidate_count": len(promotion_candidates),
+                        "promotion_watch_count": len(promotion_watch),
+                        "best_promotion": best_promotion["label"] if best_promotion else None,
                         "safe_weight": safe_weight,
                         "status": "research_only",
                         "signal": "前收/日线锚点 + MA/ATR 固定限价；盘中价只判断是否触发。",
-                        "execution_note": "当前仍为研究验证；通过滚动验证前不自动改 config 或今日建议。"}}
+                        "execution_note": "当前仍为研究验证；替换当前 config 需同时通过 vs当前配置的全程、滚动和今日建议差异检查。"}}
 
 
 # ===========================================================================
@@ -2488,6 +2695,7 @@ def run_nav_panel(cfg, monthly: float = 0.0, *,
                   rebal_days: int = 21,
                   rebal_band: float = 0.0,
                   benchmark_tickers=("QQQ", "SPY"),
+                  baseline_ticker: str = "QQQ",
                   skip_missing: bool = True,
                   strict: bool = False):
     """Dashboard 专用：输出单位 NAV 曲线与同一现金流下的 XIRR/终值。
@@ -2515,17 +2723,20 @@ def run_nav_panel(cfg, monthly: float = 0.0, *,
     else:
         strategy_nav, strategy_eq, turn, nrb = risk_nav, risk_eq, 0.0, 0
 
-    def metric_block(navc, eqc, invested_curve=None, turnover=0.0, n_rebal=0):
-        cf = [(grid[i].date(), -a) for i, a in flows]
+    def metric_block(navc, eqc, invested_curve=None, turnover=0.0, n_rebal=0,
+                     flows_override=None):
+        used_flows = list(flows_override) if flows_override is not None else flows
+        used_contributed = sum(a for _, a in used_flows)
+        cf = [(grid[i].date(), -a) for i, a in used_flows]
         cf.append((grid[-1].date(), float(eqc[-1])))
         ret = M.returns_from_equity(navc)
         out = {"final": float(eqc[-1]),
-               "mult": float(eqc[-1] / contributed) if contributed else None,
+               "mult": float(eqc[-1] / used_contributed) if used_contributed else None,
                "xirr": M.xirr(cf),
                "maxdd": M.max_drawdown(navc),
                "sharpe": M.sharpe(ret),
                "sortino": M.sortino(ret),
-               "turnover_x": (turnover / contributed) if contributed else None,
+               "turnover_x": (turnover / used_contributed) if used_contributed else None,
                "n_rebal": int(n_rebal)}
         if invested_curve is not None:
             denom = np.where(eqc > 0, eqc, 1)
@@ -2540,24 +2751,36 @@ def run_nav_panel(cfg, monthly: float = 0.0, *,
                    "metrics": metric_block(risk_nav, risk_eq, risk_inv)},
     }
 
-    bench_label = {"QQQ": "纳指100(QQQ)", "SPY": "标普500(SPY)"}
     benchmark_errors = {}
     for ticker in benchmark_tickers:
         tk = str(ticker).upper()
-        label = bench_label.get(tk, tk)
+        label = _benchmark_label(tk)
         try:
             bclose, bmeta = _fetch_benchmark_close(tk, cfg, grid)
-            bnav, beq = _run_single_asset_fund(grid, bclose, flows)
+            run_close, bench_flows, start_i = _benchmark_run_inputs(bclose, flows)
+            bnav, beq = _run_single_asset_fund(grid, run_close, bench_flows)
+            metrics = metric_block(bnav, beq, flows_override=bench_flows)
+            if start_i > 0:
+                metrics["start"] = grid[start_i].strftime("%Y-%m-%d")
+                metrics["availability_note"] = "基准成立前不回填；此前曲线为空。"
+                bnav = bnav.copy()
+                beq = beq.copy()
+                bnav[:start_i] = np.nan
+                beq[:start_i] = np.nan
             curves[label] = {"nav": bnav, "equity": beq,
-                             "metrics": metric_block(bnav, beq),
+                             "metrics": metrics,
                              "source": getattr(bmeta, "source", "?")}
         except Exception as e:
             benchmark_errors[label] = str(e)
 
+    baseline_label = _benchmark_label(baseline_ticker)
+    if baseline_label not in curves:
+        baseline_label = "纳指100(QQQ)" if "纳指100(QQQ)" in curves else strategy_label
+
     return {"grid": grid, "coverage": coverage, "dropped": dropped,
             "contributed": contributed, "curves": curves,
             "strategy_label": strategy_label, "risk_label": "纯棘轮",
-            "baseline_label": "纳指100(QQQ)" if "纳指100(QQQ)" in curves else strategy_label,
+            "baseline_label": baseline_label,
             "safe_weight": safe_weight, "safe_annual": safe_annual,
             "rebal_days": rebal_days, "rebal_band": rebal_band,
             "tier_contrib": {
@@ -2607,19 +2830,18 @@ def run_rolling_start_panel(cfg, monthly: float = 0.0, *,
         if len(grid) - i >= min_len:
             start_idx.append(i)
 
-    bench_label = {"QQQ": "纳指100(QQQ)", "SPY": "标普500(SPY)"}
     benchmark_errors = {}
     benchmark_close = {}
     for ticker in benchmark_tickers:
         tk = str(ticker).upper()
-        label = bench_label.get(tk, tk)
+        label = _benchmark_label(tk)
         try:
             close, meta = _fetch_benchmark_close(tk, cfg, grid)
             benchmark_close[label] = {"close": close, "source": getattr(meta, "source", "?")}
         except Exception as e:
             benchmark_errors[label] = str(e)
 
-    baseline_label = bench_label.get(str(baseline_ticker).upper(), str(baseline_ticker).upper())
+    baseline_label = _benchmark_label(str(baseline_ticker).upper())
     if baseline_label not in benchmark_close and benchmark_close:
         baseline_label = next(iter(benchmark_close.keys()))
 
@@ -2638,6 +2860,11 @@ def run_rolling_start_panel(cfg, monthly: float = 0.0, *,
 
     rows = []
     for si in start_idx:
+        base_item = benchmark_close.get(baseline_label)
+        if base_item is not None:
+            base_px = float(base_item["close"][si])
+            if not np.isfinite(base_px) or base_px <= 0:
+                continue
         grid2 = grid[si:]
         alive = [t for t in panels if last_i[t] >= si and t in caps]
         if not alive:
@@ -2666,6 +2893,9 @@ def run_rolling_start_panel(cfg, monthly: float = 0.0, *,
         strategy = metric_block(grid2, strategy_nav, strategy_eq, flows, contributed, turn, nrb)
         benchmarks = {}
         for label, item in benchmark_close.items():
+            first_px = float(item["close"][si])
+            if not np.isfinite(first_px) or first_px <= 0:
+                continue
             bnav, beq = _run_single_asset_fund(grid2, item["close"][si:], flows)
             benchmarks[label] = metric_block(grid2, bnav, beq, flows, contributed)
             benchmarks[label]["source"] = item["source"]
@@ -2722,6 +2952,172 @@ def run_rolling_start_panel(cfg, monthly: float = 0.0, *,
             "safe_weight": safe_weight, "safe_annual": safe_annual,
             "rebal_days": rebal_days, "rebal_band": rebal_band,
             "benchmark_errors": benchmark_errors}
+
+
+def run_rolling_voltarget_panel(cfg, monthly: float = 0.0, *,
+                                min_years: float = 3.0,
+                                safe_annual: float = 0.04,
+                                target_vol: float = None,
+                                base_w: float = None,
+                                band: float = None,
+                                vol_win: int = None,
+                                exec_band: float = None,
+                                benchmark_tickers=("QQQ", "SPY"),
+                                baseline_ticker: str = "QQQ",
+                                skip_missing: bool = True,
+                                strict: bool = False):
+    """Rolling-start validation for the vol-target defensive overlay.
+
+    This mirrors ``run_rolling_start_panel`` but replaces static W with the
+    existing vol-target lite overlay. It is research-only and uses only prior
+    realized volatility at each date when deriving the daily target safe weight.
+    """
+    d = VOLTARGET_DEFAULTS
+    target_vol = d["target_vol"] if target_vol is None else target_vol
+    base_w = d["base_w"] if base_w is None else base_w
+    band = d["band"] if band is None else band
+    vol_win = d["vol_win"] if vol_win is None else vol_win
+    exec_band = d["exec_band"] if exec_band is None else exec_band
+
+    series, dropped = _fetch_series(cfg, skip_missing, strict)
+    grid, panels, listing_i, last_i, coverage = _build_panels(
+        series, cfg.data.start_date, cfg.data.end_date)
+    caps = {s.ticker: s.cap_total for s in cfg.symbols if s.ticker in panels}
+
+    min_len = max(2, int(float(min_years) * 252))
+    start_idx = []
+    seen_months = set()
+    for i, d0 in enumerate(grid):
+        key = (int(d0.year), int(d0.month))
+        if key in seen_months:
+            continue
+        seen_months.add(key)
+        if len(grid) - i >= min_len:
+            start_idx.append(i)
+
+    benchmark_errors = {}
+    benchmark_close = {}
+    for ticker in benchmark_tickers:
+        tk = str(ticker).upper()
+        label = _benchmark_label(tk)
+        try:
+            close, meta = _fetch_benchmark_close(tk, cfg, grid)
+            benchmark_close[label] = {"close": close, "source": getattr(meta, "source", "?")}
+        except Exception as e:
+            benchmark_errors[label] = str(e)
+
+    baseline_label = _benchmark_label(str(baseline_ticker).upper())
+    if baseline_label not in benchmark_close and benchmark_close:
+        baseline_label = next(iter(benchmark_close.keys()))
+
+    def metric_block(grid2, navc, eqc, flows, contributed, turnover=0.0, n_rebal=0):
+        cf = [(grid2[i].date(), -a) for i, a in flows]
+        cf.append((grid2[-1].date(), float(eqc[-1])))
+        ret = M.returns_from_equity(navc)
+        return {"final": float(eqc[-1]),
+                "mult": float(eqc[-1] / contributed) if contributed else None,
+                "xirr": M.xirr(cf),
+                "maxdd": M.max_drawdown(navc),
+                "sharpe": M.sharpe(ret),
+                "sortino": M.sortino(ret),
+                "turnover_x": (turnover / contributed) if contributed else None,
+                "n_rebal": int(n_rebal)}
+
+    rows = []
+    for si in start_idx:
+        base_item = benchmark_close.get(baseline_label)
+        if base_item is not None:
+            base_px = float(base_item["close"][si])
+            if not np.isfinite(base_px) or base_px <= 0:
+                continue
+        grid2 = grid[si:]
+        alive = [t for t in panels if last_i[t] >= si and t in caps]
+        if not alive:
+            continue
+
+        panels2 = {
+            t: {k: np.asarray(v[si:], dtype=float) for k, v in panels[t].items()}
+            for t in alive
+        }
+        listing2 = {t: max(0, listing_i[t] - si) for t in alive}
+        last2 = {t: last_i[t] - si for t in alive}
+        caps2 = {t: caps[t] for t in alive}
+
+        _, risk_nav, risk_eq, risk_inv, flows = _run_strategy_fund(
+            grid2, panels2, listing2, last2, caps2, monthly, cfg)
+        contributed = sum(a for _, a in flows)
+        if contributed <= 0:
+            continue
+        signal_nav, _ = _run_fullinvest_fund(grid2, panels2, listing2, last2, caps2, monthly)
+        wser = _vol_target_weight_series(signal_nav, target_vol, base_w, band, vol_win)
+        strategy_nav, strategy_eq, _, turn, nrb = _run_defensive_fund(
+            grid2, risk_nav, flows, safe_annual, base_w, 0, exec_band, w_safe_series=wser)
+        strategy = metric_block(grid2, strategy_nav, strategy_eq, flows, contributed, turn, nrb)
+        strategy["avg_safe_weight"] = float(np.mean(wser[1:])) if len(wser) > 1 else float(wser[0])
+
+        benchmarks = {}
+        for label, item in benchmark_close.items():
+            first_px = float(item["close"][si])
+            if not np.isfinite(first_px) or first_px <= 0:
+                continue
+            bnav, beq = _run_single_asset_fund(grid2, item["close"][si:], flows)
+            benchmarks[label] = metric_block(grid2, bnav, beq, flows, contributed)
+            benchmarks[label]["source"] = item["source"]
+
+        baseline = benchmarks.get(baseline_label)
+        excess_xirr = None
+        dd_relief = None
+        if baseline:
+            if strategy["xirr"] is not None and baseline["xirr"] is not None:
+                excess_xirr = strategy["xirr"] - baseline["xirr"]
+            if strategy["maxdd"] is not None and baseline["maxdd"] is not None:
+                dd_relief = baseline["maxdd"] - strategy["maxdd"]
+
+        rows.append({
+            "start": grid2[0].strftime("%Y-%m-%d"),
+            "end": grid2[-1].strftime("%Y-%m-%d"),
+            "years": float((grid2[-1] - grid2[0]).days / 365.25),
+            "strategy": strategy,
+            "benchmarks": benchmarks,
+            "baseline": baseline_label if baseline else None,
+            "excess_xirr": excess_xirr,
+            "dd_relief": dd_relief,
+        })
+
+    def q(vals, p):
+        arr = np.asarray([v for v in vals if v is not None and np.isfinite(v)], dtype=float)
+        return float(np.quantile(arr, p)) if len(arr) else None
+
+    def qs(vals):
+        return {"p10": q(vals, 0.10), "p50": q(vals, 0.50), "p90": q(vals, 0.90)}
+
+    excess = [r["excess_xirr"] for r in rows]
+    relief = [r["dd_relief"] for r in rows]
+    valid_excess = [v for v in excess if v is not None and np.isfinite(v)]
+    valid_relief = [v for v in relief if v is not None and np.isfinite(v)]
+    summary = {
+        "windows": len(rows),
+        "baseline": baseline_label if benchmark_close else None,
+        "min_years": float(min_years),
+        "strategy_xirr": qs([r["strategy"]["xirr"] for r in rows]),
+        "strategy_maxdd": qs([r["strategy"]["maxdd"] for r in rows]),
+        "strategy_mult": qs([r["strategy"]["mult"] for r in rows]),
+        "avg_safe_weight": qs([r["strategy"].get("avg_safe_weight") for r in rows]),
+        "turnover_x": qs([r["strategy"].get("turnover_x") for r in rows]),
+        "n_rebal": qs([r["strategy"].get("n_rebal") for r in rows]),
+        "excess_xirr": qs(excess),
+        "dd_relief": qs(relief),
+        "win_rate": (sum(1 for v in valid_excess if v > 0) / len(valid_excess))
+        if valid_excess else None,
+        "dd_win_rate": (sum(1 for v in valid_relief if v > 0) / len(valid_relief))
+        if valid_relief else None,
+    }
+    return {"coverage": coverage, "dropped": dropped, "rows": rows, "summary": summary,
+            "strategy_label": "策略+vol-target动态防御层",
+            "safe_annual": safe_annual,
+            "benchmark_errors": benchmark_errors,
+            "params": {"target_vol": target_vol, "base_w": base_w, "band": band,
+                       "vol_win": vol_win, "exec_band": exec_band}}
 
 
 # ===========================================================================

@@ -17,11 +17,28 @@
   .header h1 small { font-size: 13px; font-weight: 400; color: #666; }
   .header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .last-updated { font-size: 12px; color: #888; white-space: nowrap; }
+  .page-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: -6px 0 16px; }
+  .page-nav .btn { border-color: #d7dde6; background: #fff; }
+  .page-nav .btn.active { background: #1f2937; border-color: #1f2937; color: #fff; }
+  .page { display: none; }
+  .page.active { display: block; }
 
   /* Cards */
   .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; overflow: hidden; }
   .card-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #eee; font-weight: 600; font-size: 14px; flex-wrap: wrap; gap: 8px; }
   .card-body { padding: 16px; }
+  .brief-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .brief-item { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; background: #fafafa; min-width: 0; }
+  .brief-item .label { color: #666; font-size: 12px; margin-bottom: 3px; }
+  .brief-item .value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .brief-callout { border: 1px solid #fed7aa; background: #fff7ed; color: #7c2d12; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-top: 10px; }
+  .info-strip { border: 1px solid #dbeafe; background: #eff6ff; color: #1e3a8a; border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-top: 10px; }
+  .planner-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+  .planner-controls label { display: flex; flex-direction: column; gap: 4px; color: #555; font-size: 12px; }
+  .guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  .guide-item { border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; background: #fafafa; }
+  .guide-item h4 { font-size: 13px; margin-bottom: 6px; color: #111827; }
+  .guide-item p { color: #475569; font-size: 12px; margin-bottom: 6px; white-space: normal; }
 
   /* Backtest layout */
   .bt-layout { display: flex; gap: 16px; flex-wrap: wrap; }
@@ -60,6 +77,13 @@
   .decision-ok { color: #15803d; font-weight: 600; }
   .decision-warn { color: #b45309; font-weight: 600; }
   .decision-bad { color: #64748b; }
+  .admission-cell { white-space: normal; min-width: 190px; max-width: 280px; color: #475569; }
+  .admission-cell strong { display: block; margin-bottom: 2px; }
+  .admission-cell div { font-size: 11px; color: #64748b; line-height: 1.35; }
+  .admission-eligible strong { color: #15803d; }
+  .admission-candidate strong { color: #0369a1; }
+  .admission-defer strong { color: #b45309; }
+  .admission-show strong { color: #64748b; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -98,6 +122,9 @@
   input:focus, select:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.15); }
   textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.15); outline: none; }
   input.num-input { width: 100px; text-align: right; }
+  input.date-input { width: 136px; }
+  select.compact-select { min-width: 90px; }
+  .form-row label.compact-label { min-width: 36px; }
 
   /* Loading / Error */
   .loading { text-align: center; padding: 32px; color: #999; }
@@ -126,6 +153,18 @@
   .execution-table th, .execution-table td { font-size: 12px; padding: 6px 7px; }
   .execution-table .exec-text { white-space: normal; min-width: 220px; max-width: 520px; color: #444; }
   .exec-note { margin-top: 10px; color: #666; font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
+  body.research-collapsed .research-panel { display: none; }
+  .health-grid, .candidate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+  .health-item, .candidate-item { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; background: #fafafa; min-width: 0; }
+  .health-item .name, .candidate-item .name { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 5px; }
+  .health-item .summary, .candidate-item .summary { color: #475569; font-size: 12px; white-space: normal; }
+  .stage-pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .stage-rejected { background: #f1f5f9; color: #64748b; }
+  .stage-watch { background: #e0f2fe; color: #0369a1; }
+  .stage-config_candidate { background: #fef3c7; color: #b45309; }
+  .stage-live_eligible { background: #dcfce7; color: #15803d; }
+  .candidate-meta { margin-top: 6px; color: #64748b; font-size: 11px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .quality-table th, .quality-table td { font-size: 12px; padding: 6px 7px; }
 
   /* Ladder signals */
   .ladder-grid { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -142,6 +181,10 @@
   .ops-group h4 { font-size: 13px; margin-bottom: 8px; color: #444; }
   .ops-group .form-row { margin-bottom: 6px; }
   .help-text { font-size: 12px; color: #666; margin: 2px 0 8px; }
+  .ops-guide { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .ops-guide-item { border: 1px solid #dbeafe; background: #eff6ff; color: #1e3a8a; border-radius: 6px; padding: 10px 12px; font-size: 12px; }
+  .ops-guide-item strong { display: block; color: #111827; font-size: 13px; margin-bottom: 3px; }
+  .ops-section-title { font-size: 12px; color: #64748b; font-weight: 700; margin: 12px 0 8px; text-transform: uppercase; letter-spacing: .02em; }
 
   /* Status indicator */
   .status-indicator { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
@@ -149,7 +192,7 @@
   .status-warn { color: #d97706; }
 </style>
 </head>
-<body>
+<body class="research-collapsed">
 
 <div class="container" id="app">
   <!-- Header -->
@@ -166,13 +209,125 @@
   <!-- Error area -->
   <div id="errorArea"></div>
 
+  <div class="page-nav" id="pageNav">
+    <button class="btn active" data-page="today" onclick="switchPage('today')">今天怎么做</button>
+    <button class="btn" data-page="account" onclick="switchPage('account')">账户与现金</button>
+    <button class="btn" data-page="research" onclick="switchPage('research')">研究中心</button>
+    <button class="btn" data-page="guide" onclick="switchPage('guide')">说明</button>
+  </div>
+
+  <div class="page active" id="pageToday"></div>
+  <div class="page" id="pageAccount"></div>
+  <div class="page" id="pageResearch"></div>
+  <div class="page" id="pageGuide"></div>
+
+  <!-- Panel: Executive Brief -->
+  <div class="card" id="panelExecutiveBrief">
+    <div class="card-header"><span>今天先看这里</span></div>
+    <div class="card-body" id="briefBody"><div class="loading">加载执行摘要…</div></div>
+  </div>
+
+  <!-- Panel: Buy Plan -->
+  <div class="card" id="panelBuyPlan">
+    <div class="card-header">
+      <span>今日买入计划</span>
+      <span class="last-updated">只读估算 · 只填现金</span>
+    </div>
+    <div class="card-body">
+      <div class="planner-controls">
+        <label>本次可动用现金 $
+          <input type="number" class="num-input" id="plannerCash" value="0" min="0" step="100" oninput="plannerInputChanged()">
+        </label>
+        <button class="btn" onclick="renderBuyPlan(stateData)">按现金重算</button>
+      </div>
+      <div id="buyPlanBody"><div class="loading">加载买入计划…</div></div>
+    </div>
+  </div>
+
+  <!-- Panel: Config Health -->
+  <div class="card" id="panelConfigHealth">
+    <div class="card-header"><span>当前配置健康度</span></div>
+    <div class="card-body" id="healthBody"><div class="loading">加载配置健康度…</div></div>
+  </div>
+
+  <!-- Panel: Research Candidate Summary -->
+  <div class="card" id="panelCandidateSummary">
+    <div class="card-header">
+      <span>候选观察项摘要</span>
+      <div class="form-row">
+        <button class="btn btn-small" id="btnCandidateRefresh" onclick="loadResearchCandidates(false)">刷新摘要</button>
+        <button class="btn btn-small" id="btnCandidateFull" onclick="loadResearchCandidates(true)">完整候选库</button>
+      </div>
+    </div>
+    <div class="card-body" id="candidateBody"><div class="loading">加载候选摘要…</div></div>
+  </div>
+
+  <!-- Panel: Tactical Quality -->
+  <div class="card" id="panelTacticalQuality">
+    <div class="card-header">
+      <span>限价单执行质量</span>
+      <span class="last-updated" id="qualityRange">—</span>
+    </div>
+    <div class="card-body" id="qualityBody"><div class="loading">加载限价单质量…</div></div>
+  </div>
+
+  <!-- Panel: Research Center Switch -->
+  <div class="card" id="panelResearchCenter">
+    <div class="card-header">
+      <span>研究中心</span>
+      <button class="btn btn-small" id="btnResearchToggle" onclick="toggleResearchCenter()">展开</button>
+    </div>
+    <div class="card-body">
+      <div class="bt-note"><span>复杂回测、A/B 和研究表默认折叠；展开后才计算详细面板。</span><span>研究层不改变今日建议。</span></div>
+    </div>
+  </div>
+
+  <!-- Panel: Guide -->
+  <div class="card" id="panelGuide">
+    <div class="card-header"><span>执行说明</span></div>
+    <div class="card-body">
+      <div class="guide-grid">
+        <div class="guide-item">
+          <h4>5/20+ATR</h4>
+          <p>5/20 指 MA5 和 MA20，用来判断个股短中期趋势；ATR 是平均真实波幅，用来给限价留出波动缓冲。</p>
+          <p>它不是“跌 5%/20% 再买”，而是用前一日稳定日线算出今天固定限价，避免盘中追着实时价来回改。</p>
+        </div>
+        <div class="guide-item">
+          <h4>深跌棘轮</h4>
+          <p>深跌档位基于自建仓以来高点 H，当前配置主要是 -25% 和 -45% 两档，负责长期极端回撤时加仓。</p>
+          <p>它天生会错过很多浅回调和 V 型反弹，目标是守住长期纪律，不是捕捉每个短线低点。</p>
+        </div>
+        <div class="guide-item">
+          <h4>黄金坑问题</h4>
+          <p>如果盘中回调很快修复，当前 5/20+ATR 可能因为限价偏深而买不到。这个现象需要用建议快照和未成交机会成本复盘。</p>
+          <p>在完成 A/B、多起点和点时验证前，黄金坑只能先做观察层，不直接替换实盘限价规则。</p>
+        </div>
+        <div class="guide-item">
+          <h4>账户与现金</h4>
+          <p>买入股数必须基于券商真实持仓和真实可用现金。工具里的 reserve_cash 是策略储备配额，不等于券商账户现金。</p>
+          <p>如果真实账户只持有部分标的，请先在“账户与现金”页导入持仓快照或逐只校准，再看买入计划。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Panel 1: Backtest -->
-  <div class="card" id="panelBacktest">
+  <div class="card research-panel" id="panelBacktest">
     <div class="card-header">
       <span>📈 NAV-DD 回测面板</span>
       <div class="form-row">
         <label>每月定投 $</label>
         <input type="number" class="num-input" id="btMonthly" value="3000" min="0" step="500">
+        <label class="compact-label">起始</label>
+        <input type="date" class="date-input" id="btStart" value="2022-01-11">
+        <label class="compact-label">结束</label>
+        <input type="date" class="date-input" id="btEnd">
+        <label class="compact-label">基准</label>
+        <select class="compact-select" id="btBaseline">
+          <option value="012922" selected>012922</option>
+          <option value="QQQ">QQQ</option>
+          <option value="SPY">SPY</option>
+        </select>
         <button class="btn btn-primary" onclick="loadBacktest()">更新</button>
       </div>
     </div>
@@ -189,7 +344,7 @@
   </div>
 
   <!-- Panel 2: Rolling Starts -->
-  <div class="card" id="panelRolling">
+  <div class="card research-panel" id="panelRolling">
     <div class="card-header">
       <span>📉 多起点滚动回测</span>
       <span class="last-updated" id="rollingRange">—</span>
@@ -204,7 +359,7 @@
   </div>
 
   <!-- Panel 4: Trend A/B -->
-  <div class="card" id="panelTrend">
+  <div class="card research-panel" id="panelTrend">
     <div class="card-header">
       <span>🧪 MA 趋势门控 A/B（研究，不直接下单）</span>
       <span class="last-updated" id="trendRange">—</span>
@@ -213,7 +368,7 @@
   </div>
 
   <!-- Panel 5: Crash Sleeve -->
-  <div class="card" id="panelCrashSleeve">
+  <div class="card research-panel" id="panelCrashSleeve">
     <div class="card-header">
       <span>🧯 篮子级崩盘 sleeve A/B（研究，不直接下单）</span>
       <span class="last-updated" id="crashRange">—</span>
@@ -222,7 +377,7 @@
   </div>
 
   <!-- Panel 6: Parameter Scan -->
-  <div class="card" id="panelParamScan">
+  <div class="card research-panel" id="panelParamScan">
     <div class="card-header">
       <span>🎚 当前篮子参数扫描（研究，不直接改配置）</span>
       <span class="last-updated" id="paramRange">—</span>
@@ -231,7 +386,7 @@
   </div>
 
   <!-- Panel 7: Injection Mode A/B -->
-  <div class="card" id="panelInjectionMode">
+  <div class="card research-panel" id="panelInjectionMode">
     <div class="card-header">
       <span>💧 注资模式 A/B（研究，不直接改配置）</span>
       <span class="last-updated" id="injectRange">—</span>
@@ -240,7 +395,7 @@
   </div>
 
   <!-- Panel 8: Tactical Overlay A/B -->
-  <div class="card" id="panelTacticalAb">
+  <div class="card research-panel" id="panelTacticalAb">
     <div class="card-header">
       <span>🎯 战术挂单 A/B（研究，不直接改今日建议）</span>
       <span class="last-updated" id="tacticalRange">—</span>
@@ -259,12 +414,12 @@
 
   <!-- Panel 10: Holdings -->
   <div class="card" id="panelHoldings">
-    <div class="card-header"><span>📋 当前持仓</span></div>
+    <div class="card-header"><span>📋 真实持仓与待建仓</span></div>
     <div class="card-body" id="holdingsBody"><div class="loading">加载持仓数据…</div></div>
   </div>
 
   <!-- Panel 11: Signal Ladder -->
-  <div class="card" id="panelLadder">
+  <div class="card research-panel" id="panelLadder">
     <div class="card-header"><span>🔔 信号阶梯（限价挂单）</span></div>
     <div class="card-body" id="ladderBody"><div class="loading">加载阶梯数据…</div></div>
   </div>
@@ -277,11 +432,28 @@
 
   <!-- Panel 13: Operations -->
   <div class="card" id="panelOps">
-    <div class="card-header"><span>🛠 操作</span></div>
+    <div class="card-header"><span>🛠 账户与记录</span></div>
     <div class="card-body">
+      <div class="ops-guide">
+        <div class="ops-guide-item"><strong>刚买入一只股票</strong>用“记录真实持仓”。填券商当前总股数和成交均价，确认后才会写入 state。</div>
+        <div class="ops-guide-item"><strong>批量同步券商记录</strong>用成交流水或持仓快照。先检查差异，再确认同步。</div>
+        <div class="ops-guide-item"><strong>本金口径</strong>日常只在“今日买入计划”填券商可动用现金；这里不再提供额外加本金入口。</div>
+      </div>
+      <div class="ops-section-title">常用</div>
       <div class="ops-grid">
+        <div class="ops-group">
+          <h4>记录真实持仓</h4>
+          <div class="help-text">用于记录你已经在券商成交的真实仓位。第一次买入 ASML 就填 ASML 的成交日、实际股数、成交均价；以后加仓则填券商显示的总股数和总均价。</div>
+          <div class="form-row"><label>Ticker</label><select id="costTicker"></select></div>
+          <div class="form-row"><label>成交日</label><input type="date" id="costDate"></div>
+          <div class="form-row"><label>总股数</label><input type="number" class="num-input" id="costShares" value="0" min="0" step="0.0001"></div>
+          <div class="form-row"><label>成交均价 $</label><input type="number" class="num-input" id="costPrice" value="0" min="0" step="0.01"></div>
+          <div class="form-row"><label></label><label style="min-width:0"><input type="checkbox" id="costSyncCap" checked> 同步本金权重</label></div>
+          <div class="help-text">确认后：该标的会变成真实持仓，买入日用于重算 H；勾选后回测权重跟随真实成本。盘中当天成交如果日线还没落盘，系统会先用成交价/盘中价临时初始化 H，次日仍可再次校准。</div>
+          <div class="form-row"><button class="btn btn-primary" onclick="doSetPosition()">确认记录真实持仓</button></div>
+        </div>
         <div class="ops-group ops-group-wide">
-          <h4>按券商成交记录同步持仓</h4>
+          <h4>批量同步券商记录</h4>
           <div class="help-text">先检查差异，再确认同步。成交流水需要日期、Ticker、股数、价格；持仓快照 CSV 需要 Ticker、股数、均价或总成本。新标的快照必须带买入日。</div>
           <textarea id="tradeText" placeholder="成交流水示例:
 20260529，成交NVDA 5股，213美元
@@ -307,58 +479,10 @@ GOOG,10,350,2026-06-05"></textarea>
           <div id="syncPreview" class="help-text"></div>
           <div class="help-text">这不是下单按钮，只是把已经在券商成交的记录同步到本工具；同步后回测曲线和今日建议会按新持仓重算。</div>
         </div>
-        <div class="ops-group">
-          <h4>新增 / 删除股票</h4>
-          <div class="form-row"><label>Ticker</label><input id="addTicker" value="" placeholder="AAPL" style="width:100px;text-transform:uppercase"></div>
-          <div class="form-row"><label>买入日</label><input type="date" id="addDate"></div>
-          <div class="form-row"><label>股数</label><input type="number" class="num-input" id="addShares" value="0" min="0" step="0.0001"></div>
-          <div class="form-row"><label>买入均价 $</label><input type="number" class="num-input" id="addPrice" value="0" min="0" step="0.01"></div>
-          <div class="form-row"><label>储备金 $</label><input type="number" class="num-input" id="addReserve" value="0" min="0" step="100"></div>
-          <div class="form-row"><button class="btn btn-primary" onclick="doAddSymbol()">新增股票</button></div>
-          <div class="form-row" style="margin-top:10px"><label>删除</label><select id="removeTicker"></select><button class="btn btn-danger" onclick="doRemoveSymbol()">删除股票</button></div>
-        </div>
-        <div class="ops-group">
-          <h4>加本金</h4>
-          <div class="form-row"><label>Ticker</label><select id="injectTicker"></select></div>
-          <div class="form-row"><label>新 cap_total $</label><input type="number" class="num-input" id="injectAmount" value="100000" min="0" step="5000"></div>
-          <div class="form-row"><button class="btn btn-primary" onclick="doInject()">确认加本金</button></div>
-          <div class="help-text">逐只加本金会按配置里的注资模式执行；研究面板不会自动修改配置。</div>
-        </div>
-        <div class="ops-group">
-          <h4>回填成交</h4>
-          <div class="form-row"><label>Ticker</label><select id="fillTicker"></select></div>
-          <div class="form-row"><label>档位</label><input type="number" class="num-input" id="fillTier" value="0" min="0" step="1"></div>
-          <div class="form-row"><label>金额 $</label><input type="number" class="num-input" id="fillAmount" value="0" min="0" step="100"></div>
-          <div class="form-row"><label>价格 $</label><input type="number" class="num-input" id="fillPrice" value="0" min="0" step="0.01"></div>
-          <div class="form-row"><button class="btn btn-primary" onclick="doFill()">确认回填</button></div>
-          <div class="help-text">这里只用于深跌棘轮档位成交，会关闭对应档位。</div>
-        </div>
-        <div class="ops-group">
-          <h4>战术成交回填</h4>
-          <div class="help-text">只记录按“战术固定限价”成交的买入，不关闭深跌棘轮档位。</div>
-          <div class="form-row"><label>Ticker</label><select id="tacticalFillTicker"></select></div>
-          <div class="form-row"><label>日期</label><input type="date" id="tacticalFillDate"></div>
-          <div class="form-row"><label>金额 $</label><input type="number" class="num-input" id="tacticalFillAmount" value="0" min="0" step="10"></div>
-          <div class="form-row"><label>成交价 $</label><input type="number" class="num-input" id="tacticalFillPrice" value="0" min="0" step="0.01"></div>
-          <div class="form-row"><button class="btn btn-primary" onclick="doTacticalFill()">确认战术成交</button></div>
-          <div class="help-text" id="tacticalFillHint">选择标的后自动带入今日战术限价。</div>
-        </div>
-        <div class="ops-group">
-          <h4>按 74:26 提高总持仓</h4>
-          <div class="form-row"><label>新增总额 $</label><input type="number" class="num-input" id="scaleAmount" value="10000" min="0" step="1000"></div>
-          <div style="font-size:11px;color:#888;margin:2px 0 8px">(1-W) 按当前权重分摊注资到 8 名 + W 加 SGOV，比例精确不变</div>
-          <div class="form-row"><button class="btn btn-primary" onclick="doScaleUp()">确认提高总持仓</button></div>
-        </div>
-        <div class="ops-group">
-          <h4>校准当前持仓</h4>
-          <div class="form-row"><label>Ticker</label><select id="costTicker"></select></div>
-          <div class="form-row"><label>买入日</label><input type="date" id="costDate"></div>
-          <div class="form-row"><label>股数</label><input type="number" class="num-input" id="costShares" value="0" min="0" step="0.0001"></div>
-          <div class="form-row"><label>买入均价 $</label><input type="number" class="num-input" id="costPrice" value="0" min="0" step="0.01"></div>
-          <div class="form-row"><label></label><label style="min-width:0"><input type="checkbox" id="costSyncCap" checked> 同步本金权重</label></div>
-          <div style="font-size:11px;color:#888;margin:2px 0 8px">按买入日至今重算 H；勾选后 cap_total=成本+储备，回测面板跟随新权重。</div>
-          <div class="form-row"><button class="btn btn-primary" onclick="doSetPosition()">确认校准持仓</button></div>
-        </div>
+      </div>
+      <div class="info-strip">
+        加本金、按 74:26 提高总持仓、深跌档位回填、战术成交回填、新增/删除股票属于策略账本维护或历史兼容能力，不再作为日常前端入口。
+        你的新增本金统一用“今日买入计划”的可动用现金表达；真实成交统一用“记录真实持仓”或“批量同步券商记录”落盘。
       </div>
     </div>
   </div>
@@ -375,7 +499,16 @@ const API_BASE = '';
 let btChart = null;
 let stateData = null;
 let stateRefreshTimer = null;
+let researchLoaded = false;
+let activePage = 'today';
 const STATE_REFRESH_MS = 30000;
+const PLANNER_RECENT_KEY = 'ratchet_planner_recent_snapshot_v1';
+const PLANNER_COMPACT_TARGET = 4;
+const PLANNER_EXECUTION_VENUE = '汇丰银行';
+const PLANNER_LOT_SIZE = 1;
+const PLANNER_ALLOW_FRACTIONAL = false;
+const PLANNER_PRIORITY = { CDNS: 1, ASML: 2, TSM: 3, MU: 4, MSFT: 5, TXN: 6, GOOG: 7, NVDA: 8 };
+let currentPlannerSnapshot = null;
 
 // ============================================================
 // Utils
@@ -404,6 +537,19 @@ function esc(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[ch]));
+}
+
+function admissionCell(adm) {
+  const a = adm || {};
+  const stage = a.stage || 'show';
+  const label = a.label || '仅展示';
+  const reasons = Array.isArray(a.reasons) ? a.reasons.filter(Boolean) : [];
+  const failed = Array.isArray(a.checks)
+    ? a.checks.filter(x => x && x.passed === false && x.name !== '今天影响')
+    : [];
+  const detail = reasons[0] || failed.slice(0, 2).map(x => `${x.name}: ${x.value}`).join('；') || '—';
+  const title = reasons.length ? reasons.join('；') : failed.map(x => `${x.name}: ${x.value} / ${x.threshold}`).join('；');
+  return `<td class="admission-cell admission-${esc(stage)}" title="${esc(title || detail)}"><strong>${esc(label)}</strong><div>${esc(detail)}</div></td>`;
 }
 
 function priceModeLabel(x) {
@@ -443,12 +589,243 @@ async function apiPost(path, body) {
   return r.json();
 }
 
+function arrangePanels() {
+  const pageOrders = {
+    today: ['panelExecutiveBrief', 'panelBuyPlan', 'panelExecution', 'panelMarket', 'panelConfigHealth'],
+    account: ['panelHoldings', 'panelSummary', 'panelOps'],
+    research: [
+      'panelCandidateSummary',
+      'panelTacticalQuality',
+      'panelResearchCenter',
+      'panelBacktest',
+      'panelRolling',
+      'panelTrend',
+      'panelCrashSleeve',
+      'panelParamScan',
+      'panelInjectionMode',
+      'panelTacticalAb',
+      'panelLadder'
+    ],
+    guide: ['panelGuide']
+  };
+  for (const [page, order] of Object.entries(pageOrders)) {
+    const target = $('page' + page.charAt(0).toUpperCase() + page.slice(1));
+    if (!target) continue;
+    for (const id of order) {
+      const el = $(id);
+      if (el) target.appendChild(el);
+    }
+  }
+}
+
+function switchPage(page) {
+  activePage = page || 'today';
+  for (const el of document.querySelectorAll('.page')) {
+    el.classList.toggle('active', el.id === 'page' + activePage.charAt(0).toUpperCase() + activePage.slice(1));
+  }
+  for (const btn of document.querySelectorAll('.page-nav .btn')) {
+    btn.classList.toggle('active', btn.dataset.page === activePage);
+  }
+}
+
+async function toggleResearchCenter() {
+  const collapsed = document.body.classList.toggle('research-collapsed');
+  $('btnResearchToggle').textContent = collapsed ? '展开' : '折叠';
+  if (!collapsed && !researchLoaded) {
+    await loadBacktest();
+  }
+}
+
+function stagePill(stage, label) {
+  const s = stage || 'rejected';
+  return `<span class="stage-pill stage-${esc(s)}">${esc(label || s)}</span>`;
+}
+
+async function loadResearchCandidates(includeHeavy) {
+  const btn = includeHeavy ? $('btnCandidateFull') : $('btnCandidateRefresh');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = includeHeavy ? '完整加载中…' : '刷新中…';
+  }
+  try {
+    const parsedMonthly = parseFloat($('btMonthly') ? $('btMonthly').value : '3000');
+    const monthly = Number.isFinite(parsedMonthly) ? parsedMonthly : 3000;
+    const params = new URLSearchParams();
+    params.set('monthly', String(monthly));
+    params.set('compute', includeHeavy ? 'true' : 'false');
+    params.set('include_heavy', includeHeavy ? 'true' : 'false');
+    params.set('include_dynamic', 'true');
+    params.set('include_voltarget', 'true');
+    params.set('local_only', 'true');
+    const data = await apiGet('/api/research_candidates?' + params.toString());
+    renderResearchCandidates(data);
+  } catch (e) {
+    $('candidateBody').innerHTML = '<div class="error-banner">候选摘要加载失败: ' + esc(e.message) + '</div>';
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = includeHeavy ? '完整候选库' : '刷新摘要';
+    }
+  }
+}
+
+function renderResearchCandidates(data) {
+  const s = data.summary || {};
+  const rows = data.candidates || [];
+  const counts = s.stage_counts || {};
+  const html = [];
+  html.push('<div class="rolling-kpis">');
+  html.push(`<div class="rolling-kpi"><div class="label">最高阶段</div><div class="value">${esc(s.highest_stage_label || '—')}</div></div>`);
+  html.push(`<div class="rolling-kpi"><div class="label">配置候选</div><div class="value">${fmt0(counts.config_candidate || 0)}</div></div>`);
+  html.push(`<div class="rolling-kpi"><div class="label">观察项</div><div class="value">${fmt0(counts.watch || 0)}</div></div>`);
+  html.push(`<div class="rolling-kpi"><div class="label">今日影响</div><div class="value">无</div></div>`);
+  html.push('</div>');
+  html.push(`<div class="bt-note"><span>${esc(s.summary || '')}</span><span>${s.include_heavy ? '完整候选库' : '快速摘要'}</span></div>`);
+
+  if (!rows.length) {
+    html.push('<div style="text-align:center;padding:20px;color:#999">暂无候选摘要。</div>');
+  } else {
+    html.push('<div class="candidate-grid" style="margin-top:12px">');
+    for (const r of rows.slice(0, 6)) {
+      const rolling = r.rolling_result || {};
+      const current = r.vs_current_config || {};
+      html.push('<div class="candidate-item">');
+      html.push(`<div class="name"><strong>${esc(r.name)}</strong>${stagePill(r.stage, r.stage_label)}</div>`);
+      html.push(`<div class="summary">${esc(r.drawdown_tradeoff || (r.historical_result && r.historical_result.summary) || '—')}</div>`);
+      html.push(`<div class="candidate-meta"><span>${esc(r.source || '')}</span><span>${esc(rolling.summary || '')}</span></div>`);
+      html.push(`<div class="candidate-meta"><span>vs当前：${esc(current.summary || '尚未对照')}</span></div>`);
+      html.push(`<div class="candidate-meta"><span>不接实盘：${esc(r.why_not_live || '未通过完整准入')}</span></div>`);
+      html.push('</div>');
+    }
+    html.push('</div>');
+  }
+  const errors = data.source_errors || {};
+  if (Object.keys(errors).length) {
+    html.push('<div class="error-banner" style="margin-top:10px">部分候选源加载失败: ');
+    html.push(Object.entries(errors).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join('；'));
+    html.push('</div>');
+  }
+  $('candidateBody').innerHTML = html.join('');
+}
+
+async function loadTacticalQuality() {
+  try {
+    const data = await apiGet('/api/tactical_quality');
+    renderTacticalQuality(data);
+  } catch (e) {
+    $('qualityBody').innerHTML = '<div class="error-banner">限价单质量加载失败: ' + esc(e.message) + '</div>';
+    $('qualityRange').textContent = '—';
+  }
+}
+
+function qualityAssessmentBadge(text) {
+  const t = text || '样本不足';
+  const cls = t === '正常' ? 'badge-bull' :
+    (t === '偏激进' || t === '需复核' ? 'badge-bear' :
+      (t === '偏保守' || t === '可优化' ? 'badge-neutral' : 'badge-wait'));
+  return `<span class="badge ${cls}">${esc(t)}</span>`;
+}
+
+function renderTacticalQuality(data) {
+  if (!data || data.initialized === false) {
+    $('qualityBody').innerHTML = '<div style="text-align:center;padding:20px;color:#999">尚未建仓，暂无限价单质量。</div>';
+    $('qualityRange').textContent = '—';
+    return;
+  }
+  const s = data.summary || {};
+  const rows = data.by_symbol || [];
+  const fills = data.recent_fills || [];
+  $('qualityRange').textContent = data.price_as_of || data.as_of || '—';
+
+  const html = [];
+  html.push('<div class="rolling-kpis">');
+  html.push(`<div class="rolling-kpi"><div class="label">战术成交</div><div class="value">${fmt0(s.fill_count || 0)}</div></div>`);
+  html.push(`<div class="rolling-kpi"><div class="label">平均折价</div><div class="value ${cssBySign(-(s.avg_discount_vs_prev_close || 0))}">${fmtPct(s.avg_discount_vs_prev_close, 2)}</div></div>`);
+  html.push(`<div class="rolling-kpi"><div class="label">20日后</div><div class="value ${cssBySign(s.avg_return_20d)}">${fmtPct(s.avg_return_20d, 2)}</div></div>`);
+  html.push(`<div class="rolling-kpi"><div class="label">未成交限价</div><div class="value">${fmt0(s.current_unfilled_count || 0)}</div></div>`);
+  html.push('</div>');
+  html.push(`<div class="bt-note"><span>${esc(s.verdict || '')}</span><span>${esc(s.rule_comparison || '')}</span></div>`);
+
+  if (rows.length) {
+    html.push('<div class="table-wrap" style="margin-top:12px"><table class="quality-table"><thead><tr>');
+    html.push('<th>Ticker</th><th>判断</th><th class="num">成交数</th><th class="num">金额</th><th class="num">平均折价</th><th class="num">离当日低点</th><th class="num">20日后</th><th class="num">60日后</th><th class="num">间隔</th><th class="exec-text">说明</th></tr></thead><tbody>');
+    for (const r of rows) {
+      html.push('<tr>');
+      html.push(`<td><strong>${esc(r.ticker || '')}</strong></td>`);
+      html.push(`<td>${qualityAssessmentBadge(r.assessment)}</td>`);
+      html.push(`<td class="num">${fmt0(r.fill_count || 0)}</td>`);
+      html.push(`<td class="num">${r.fill_amount ? '$' + fmt0(r.fill_amount) : '—'}</td>`);
+      html.push(`<td class="num ${cssBySign(-(r.avg_discount_vs_prev_close || 0))}">${fmtPct(r.avg_discount_vs_prev_close, 2)}</td>`);
+      html.push(`<td class="num">${fmtPct(r.avg_fill_vs_low, 2)}</td>`);
+      html.push(`<td class="num ${cssBySign(r.avg_return_20d)}">${fmtPct(r.avg_return_20d, 2)}</td>`);
+      html.push(`<td class="num ${cssBySign(r.avg_return_60d)}">${fmtPct(r.avg_return_60d, 2)}</td>`);
+      html.push(`<td class="num">${r.avg_repeat_days != null ? fmt(r.avg_repeat_days, 0) + '天' : '—'}</td>`);
+      html.push(`<td class="exec-text">${esc(r.note || '')}</td>`);
+      html.push('</tr>');
+    }
+    html.push('</tbody></table></div>');
+  }
+
+  if (fills.length) {
+    html.push('<div class="table-wrap" style="margin-top:12px"><table class="quality-table"><thead><tr>');
+    html.push('<th>最近成交</th><th class="num">成交价</th><th class="num">限价</th><th class="num">前收折价</th><th class="num">开盘</th><th class="num">低点</th><th class="num">收盘</th><th class="num">20日后</th><th class="num">60日后</th></tr></thead><tbody>');
+    for (const f of fills.slice(0, 8)) {
+      html.push('<tr>');
+      html.push(`<td><strong>${esc(f.ticker || '')}</strong> ${esc(f.date || '')}</td>`);
+      html.push(`<td class="num">$${fmt(f.fill_price, 2)}</td>`);
+      html.push(`<td class="num">$${fmt(f.limit_price, 2)}</td>`);
+      html.push(`<td class="num ${cssBySign(-(f.discount_vs_prev_close || 0))}">${fmtPct(f.discount_vs_prev_close, 2)}</td>`);
+      html.push(`<td class="num">${fmtPct(f.fill_vs_open, 2)}</td>`);
+      html.push(`<td class="num">${fmtPct(f.fill_vs_low, 2)}</td>`);
+      html.push(`<td class="num">${fmtPct(f.fill_vs_close, 2)}</td>`);
+      html.push(`<td class="num ${cssBySign(f.return_20d)}">${fmtPct(f.return_20d, 2)}</td>`);
+      html.push(`<td class="num ${cssBySign(f.return_60d)}">${fmtPct(f.return_60d, 2)}</td>`);
+      html.push('</tr>');
+    }
+    html.push('</tbody></table></div>');
+  } else {
+    html.push('<div style="text-align:center;padding:18px;color:#999">还没有战术成交回填，先无法评估成交后表现。</div>');
+  }
+
+  html.push(`<div class="glossary"><span>${esc(s.limitation || '')}</span><span>本面板只读，不改变今日建议。</span></div>`);
+  $('qualityBody').innerHTML = html.join('');
+}
+
+function renderConfigHealth(health, explanation) {
+  if (!health) {
+    $('healthBody').innerHTML = '<div style="text-align:center;padding:20px;color:#999">暂无配置健康度。</div>';
+    return;
+  }
+  const html = [];
+  html.push(`<div class="bt-note"><span>${esc(health.summary || '')}</span><span>${esc((explanation && explanation.today_advice_impact) || '')}</span></div>`);
+  html.push('<div class="health-grid" style="margin-top:12px">');
+  for (const item of health.checks || []) {
+    const status = item.status || 'active';
+    const pill = status === 'active' ? 'badge-bull' : (status === 'locked' ? 'badge-neutral' : 'badge-wait');
+    html.push('<div class="health-item">');
+    html.push(`<div class="name"><strong>${esc(item.name)}</strong><span class="badge ${pill}">${esc(status)}</span></div>`);
+    html.push(`<div class="summary">${esc(item.summary || '')}</div>`);
+    html.push('</div>');
+  }
+  html.push('</div>');
+  html.push(`<div class="glossary"><span>${esc(health.next_review || '')}</span></div>`);
+  $('healthBody').innerHTML = html.join('');
+}
+
 // ============================================================
 // Backtest
 // ============================================================
 async function loadBacktest() {
   const parsedMonthly = parseFloat($('btMonthly').value);
   const monthly = Number.isFinite(parsedMonthly) ? parsedMonthly : 3000;
+  const start = $('btStart') ? $('btStart').value.trim() : '2022-01-11';
+  const end = $('btEnd') ? $('btEnd').value.trim() : '';
+  const baseline = $('btBaseline') ? $('btBaseline').value : '012922';
+  const params = new URLSearchParams();
+  params.set('monthly', String(monthly));
+  params.set('start', start);
+  params.set('end', end);
+  params.set('baseline_ticker', baseline);
   const el = $('btMetrics');
   el.innerHTML = '<div class="loading">计算回测…</div>';
   $('rollingBody').innerHTML = '<div class="loading">计算滚动起点…</div>';
@@ -459,10 +836,11 @@ async function loadBacktest() {
   $('tacticalBody').innerHTML = '<div class="loading">计算战术挂单 A/B…</div>';
 
   try {
-    const data = await apiGet('/api/backtest?monthly=' + monthly);
+    const data = await apiGet('/api/backtest?' + params.toString());
     renderBacktestChart(data);
     renderBacktestMetrics(data);
     await Promise.all([loadRollingStarts(monthly), loadTrendAb(monthly), loadCrashSleeve(monthly), loadParamScan(monthly), loadInjectionAb(monthly), loadTacticalAb(monthly)]);
+    researchLoaded = true;
   } catch (e) {
     showError('回测请求失败: ' + e.message);
     el.innerHTML = '<div class="error-banner">回测失败</div>';
@@ -483,20 +861,24 @@ function renderBacktestChart(data) {
     return;
   }
 
-  const order = data.order || Object.keys(data.series);
+  const series = data.chart_series || data.series || {};
+  const order = data.order || Object.keys(series);
   const colors = {};
   for (const name of order) colors[name] = colorForSeries(name);
 
   const datasets = [];
   const baselineKey = data.baseline || '纳指100(QQQ)';
+  const rebased = (data.meta && data.meta.chart_rebased) || {};
 
   for (const name of order) {
-    const vals = data.series[name];
+    const vals = series[name];
     if (!vals) continue;
     const c = colors[name] || '#666';
     const isBaseline = name === baselineKey;
+    const displayLabel = rebased[name] ? `${name}（重定基准）` : name;
     datasets.push({
-      label: name,
+      label: displayLabel,
+      rawName: name,
       data: vals,
       borderColor: c,
       backgroundColor: 'transparent',
@@ -529,9 +911,12 @@ function renderBacktestChart(data) {
         tooltip: {
           callbacks: {
             label: function(ctx) {
+              const rawName = ctx.dataset.rawName || ctx.dataset.label || '';
               const label = ctx.dataset.label || '';
               const val = ctx.parsed.y;
-              return label + ': NAV ' + fmt(val, 3);
+              const rb = rebased[rawName];
+              const suffix = rb ? `，${rb.start}按${shortSeriesName(rb.anchor)}重定基准` : '';
+              return label + ': 展示NAV ' + fmt(val, 3) + suffix;
             }
           }
         }
@@ -565,10 +950,11 @@ function renderFallbackChart(data) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  const order = data.order || Object.keys(data.series);
+  const series = data.chart_series || data.series || {};
+  const order = data.order || Object.keys(series);
   const allVals = [];
   for (const name of order) {
-    for (const v of (data.series[name] || [])) {
+    for (const v of (series[name] || [])) {
       if (Number.isFinite(v)) allVals.push(v);
     }
   }
@@ -595,13 +981,14 @@ function renderFallbackChart(data) {
   }
 
   let lx = pad.left;
+  const rebased = (data.meta && data.meta.chart_rebased) || {};
   for (const name of order) {
     const color = colorForSeries(name);
     ctx.fillStyle = color;
     ctx.fillRect(lx, 12, 18, 3);
     ctx.fillStyle = '#444';
-    ctx.fillText(shortSeriesName(name), lx + 24, 16);
-    lx += 82;
+    ctx.fillText(shortSeriesName(name) + (rebased[name] ? '*' : ''), lx + 24, 16);
+    lx += rebased[name] ? 94 : 82;
   }
 
   function xAt(i, n) {
@@ -612,18 +999,27 @@ function renderFallbackChart(data) {
   }
 
   for (const name of order) {
-    const vals = data.series[name] || [];
+    const vals = series[name] || [];
     if (vals.length === 0) continue;
     ctx.beginPath();
     ctx.strokeStyle = colorForSeries(name);
     ctx.lineWidth = name === data.strategy_label ? 2.5 : 1.7;
     if (name === '纯棘轮') ctx.setLineDash([5, 4]);
     else ctx.setLineDash([]);
+    let started = false;
     vals.forEach((v, i) => {
+      if (!Number.isFinite(v)) {
+        started = false;
+        return;
+      }
       const x = xAt(i, vals.length);
       const y = yAt(v);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
     });
     ctx.stroke();
   }
@@ -636,6 +1032,7 @@ function renderFallbackChart(data) {
 
 function colorForSeries(name) {
   if (name === '纯棘轮') return '#64748b';
+  if (name.includes('012922')) return '#b45309';
   if (name.includes('QQQ') || name.includes('纳指')) return '#9333ea';
   if (name.includes('SPY') || name.includes('标普')) return '#16a34a';
   if (name.includes('防御') || name.includes('策略')) return '#2563eb';
@@ -693,6 +1090,14 @@ function renderBacktestMetrics(data) {
   html.push('</tbody></table>');
   html.push(`<div class="bt-note"><span>累计投入: $${fmt0(data.contributed)}</span><span>${data.range[0]} ~ ${data.range[1]}</span></div>`);
   html.push(`<div class="bt-note"><span>口径: NAV回撤 / XIRR与终值按现金流</span><span>比较基准: ${baselineKey}</span></div>`);
+  html.push('<div class="bt-note"><span>默认从 012922 可用窗口开始；清空起始日期可查看配置起点全历史。</span><span>图表和指标使用同一回测区间</span></div>');
+  const rebased = data.meta && data.meta.chart_rebased;
+  if (rebased && Object.keys(rebased).length) {
+    const notes = Object.entries(rebased).map(([name, m]) =>
+      `${shortSeriesName(name)}自${m.start}按${shortSeriesName(m.anchor)}当日NAV ${fmt(m.anchor_nav, 3)}×重定基准`
+    );
+    html.push(`<div class="bt-note"><span>图表展示: ${notes.join('；')}</span><span>指标表未重定基准</span></div>`);
+  }
 
   if (data.tier_contrib && Object.keys(data.tier_contrib).length > 0) {
     html.push('<div style="margin-top:10px;padding-top:8px;border-top:1px solid #eee"><div style="font-size:12px;color:#666;margin-bottom:4px">档位贡献</div>');
@@ -724,7 +1129,7 @@ function renderRollingStarts(data) {
   const rows = data.rows || [];
   const s = data.summary || {};
   const baseline = s.baseline || '基准';
-  const baselineShort = baseline.includes('QQQ') || baseline.includes('纳指') ? 'QQQ' : baseline;
+  const baselineShort = baseline.includes('012922') ? '012922' : (baseline.includes('QQQ') || baseline.includes('纳指') ? 'QQQ' : baseline);
   $('rollingRange').textContent = data.range ? `${data.range[0]} ~ ${data.range[1]} 起点` : '—';
   if (!rows.length) {
     $('rollingBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">可用历史不足，暂无滚动窗口</div>';
@@ -830,7 +1235,7 @@ function renderTrendAb(data) {
   html.push('</tbody></table></div>');
 
   html.push('<div class="table-wrap" style="margin-top:12px"><table class="trend-table"><thead><tr>');
-  html.push(`<th>规则</th><th class="num">XIRR</th><th class="num">vs长期持有</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">换手</th><th class="num">离场</th><th>全程结论</th><th class="num">${term('滚动胜率', '滚动窗口中XIRR不低于长期持有的比例。')}</th><th class="num">${term('滚动DD胜率', '滚动窗口中最大回撤比长期持有更浅的比例。')}</th><th class="num">滚动超额中位</th><th class="num">滚动DD中位</th><th>滚动结论</th></tr></thead><tbody>`);
+  html.push(`<th>规则</th><th class="num">XIRR</th><th class="num">vs长期持有</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">换手</th><th class="num">离场</th><th>全程结论</th><th class="num">${term('滚动胜率', '滚动窗口中XIRR不低于长期持有的比例。')}</th><th class="num">${term('滚动DD胜率', '滚动窗口中最大回撤比长期持有更浅的比例。')}</th><th class="num">滚动超额中位</th><th class="num">滚动DD中位</th><th>滚动结论</th><th>准入</th></tr></thead><tbody>`);
   for (const r of rows) {
     const m = r.metrics || {};
     const roll = r.rolling || {};
@@ -854,13 +1259,14 @@ function renderTrendAb(data) {
     html.push(`<td class="num ${cssBySign(rx.p50)}">${fmtPct(rx.p50, 2)}</td>`);
     html.push(`<td class="num ${cssBySign(rd.p50)}">${fmtPct(rd.p50, 1)}</td>`);
     html.push(`<td class="${rollCls}">${rollVerdict}</td>`);
+    html.push(admissionCell(r.admission));
     html.push('</tr>');
   }
   html.push('</tbody></table></div>');
 
   if (executionRows.length) {
     html.push('<div class="table-wrap" style="margin-top:12px"><table class="trend-table"><thead><tr>');
-    html.push(`<th>${term('非卖出执行位（研究）', '不降低已有仓位，只在risk-off时改变某个执行动作；通过验证后才考虑接入今日建议。')}</th><th class="num">XIRR</th><th class="num">vs纯棘轮</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">离场</th><th class="num">${term('动作数', '被gate实际拦截的动作次数：档位按本会成交的限价单计，注资按月度注资标的次计，re-arm按本会重装档位事件计。')}</th><th class="num">${term('金额', '被拦截动作对应金额；re-arm没有直接金额。')}</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动DD胜率</th><th class="num">${term('滚动vs纯棘轮中位', '滚动窗口中相对纯棘轮的XIRR中位差。')}</th><th class="num">${term('滚动DD中位', '滚动窗口中相对纯棘轮的最大回撤改善中位数。')}</th><th>滚动结论</th></tr></thead><tbody>`);
+    html.push(`<th>${term('非卖出执行位（研究）', '不降低已有仓位，只在risk-off时改变某个执行动作；通过验证后才考虑接入今日建议。')}</th><th class="num">XIRR</th><th class="num">vs纯棘轮</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">离场</th><th class="num">${term('动作数', '被gate实际拦截的动作次数：档位按本会成交的限价单计，注资按月度注资标的次计，re-arm按本会重装档位事件计。')}</th><th class="num">${term('金额', '被拦截动作对应金额；re-arm没有直接金额。')}</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动DD胜率</th><th class="num">${term('滚动vs纯棘轮中位', '滚动窗口中相对纯棘轮的XIRR中位差。')}</th><th class="num">${term('滚动DD中位', '滚动窗口中相对纯棘轮的最大回撤改善中位数。')}</th><th>滚动结论</th><th>准入</th></tr></thead><tbody>`);
     for (const r of executionRows) {
       const m = r.metrics || {};
       const gs = r.gate_stats || {};
@@ -888,6 +1294,7 @@ function renderTrendAb(data) {
       html.push(`<td class="num ${cssBySign(rx.p50)}">${fmtPct(rx.p50, 2)}</td>`);
       html.push(`<td class="num ${cssBySign(rd.p50)}">${fmtPct(rd.p50, 1)}</td>`);
       html.push(`<td class="${rollCls}">${rollVerdict}</td>`);
+      html.push(admissionCell(r.admission));
       html.push('</tr>');
     }
     html.push('</tbody></table></div>');
@@ -943,7 +1350,7 @@ function renderCrashSleeve(data) {
   html.push('</tbody></table></div>');
 
   html.push('<div class="table-wrap" style="margin-top:12px"><table class="trend-table"><thead><tr>');
-  html.push(`<th>${term('崩盘 sleeve', '每笔投入单独留出10%/15%现金，只有篮子或市场级DD达到20/30/40%才分批买入风险腿。')}</th><th class="num">XIRR</th><th class="num">vs纯棘轮</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">${term('平均现金', '整个回测期内crash sleeve现金占组合的平均比例。')}</th><th class="num">部署次数</th><th class="num">部署金额</th><th class="num">期末现金</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动DD胜率</th><th class="num">滚动超额中位</th><th class="num">滚动DD中位</th><th>滚动结论</th></tr></thead><tbody>`);
+  html.push(`<th>${term('崩盘 sleeve', '每笔投入单独留出10%/15%现金，只有篮子或市场级DD达到20/30/40%才分批买入风险腿。')}</th><th class="num">XIRR</th><th class="num">vs纯棘轮</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">${term('平均现金', '整个回测期内crash sleeve现金占组合的平均比例。')}</th><th class="num">部署次数</th><th class="num">部署金额</th><th class="num">期末现金</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动DD胜率</th><th class="num">滚动超额中位</th><th class="num">滚动DD中位</th><th>滚动结论</th><th>准入</th></tr></thead><tbody>`);
   for (const r of rows) {
     const m = r.metrics || {};
     const st = r.stats || {};
@@ -969,6 +1376,7 @@ function renderCrashSleeve(data) {
     html.push(`<td class="num ${cssBySign(rx.p50)}">${fmtPct(rx.p50, 2)}</td>`);
     html.push(`<td class="num ${cssBySign(rd.p50)}">${fmtPct(rd.p50, 1)}</td>`);
     html.push(`<td class="${rollCls}">${rollVerdict}</td>`);
+    html.push(admissionCell(r.admission));
     html.push('</tr>');
   }
   html.push('</tbody></table></div>');
@@ -1033,7 +1441,7 @@ function renderParamScan(data) {
   html.push('</tbody></table></div>');
 
   html.push('<div class="table-wrap" style="margin-top:12px"><table class="trend-table"><thead><tr>');
-  html.push(`<th>参数组</th><th class="num">Core</th><th>档位</th><th>投放</th><th class="num">XIRR</th><th class="num">vs当前</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">${term('平均在场', '风险资产市值 / 总权益 的平均比例；越高越接近满仓。')}</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动DD胜率</th><th class="num">滚动超额中位</th><th class="num">滚动DD中位</th><th>滚动结论</th></tr></thead><tbody>`);
+  html.push(`<th>参数组</th><th class="num">Core</th><th>档位</th><th>投放</th><th class="num">XIRR</th><th class="num">vs当前</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">${term('平均在场', '风险资产市值 / 总权益 的平均比例；越高越接近满仓。')}</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动DD胜率</th><th class="num">滚动超额中位</th><th class="num">滚动DD中位</th><th>滚动结论</th><th>准入</th></tr></thead><tbody>`);
   for (const r of rows) {
     const m = r.metrics || {};
     const roll = r.rolling || {};
@@ -1060,6 +1468,7 @@ function renderParamScan(data) {
     html.push(`<td class="num ${cssBySign(rx.p50)}">${fmtPct(rx.p50, 2)}</td>`);
     html.push(`<td class="num ${cssBySign(rd.p50)}">${fmtPct(rd.p50, 1)}</td>`);
     html.push(`<td class="${rollCls}">${rollVerdict}</td>`);
+    html.push(admissionCell(r.admission));
     html.push('</tr>');
   }
   html.push('</tbody></table></div>');
@@ -1118,7 +1527,7 @@ function renderInjectionAb(data) {
   html.push('</tbody></table></div>');
 
   html.push('<div class="table-wrap" style="margin-top:12px"><table class="trend-table"><thead><tr>');
-  html.push(`<th>${term('注资模式', '未来新增本金进入风险腿的节奏。')}</th><th>实盘含义</th><th class="num">XIRR</th><th class="num">vs当前</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">${term('平均在场', '风险腿股票市值 / 风险腿总价值；越低代表新增本金现金拖累越大。')}</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动DD胜率</th><th class="num">滚动超额中位</th><th class="num">滚动DD中位</th><th>滚动结论</th></tr></thead><tbody>`);
+  html.push(`<th>${term('注资模式', '未来新增本金进入风险腿的节奏。')}</th><th>实盘含义</th><th class="num">XIRR</th><th class="num">vs当前</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">${term('平均在场', '风险腿股票市值 / 风险腿总价值；越低代表新增本金现金拖累越大。')}</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动DD胜率</th><th class="num">滚动超额中位</th><th class="num">滚动DD中位</th><th>滚动结论</th><th>准入</th></tr></thead><tbody>`);
   for (const r of rows) {
     const m = r.metrics || {};
     const risk = r.risk_metrics || {};
@@ -1144,6 +1553,7 @@ function renderInjectionAb(data) {
     html.push(`<td class="num ${cssBySign(rx.p50)}">${fmtPct(rx.p50, 2)}</td>`);
     html.push(`<td class="num ${cssBySign(rd.p50)}">${fmtPct(rd.p50, 1)}</td>`);
     html.push(`<td class="${rollCls}">${rollVerdict}</td>`);
+    html.push(admissionCell(r.admission));
     html.push('</tr>');
   }
   html.push('</tbody></table></div>');
@@ -1176,6 +1586,8 @@ function renderTacticalAb(data) {
   html.push('<div class="rolling-kpis">');
   html.push(`<div class="rolling-kpi"><div class="label">${term('最佳综合', '按超额XIRR为主、回撤恶化扣分的简单排序；只用于研究排序，不自动改配置。')}</div><div class="value">${s.best_score || '—'}</div></div>`);
   html.push(`<div class="rolling-kpi"><div class="label">${term('最佳XIRR', '全历史单一路径里 XIRR 最高的战术挂单方案。')}</div><div class="value">${s.best_xirr || '—'}</div></div>`);
+  html.push(`<div class="rolling-kpi"><div class="label">${term('替换候选', '相对当前战术配置，全程和滚动都同时满足收益不低、回撤不明显变差。')}</div><div class="value">${fmt0(s.promotion_candidate_count)}</div></div>`);
+  html.push(`<div class="rolling-kpi"><div class="label">${term('观察项', '相对当前配置某一侧有进步，但还没达到替换配置的完整门槛。')}</div><div class="value">${fmt0(s.promotion_watch_count)}</div></div>`);
   html.push(`<div class="rolling-kpi"><div class="label">${term('全程候选', '全历史路径相对关闭战术单收益更高且回撤不明显变差。')}</div><div class="value">${fmt0(s.candidate_count)}</div></div>`);
   html.push(`<div class="rolling-kpi"><div class="label">${term('滚动候选', '年度起点、至少5年窗口；超过半数窗口同时收益不低且回撤不劣。')}</div><div class="value">${fmt0(s.rolling_candidate_count)}</div></div>`);
   html.push('</div>');
@@ -1192,13 +1604,17 @@ function renderTacticalAb(data) {
   html.push('</tbody></table></div>');
 
   html.push('<div class="table-wrap" style="margin-top:12px"><table class="trend-table"><thead><tr>');
-  html.push(`<th>${term('战术方案', '只改变浅回踩固定限价 overlay；深跌棘轮、核心注资和防御层不变。')}</th><th>实盘含义</th><th class="num">XIRR</th><th class="num">vs关闭</th><th class="num">最大回撤</th><th class="num">DD改善</th><th class="num">成交数</th><th class="num">动用金额</th><th class="num">平均折价</th><th class="num">20日后</th><th>全程结论</th><th class="num">滚动胜率</th><th class="num">滚动候选</th><th>滚动结论</th></tr></thead><tbody>`);
+  html.push(`<th>${term('战术方案', '只改变浅回踩固定限价 overlay；深跌棘轮、核心注资和防御层不变。')}</th><th>实盘含义</th><th class="num">XIRR</th><th class="num">vs关闭</th><th class="num">vs当前</th><th class="num">最大回撤</th><th class="num">DDvs当前</th><th class="num">成交数</th><th class="num">动用金额</th><th class="num">平均折价</th><th class="num">20日后</th><th>全程结论</th><th>替换评审</th><th class="num">滚动vs当前</th><th class="num">滚动候选</th><th>滚动结论</th><th>准入</th></tr></thead><tbody>`);
   for (const r of rows) {
     const m = r.metrics || {};
     const st = r.stats || {};
     const roll = r.rolling || {};
+    const rollCur = r.rolling_vs_current || {};
+    const rxCur = (rollCur.xirr_vs_current || {}).p50;
     const verdict = r.verdict || '';
     const cls = verdict.includes('候选') ? 'decision-ok' : (verdict.includes('防守') || verdict.includes('进攻') ? 'decision-warn' : 'decision-bad');
+    const promo = r.promotion_verdict || '—';
+    const promoCls = promo.includes('候选') ? 'decision-ok' : (promo.includes('观察') || promo.includes('当前') ? 'decision-warn' : 'decision-bad');
     const rollVerdict = roll.verdict || '—';
     const rollCls = rollVerdict.includes('候选') ? 'decision-ok' : (rollVerdict.includes('防守') || rollVerdict.includes('进攻') ? 'decision-warn' : 'decision-bad');
     html.push('<tr>');
@@ -1206,21 +1622,24 @@ function renderTacticalAb(data) {
     html.push(`<td style="white-space:normal;min-width:260px">${r.operation || ''}</td>`);
     html.push(`<td class="num">${pct(m.xirr, 2)}</td>`);
     html.push(`<td class="num ${cssBySign(r.xirr_vs_baseline)}">${fmtPct(r.xirr_vs_baseline, 2)}</td>`);
+    html.push(`<td class="num ${cssBySign(r.xirr_vs_current_tactical)}">${fmtPct(r.xirr_vs_current_tactical, 2)}</td>`);
     html.push(`<td class="num">${m.maxdd != null ? '-' + pct(m.maxdd, 1) : '—'}</td>`);
-    html.push(`<td class="num ${cssBySign(r.dd_relief_vs_baseline)}">${fmtPct(r.dd_relief_vs_baseline, 1)}</td>`);
+    html.push(`<td class="num ${cssBySign(r.dd_relief_vs_current_tactical)}">${fmtPct(r.dd_relief_vs_current_tactical, 1)}</td>`);
     html.push(`<td class="num">${fmt0(st.fills)}</td>`);
     html.push(`<td class="num">$${fmt0(st.fill_amount)}</td>`);
     html.push(`<td class="num ${cssBySign(st.avg_discount)}">${fmtPct(st.avg_discount, 2)}</td>`);
     html.push(`<td class="num ${cssBySign(st.avg_fwd20)}">${fmtPct(st.avg_fwd20, 2)}</td>`);
     html.push(`<td class="${cls}">${verdict}</td>`);
-    html.push(`<td class="num ${cssBySign((roll.win_rate == null ? null : roll.win_rate - 0.5))}">${pct(roll.win_rate, 0)}</td>`);
-    html.push(`<td class="num ${cssBySign((roll.candidate_rate == null ? null : roll.candidate_rate - 0.5))}">${pct(roll.candidate_rate, 0)}</td>`);
+    html.push(`<td class="${promoCls}">${promo}</td>`);
+    html.push(`<td class="num ${cssBySign(rxCur)}">${fmtPct(rxCur, 2)}</td>`);
+    html.push(`<td class="num ${cssBySign((rollCur.candidate_rate == null ? null : rollCur.candidate_rate - 0.5))}">${pct(rollCur.candidate_rate, 0)}</td>`);
     html.push(`<td class="${rollCls}">${rollVerdict}</td>`);
+    html.push(admissionCell(r.admission));
     html.push('</tr>');
   }
   html.push('</tbody></table></div>');
 
-  html.push(`<div class="glossary"><span>${term('固定限价', '用前收/日线锚点生成，盘中最新价只判断是否触发；不会跟着实时价下移。')}=防追价</span><span>${term('平均折价', '战术成交价相对前一交易日收盘价的平均折价。')}=买入质量</span><span>${term('20日后', '战术成交后约20个交易日的平均价格表现；只看成交质量，不代表长期收益。')}=短期验证</span><span>${term('研究，不直接改今日建议', '这张表验证战术参数，不会自动写回 config；真正接入前还要确认当前市场阶段和独立记账。')}=未接入执行</span></div>`);
+  html.push(`<div class="glossary"><span>${term('固定限价', '用前收/日线锚点生成，盘中最新价只判断是否触发；不会跟着实时价下移。')}=防追价</span><span>${term('vs当前', '候选战术规则相对 config.yaml 当前战术挂单规则的差值；替换配置优先看这一列。')}=替换口径</span><span>${term('平均折价', '战术成交价相对前一交易日收盘价的平均折价。')}=买入质量</span><span>${term('20日后', '战术成交后约20个交易日的平均价格表现；只看成交质量，不代表长期收益。')}=短期验证</span><span>${term('研究，不直接改今日建议', '这张表验证战术参数，不会自动写回 config；真正接入前还要确认当前市场阶段和独立记账。')}=未接入执行</span></div>`);
   html.push(`<div class="bt-note"><span>${s.execution_note || ''}</span><span>主指标口径: ${s.safe_weight > 0 ? `风险腿+防御层(W=${pct(s.safe_weight, 0)})` : '风险腿'} / NAV-DD / 同现金流；滚动步长 ${fmt0(s.rolling_step_months)} 个月。</span></div>`);
   $('tacticalBody').innerHTML = html.join('');
 }
@@ -1261,6 +1680,7 @@ function renderMarket(market) {
 function shortSeriesName(name) {
   if (name.includes('防御')) return '策略W';
   if (name === '纯棘轮') return '棘轮';
+  if (name.includes('012922')) return '012922';
   if (name.includes('QQQ') || name.includes('纳指')) return 'QQQ';
   if (name.includes('SPY') || name.includes('标普')) return 'SPY';
   return name.slice(0, 4);
@@ -1282,12 +1702,17 @@ async function loadState() {
 
     if (!stateData.initialized) {
       $('btnInit').style.display = 'inline-flex';
+      renderExecutiveBrief(stateData);
+      renderBuyPlan(stateData);
       $('holdingsBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓。请在配置好数据后点击「首次建仓」。</div>';
       $('marketBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，暂无市场层执行规则。</div>';
       $('trendBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，暂无趋势门控 A/B。</div>';
       $('injectBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，暂无注资模式 A/B。</div>';
       $('tacticalBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，暂无战术挂单 A/B。</div>';
       $('execBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，暂无今日执行建议。</div>';
+      $('healthBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，暂无配置健康度。</div>';
+      $('qualityBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，暂无限价单质量。</div>';
+      $('qualityRange').textContent = '—';
       $('ladderBody').innerHTML = '';
       $('summaryBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，无汇总数据。</div>';
       $('panelOps').style.display = 'none';
@@ -1299,9 +1724,12 @@ async function loadState() {
 
     renderMarket(stateData.market);
     renderExecution(stateData);
+    renderExecutiveBrief(stateData);
+    renderBuyPlan(stateData);
     renderHoldings(stateData.symbols);
     renderLadder(stateData.symbols);
     renderSummary(stateData.totals, stateData);
+    renderConfigHealth(stateData.config_health, stateData.explanation);
     populateTickerSelectors(stateData.symbols);
 
     // Show injected_delta if present
@@ -1311,6 +1739,420 @@ async function loadState() {
   } catch (e) {
     showError('获取状态失败: ' + e.message);
   }
+}
+
+function renderExecutiveBrief(data) {
+  if (!data || data.initialized === false) {
+    $('briefBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，暂无今日执行摘要。</div>';
+    return;
+  }
+  const ex = data.execution || {};
+  const counts = ex.counts || {};
+  const market = data.market || {};
+  const totals = data.totals || {};
+  const acct = data.account_readiness || {};
+  const todayActions = (ex.items || []).filter(x =>
+    x.source !== 'ratchet_next' &&
+    (x.action === 'BUY_NOW' || x.action === 'PLACE_LIMIT' || x.action === 'REBALANCE')
+  );
+  const firstAction = todayActions[0];
+  const todayCounts = {
+    buy_now: todayActions.filter(x => x.action === 'BUY_NOW').length,
+    place_limit: todayActions.filter(x => x.action === 'PLACE_LIMIT').length,
+    rebalance: todayActions.filter(x => x.action === 'REBALANCE').length,
+  };
+  const html = [];
+  html.push('<div class="brief-grid">');
+  html.push(`<div class="brief-item"><div class="label">今天最重要动作</div><div class="value">${firstAction ? esc(firstAction.execution_level || executionActionText(firstAction)) : '无今日买入'}</div></div>`);
+  html.push(`<div class="brief-item"><div class="label">今日可操作</div><div class="value">${fmt0(todayCounts.buy_now + todayCounts.place_limit + todayCounts.rebalance)}</div></div>`);
+  html.push(`<div class="brief-item"><div class="label">市场阶段</div><div class="value">${esc(market.label || market.regime || '未知')}</div></div>`);
+  html.push(`<div class="brief-item"><div class="label">真实持仓</div><div class="value">${fmt0(acct.confirmed_position_count || 0)}</div></div>`);
+  html.push('</div>');
+  const todaySummary = todayActions.length
+    ? `今日可操作：立即买入 ${todayCounts.buy_now} 条，战术限价 ${todayCounts.place_limit} 条，防御确认 ${todayCounts.rebalance} 条。`
+    : '当前没有今日战术建仓或立即买入；长期深跌预挂只在详细执行表展示。';
+  html.push(`<div class="info-strip">${esc(todaySummary)}</div>`);
+  html.push(`<div class="brief-callout">${esc(acct.summary || '生成买入股数前，请先确认券商真实持仓和可用现金。')} ${esc(acct.position_rule || '')} ${esc(acct.cash_source || '')}</div>`);
+  if (todayActions.length) {
+    html.push('<div class="table-wrap" style="margin-top:12px"><table class="execution-table"><thead><tr>');
+    html.push('<th>顺序</th><th>Ticker</th><th>动作</th><th class="num">限价/实时</th><th class="num">金额</th><th class="exec-text">为什么</th></tr></thead><tbody>');
+    for (const item of todayActions.slice(0, 3)) {
+      const price = item.limit != null ? `限价 $${fmt(item.limit, 2)}` : (item.live_price != null ? `实时 $${fmt(item.live_price, 2)}` : '—');
+      html.push('<tr>');
+      html.push(`<td>${executionLevelBadge(item)}</td>`);
+      html.push(`<td><strong>${esc(item.ticker || '—')}</strong></td>`);
+      html.push(`<td>${executionActionBadge(item)}</td>`);
+      html.push(`<td class="num">${price}</td>`);
+      html.push(`<td class="num">${item.amount != null ? '$' + fmt0(item.amount) : '—'}</td>`);
+      html.push(`<td class="exec-text">${esc(item.explanation || item.text || item.reason || '')}</td>`);
+      html.push('</tr>');
+    }
+    html.push('</tbody></table></div>');
+  }
+  $('briefBody').innerHTML = html.join('');
+}
+
+function executionActionText(item) {
+  const action = item && item.action ? item.action : 'WAIT';
+  if (action === 'BUY_NOW') return '立即买入';
+  if (action === 'PLACE_LIMIT') return '挂限价';
+  if (action === 'REBALANCE') return '再平衡';
+  if (action === 'FROZEN') return '冻结';
+  return '观察';
+}
+
+function loadPlannerPrefs() {
+  try {
+    const cash = localStorage.getItem('ratchet_planner_cash');
+    if (cash != null && $('plannerCash')) $('plannerCash').value = cash;
+  } catch (_) {
+    // Browser storage can be disabled; the planner still works without persistence.
+  }
+}
+
+function plannerInputChanged() {
+  try {
+    if ($('plannerCash')) localStorage.setItem('ratchet_planner_cash', $('plannerCash').value || '0');
+  } catch (_) {}
+  renderBuyPlan(stateData);
+}
+
+function plannerTickerNote(ticker, shares) {
+  const t = String(ticker || '').toUpperCase();
+  const s = Number(shares || 0);
+  if (t === 'CDNS') return '最接近当前价，优先补 EDA';
+  if (t === 'ASML') return s <= 1 ? '光刻核心，单股高，先 1 股' : '光刻核心，单股高，控制股数';
+  if (t === 'TSM') return '先进制程核心，但今天涨幅大，不追价';
+  if (t === 'MU') return `高波动 AI/存储弹性，控制为 ${fmt0(s)} 股`;
+  if (t === 'MSFT') return '平台核心，只在回踩限价成交';
+  if (t === 'TXN') return '模拟/工业芯片，当前优先级靠后';
+  if (t === 'GOOG') return '已有真实持仓，当前不是加仓信号';
+  if (t === 'NVDA') return '已有真实持仓，当前不是加仓信号';
+  return '按当前执行层限价做整股草案';
+}
+
+function currentMarketDate() {
+  const symbols = stateData && stateData.symbols ? stateData.symbols : [];
+  const mt = symbols.map(x => x.market_time || '').find(Boolean) || '';
+  const m = mt.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/);
+  const year = String((stateData && stateData.as_of) || new Date().toISOString()).slice(0, 4);
+  const months = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+    Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+  if (m && months[m[1]]) return `${year}-${months[m[1]]}-${String(m[2]).padStart(2, '0')}`;
+  return new Date().toISOString().slice(0, 10);
+}
+
+function prefillPositionFromPlan(ticker, shares, price) {
+  switchPage('account');
+  setTimeout(() => {
+    if ($('costTicker')) $('costTicker').value = ticker;
+    if ($('costDate')) $('costDate').value = currentMarketDate();
+    if ($('costShares')) $('costShares').value = Number(shares || 0).toFixed(4);
+    if ($('costPrice')) $('costPrice').value = Number(price || 0).toFixed(2);
+    const s = findSymbol(ticker);
+    if ($('costSyncCap')) $('costSyncCap').checked = true;
+    if ($('panelOps')) $('panelOps').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toast(`${ticker} 已填入校准区；确认后才会写入状态`, 'success');
+  }, 0);
+}
+
+function symbolRecord(data, ticker) {
+  const t = String(ticker || '').toUpperCase();
+  return ((data && data.symbols) || []).find(x => String(x.ticker || '').toUpperCase() === t) || {};
+}
+
+function plannerDeficit(data, ticker, confirmed) {
+  const s = symbolRecord(data, ticker);
+  const target = Number(s.cap_total || s.cum_injected || 0);
+  const held = confirmed && confirmed.has(ticker) ? Number(s.market_value || 0) : 0;
+  return Math.max(0, target - held);
+}
+
+function plannerPriorityValue(ticker) {
+  return PLANNER_PRIORITY[String(ticker || '').toUpperCase()] || 99;
+}
+
+function plannerItemPrice(item) {
+  return Number(item && item.limit != null ? item.limit : item && item.live_price);
+}
+
+function plannerAutoPolicy(data, usableCash, sourceItems) {
+  const prices = sourceItems.map(plannerItemPrice).filter(x => Number.isFinite(x) && x > 0);
+  const affordable = prices.filter(x => x <= usableCash).length;
+  const maxNames = Math.max(0, Math.min(PLANNER_COMPACT_TARGET, sourceItems.length, affordable || sourceItems.length));
+  const selectedPrices = sourceItems.slice(0, Math.max(1, maxNames)).map(plannerItemPrice).filter(x => Number.isFinite(x) && x > 0);
+  const highestFirstShare = selectedPrices.length ? Math.max(...selectedPrices) : 0;
+  const maxSingleAmount = Math.max(highestFirstShare, usableCash * 0.45);
+  return {
+    compact_target: PLANNER_COMPACT_TARGET,
+    execution_venue: PLANNER_EXECUTION_VENUE,
+    lot_size: PLANNER_LOT_SIZE,
+    allow_fractional: PLANNER_ALLOW_FRACTIONAL,
+    max_names: maxNames,
+    max_single_amount: Number(Number(maxSingleAmount || 0).toFixed(2)),
+    rule: '自动：按汇丰银行整股执行，1股为最小单位；最多优先处理4个精简标的，先保证高优先级高股价标的可买1股，再控制单名集中度。',
+  };
+}
+
+function plannerSettings(usableCash, policy = {}) {
+  return {
+    cash: Number(Number(usableCash || 0).toFixed(2)),
+    compact_target: Number(policy.compact_target || PLANNER_COMPACT_TARGET),
+    lot_size: Number(policy.lot_size || PLANNER_LOT_SIZE),
+    allow_fractional: !!policy.allow_fractional,
+    max_names: Number(policy.max_names || 0),
+    max_single_amount: Number(Number(policy.max_single_amount || 0).toFixed(2)),
+  };
+}
+
+function plannerSettingsMatch(a, b) {
+  if (!a || !b) return false;
+  return Math.abs(Number(a.cash || 0) - Number(b.cash || 0)) < 0.01 &&
+    Number(a.compact_target || 0) === Number(b.compact_target || 0) &&
+    Number(a.lot_size || PLANNER_LOT_SIZE) === Number(b.lot_size || PLANNER_LOT_SIZE) &&
+    !!a.allow_fractional === !!b.allow_fractional;
+}
+
+function readPlannerSnapshot(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writePlannerSnapshot(key, snapshot) {
+  try {
+    localStorage.setItem(key, JSON.stringify(snapshot));
+  } catch (_) {}
+}
+
+function plannerSnapshotMarketDate() {
+  return currentMarketDate();
+}
+
+function plannerSnapshotAsOf(data) {
+  const pm = data && data.price_meta ? data.price_meta : {};
+  return pm.as_of || (data && data.as_of) || new Date().toLocaleString('zh-CN');
+}
+
+function makePlannerSnapshot(data, settings, planned, remaining) {
+  const rows = planned.map(row => ({
+    ticker: row.item.ticker,
+    limit: Number(Number(row.px).toFixed(4)),
+    live_price: row.item.live_price == null ? null : Number(Number(row.item.live_price).toFixed(4)),
+    shares: Number(row.shares || 0),
+    amount: Number(Number(row.amount || 0).toFixed(2)),
+  }));
+  return {
+    version: 1,
+    date: plannerSnapshotMarketDate(),
+    saved_at: new Date().toISOString(),
+    market_as_of: plannerSnapshotAsOf(data),
+    settings,
+    rows,
+    remaining: Number(Number(remaining || 0).toFixed(2)),
+  };
+}
+
+function saveRecentPlannerSnapshot(snapshot) {
+  currentPlannerSnapshot = snapshot;
+  writePlannerSnapshot(PLANNER_RECENT_KEY, snapshot);
+}
+
+function getPlannerSnapshot(settings) {
+  const today = plannerSnapshotMarketDate();
+  const recent = readPlannerSnapshot(PLANNER_RECENT_KEY);
+  if (recent && recent.date === today && plannerSettingsMatch(recent.settings, settings)) {
+    return { snapshot: recent, mode: 'recent' };
+  }
+  return null;
+}
+
+function renderPlannerTable(html, planned, usableCash, remaining, options = {}) {
+  const planUsed = planned.reduce((acc, x) => acc + x.amount, 0);
+  const policy = options.policy || {};
+  html.push('<div class="brief-grid" style="margin-top:12px">');
+  html.push(`<div class="brief-item"><div class="label">净购买力</div><div class="value">$${fmt0(usableCash)}</div></div>`);
+  html.push(`<div class="brief-item"><div class="label">预计占用</div><div class="value">$${fmt0(planUsed)}</div></div>`);
+  html.push(`<div class="brief-item"><div class="label">剩余购买力</div><div class="value">$${fmt0(remaining)}</div></div>`);
+  html.push(`<div class="brief-item"><div class="label">挂单数</div><div class="value">${fmt0(planned.filter(x => x.shares > 0).length)}</div></div>`);
+  html.push('<div class="brief-item"><div class="label">执行口径</div><div class="value">整股</div></div>');
+  html.push('</div>');
+  if (policy.rule) {
+    html.push(`<div class="info-strip">${esc(policy.rule)} 本次自动入选 ${fmt0(policy.max_names || planned.length)} 个，单名自动上限约 $${fmt0(policy.max_single_amount || 0)}。</div>`);
+  }
+  html.push('<div class="table-wrap" style="margin-top:12px"><table class="execution-table"><thead><tr>');
+  html.push('<th>标的</th><th class="num">限价/执行价</th><th class="num">股数</th><th class="num">预计占用</th><th class="num">缺口</th><th class="exec-text">说明</th><th>操作</th></tr></thead><tbody>');
+  for (const row of planned) {
+    const item = row.item;
+    const px = row.px;
+    const planAmount = row.amount;
+    const wholeShares = row.shares;
+    html.push('<tr>');
+    html.push(`<td><strong>${esc(item.ticker || '—')}</strong></td>`);
+    html.push(`<td class="num">$${fmt(px, 2)}</td>`);
+    html.push(`<td class="num">${wholeShares > 0 ? fmt0(wholeShares) + '股' : '0'}</td>`);
+    html.push(`<td class="num">${planAmount > 0 ? '$' + fmt(planAmount, 2) : '—'}</td>`);
+    html.push(`<td class="num">${row.gap != null ? '$' + fmt0(row.gap) : '—'}</td>`);
+    html.push(`<td class="exec-text">${esc(plannerTickerNote(item.ticker, wholeShares))}</td>`);
+    html.push(`<td>${wholeShares > 0 ? `<button class="btn btn-small" onclick="prefillPositionFromPlan('${esc(item.ticker)}', ${Number(wholeShares)}, ${Number(px)})">填入校准</button>` : '—'}</td>`);
+    html.push('</tr>');
+  }
+  html.push('</tbody></table></div>');
+  const sourceText = options.snapshot ? '限价来自今日草案快照，不是当前实时重新生成' : '限价来自当前 5/20+ATR 执行层';
+  html.push(`<div class="glossary"><span>${sourceText}</span><span>${esc(PLANNER_EXECUTION_VENUE)}执行：不支持碎股，最小单位1股</span><span>剩余购买力不强行追价用完</span><span>草案不写 state，不自动下单</span></div>`);
+}
+
+function allocatePlannerRows(sourceItems, usableCash, policy) {
+  const selected = sourceItems.slice(0, Math.max(0, policy.max_names || 0));
+  const planned = selected.map(item => {
+    const px = plannerItemPrice(item);
+    return { item, px, shares: 0, amount: 0, gap: Number(item._gap || 0) };
+  }).filter(row => Number.isFinite(row.px) && row.px > 0);
+  let remaining = usableCash;
+
+  for (const row of planned) {
+    if (row.px <= remaining && row.amount + row.px <= policy.max_single_amount + 0.01) {
+      row.shares += 1;
+      row.amount += row.px;
+      remaining -= row.px;
+    }
+  }
+
+  let guard = 0;
+  while (guard < 100) {
+    guard += 1;
+    const candidates = planned
+      .filter(row => row.px <= remaining && row.amount + row.px <= policy.max_single_amount + 0.01)
+      .sort((a, b) => {
+        const gapA = Math.max(0, Number(a.gap || 0) - Number(a.amount || 0));
+        const gapB = Math.max(0, Number(b.gap || 0) - Number(b.amount || 0));
+        if (Math.abs(gapA - gapB) > 1) return gapB - gapA;
+        return plannerPriorityValue(a.item.ticker) - plannerPriorityValue(b.item.ticker);
+      });
+    const next = candidates[0];
+    if (!next) break;
+    next.shares += 1;
+    next.amount += next.px;
+    remaining -= next.px;
+  }
+  return { planned, remaining: Math.max(0, remaining) };
+}
+
+function renderGapQueue(html, data, confirmed, unconfirmed, usableCash) {
+  const rows = ((data && data.symbols) || [])
+    .map(s => {
+      const ticker = String(s.ticker || '').toUpperCase();
+      const isConfirmed = confirmed.has(ticker);
+      const isUnconfirmed = unconfirmed.has(ticker);
+      const target = Number(s.cap_total || s.cum_injected || 0);
+      const held = isConfirmed ? Number(s.market_value || 0) : 0;
+      const gap = Math.max(0, target - held);
+      return { ticker, isConfirmed, isUnconfirmed, target, held, gap, last: Number(s.last_close || 0) };
+    })
+    .filter(x => x.ticker && x.gap > 1)
+    .sort((a, b) => {
+      if (a.isUnconfirmed !== b.isUnconfirmed) return a.isUnconfirmed ? -1 : 1;
+      const pa = plannerPriorityValue(a.ticker);
+      const pb = plannerPriorityValue(b.ticker);
+      if (pa !== pb) return pa - pb;
+      return b.gap - a.gap;
+    })
+    .slice(0, 8);
+  if (!rows.length) return;
+  html.push('<div class="table-wrap" style="margin-top:12px"><table class="execution-table"><thead><tr>');
+  html.push('<th>缺口顺序</th><th>标的</th><th class="num">目标账本</th><th class="num">真实已持</th><th class="num">缺口</th><th class="exec-text">今天为什么不直接买</th></tr></thead><tbody>');
+  for (const row of rows) {
+    const state = row.isUnconfirmed ? '待建仓' : '已有真实持仓';
+    const reason = row.isUnconfirmed
+      ? '当前真实账户还未确认持有；等待战术限价或深跌触发，不用市价追。'
+      : '已有真实持仓；当前没有加仓信号，缺口只作为后续优先级。';
+    html.push('<tr>');
+    html.push(`<td><span class="badge badge-wait">${state}</span></td>`);
+    html.push(`<td><strong>${esc(row.ticker)}</strong></td>`);
+    html.push(`<td class="num">$${fmt0(row.target)}</td>`);
+    html.push(`<td class="num">$${fmt0(row.held)}</td>`);
+    html.push(`<td class="num">$${fmt0(row.gap)}</td>`);
+    html.push(`<td class="exec-text">${esc(reason)}</td>`);
+    html.push('</tr>');
+  }
+  html.push('</tbody></table></div>');
+  html.push(`<div class="glossary"><span>缺口队列按真实持仓、当前配置账本和精简优先级排序</span><span>可动用现金 $${fmt0(usableCash)} 只在有执行信号时分配为股数</span><span>这张缺口表不是买入指令</span></div>`);
+}
+
+function renderBuyPlan(data) {
+  if (!$('buyPlanBody')) return;
+  if (!data || data.initialized === false) {
+    $('buyPlanBody').innerHTML = '<div style="text-align:center;padding:24px;color:#999">尚未建仓，无法生成买入计划草案。</div>';
+    return;
+  }
+  const cash = parseFloat(($('plannerCash') && $('plannerCash').value) || '0');
+  const usableCash = Number.isFinite(cash) ? Math.max(0, cash) : 0;
+  const acct = data.account_readiness || {};
+  const ex = data.execution || {};
+  const confirmed = new Set((acct.confirmed_positions || []).map(x => x.ticker));
+  const unconfirmed = new Set((acct.unconfirmed_positions || []).map(x => x.ticker));
+  const allBuyItems = (ex.items || []).filter(x =>
+    x.side === 'BUY' &&
+    x.source !== 'ratchet_next' &&
+    (x.action === 'BUY_NOW' || x.action === 'PLACE_LIMIT') &&
+    (x.limit != null || x.live_price != null)
+  );
+  const sourceItems = allBuyItems
+    .map(item => ({ ...item, _gap: plannerDeficit(data, item.ticker, confirmed) }))
+    .sort((a, b) => {
+      const aHeld = confirmed.has(a.ticker) ? 1 : 0;
+      const bHeld = confirmed.has(b.ticker) ? 1 : 0;
+      if (aHeld !== bHeld) return aHeld - bHeld;
+      const aPriority = plannerPriorityValue(a.ticker);
+      const bPriority = plannerPriorityValue(b.ticker);
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      const gapDiff = Number(b._gap || 0) - Number(a._gap || 0);
+      if (Math.abs(gapDiff) > 1) return gapDiff;
+      const aFill = a.limit && a.live_price ? a.limit / a.live_price : 0;
+      const bFill = b.limit && b.live_price ? b.limit / b.live_price : 0;
+      return bFill - aFill;
+    });
+  const policy = plannerAutoPolicy(data, usableCash, sourceItems);
+  const settings = plannerSettings(usableCash, policy);
+  const html = [];
+  html.push(`<div class="brief-callout">${esc(acct.summary || '')} ${esc(acct.next_step || '')}</div>`);
+  html.push(`<div class="info-strip">本页只需要输入券商给你的本次可动用现金；系统把它视为已经扣除保留现金后的净购买力，不再二次扣减防御层。标的数量和单名上限由策略自动计算，不需要每天手填。当前按${esc(PLANNER_EXECUTION_VENUE)}整股执行口径生成，不能买碎股时以 1 股为最小单位。</div>`);
+  if (usableCash <= 0) {
+    html.push('<div style="text-align:center;padding:20px;color:#999">请输入本次可动用现金，才会估算每个限价可以买多少股。</div>');
+    renderGapQueue(html, data, confirmed, unconfirmed, usableCash);
+    $('buyPlanBody').innerHTML = html.join('');
+    return;
+  }
+  if (!sourceItems.length) {
+    const snap = getPlannerSnapshot(settings);
+    if (snap && snap.snapshot && (snap.snapshot.rows || []).length) {
+      const planned = (snap.snapshot.rows || []).map(row => ({
+        item: { ticker: row.ticker, limit: row.limit, live_price: row.live_price, source: 'tactical_limit' },
+        px: Number(row.limit),
+        shares: Number(row.shares || 0),
+        amount: Number(row.amount || 0),
+      }));
+      currentPlannerSnapshot = snap.snapshot;
+      html.push(`<div class="brief-callout">自动保留的今日草案：当前实时执行层已经没有战术建仓单，本表显示 ${esc(snap.snapshot.market_as_of || '')} 保存的最后一版可执行草案；它不是新的追价信号。</div>`);
+      renderPlannerTable(html, planned, usableCash, Number(snap.snapshot.remaining || 0), { snapshot: true, policy });
+    } else {
+      currentPlannerSnapshot = null;
+      html.push('<div style="text-align:center;padding:20px;color:#999">当前没有今日战术建仓、深跌触发或核心到期计划；长期深跌预挂只在下方详细执行表展示，不自动进入本表。若盘中曾出现可执行草案，系统会自动保留当天最后一版。</div>');
+      renderGapQueue(html, data, confirmed, unconfirmed, usableCash);
+    }
+    $('buyPlanBody').innerHTML = html.join('');
+    return;
+  }
+
+  const { planned, remaining } = allocatePlannerRows(sourceItems, usableCash, policy);
+
+  saveRecentPlannerSnapshot(makePlannerSnapshot(data, settings, planned, remaining));
+  html.push(`<div class="info-strip">这是当前实时执行草案。系统会自动保留当天最后一版可执行草案；后续 gate 变化时会标注为“自动保留”，不会混成新的追价信号。</div>`);
+  renderPlannerTable(html, planned, usableCash, remaining, { policy });
+  $('buyPlanBody').innerHTML = html.join('');
 }
 
 function executionActionBadge(item) {
@@ -1346,6 +2188,16 @@ function executionStatusLabel(status) {
   return labels[status] || status || '—';
 }
 
+function executionLevelBadge(item) {
+  const label = item && item.execution_level ? item.execution_level : '观察';
+  const cls = label.includes('触发') || label.includes('到期') ? 'badge-buy' :
+    (label.includes('预挂') ? 'badge-limit' :
+      (label.includes('确认') ? 'badge-rebalance' :
+        (label.includes('冻结') ? 'badge-frozen' : 'badge-wait')));
+  const title = item && item.sort_note ? ` title="${esc(item.sort_note)}"` : '';
+  return `<span class="badge ${cls}"${title}>${esc(label)}</span>`;
+}
+
 function renderExecution(data) {
   const ex = data && data.execution;
   if (!ex) {
@@ -1373,7 +2225,7 @@ function renderExecution(data) {
     html.push('<div style="text-align:center;padding:20px;color:#999">今日没有可执行买入、限价或防御再平衡。</div>');
   } else {
     html.push('<div class="table-wrap" style="margin-top:12px"><table class="execution-table"><thead><tr>');
-    html.push('<th>优先级</th><th>Ticker</th><th>来源</th><th>动作</th><th>方向</th><th class="num">金额</th><th class="num">股数</th><th class="num">限价/实时</th><th>状态</th><th class="exec-text">依据</th></tr>');
+    html.push('<th>执行级别</th><th>Ticker</th><th>来源</th><th>动作</th><th>方向</th><th class="num">金额</th><th class="num">股数</th><th class="num">限价/实时</th><th>状态</th><th class="exec-text">解释</th></tr>');
     html.push('</thead><tbody>');
     for (const item of rows) {
       const priceBits = [];
@@ -1381,9 +2233,9 @@ function renderExecution(data) {
       if (item.live_price != null) priceBits.push(`实时 $${fmt(item.live_price, 2)}`);
       if (item.threshold != null) priceBits.push(`阈值 ${pct(item.threshold, 0)}`);
       const sideCls = item.side === 'BUY' ? 'green' : (item.side === 'SELL' ? 'red' : 'gray');
-      const reason = [item.text, item.reason].filter(Boolean).map(esc).join(' ');
+      const reason = [item.explanation, item.text, item.reason].filter(Boolean).map(esc).join(' ');
       html.push('<tr>');
-      html.push(`<td class="num">${fmt0(item.priority)}</td>`);
+      html.push(`<td>${executionLevelBadge(item)}</td>`);
       html.push(`<td><strong>${esc(item.ticker || '—')}</strong></td>`);
       html.push(`<td>${esc(executionSourceLabel(item.source))}</td>`);
       html.push(`<td>${executionActionBadge(item)}</td>`);
@@ -1418,15 +2270,26 @@ function renderHoldings(symbols) {
   }
 
   let html = '<div class="table-wrap"><table><thead><tr>' +
-    '<th>Ticker</th><th class="num">最新价</th><th class="num">涨跌</th><th>行情</th><th class="num">H</th><th class="num">回撤</th>' +
-    '<th class="num">储备金</th><th class="num">待分批核心</th><th class="num">股数</th><th class="num">市值</th>' +
-    '<th class="num">成本</th><th class="num">均价</th><th class="num">盈亏</th>' +
+    '<th>Ticker</th><th>持仓状态</th><th class="num">最新价</th><th class="num">涨跌</th><th>行情</th><th class="num">H</th><th class="num">回撤</th>' +
+    '<th class="num">储备金</th><th class="num">待分批核心</th><th class="num">真实股数</th><th class="num">真实市值</th>' +
+    '<th class="num">真实成本</th><th class="num">真实均价</th><th class="num">真实盈亏</th>' +
     '<th class="num">战术成交</th><th>今日建议</th><th>行情阶段</th><th>买入日</th><th class="txt-center">冻结</th><th class="txt-center">操作</th></tr></thead><tbody>';
 
   for (const s of symbols) {
     const ddClassVal = ddClass(s.drawdown);
+    const isReal = !!(s.is_real_position || s.entry_date);
+    const statusBadge = isReal
+      ? '<span class="badge badge-buy">真实持仓</span>'
+      : '<span class="badge badge-wait" title="策略账本里有目标仓位，但券商真实买入日为空；不作为真实持仓展示。">待建仓账本</span>';
+    const sharesText = isReal ? fmt(s.real_shares ?? s.shares, 2) : '—';
+    const marketText = isReal ? '$' + fmt0(s.real_market_value ?? s.market_value) : '—';
+    const costText = isReal ? '$' + fmt0(s.real_cost_basis ?? s.cost_basis) : '—';
+    const avgText = isReal ? '$' + fmt(s.real_avg_price ?? s.avg_price, 2) : '—';
+    const pnl = Number(s.real_pnl ?? s.pnl ?? 0);
+    const pnlText = isReal ? `${pnl >= 0 ? '+' : ''}$${fmt0(pnl)}` : '—';
     html += `<tr class="${ddClassVal}">`;
     html += `<td><strong>${s.ticker}</strong></td>`;
+    html += `<td>${statusBadge}</td>`;
     html += `<td class="num">$${fmt(s.last_close, 2)}</td>`;
     html += `<td class="num ${cssBySign(s.change_pct)}">${fmtPct(s.change_pct, 2)}</td>`;
     html += `<td>${priceBadge(s)}</td>`;
@@ -1434,21 +2297,22 @@ function renderHoldings(symbols) {
     html += `<td class="num ${s.drawdown < -0.2 ? 'red' : (s.drawdown < -0.1 ? '#d97706' : '')}">${pct(s.drawdown, 1)}</td>`;
     html += `<td class="num">$${fmt0(s.reserve)}</td>`;
     html += `<td class="num">${s.pending_core_cash > 0 ? '$' + fmt0(s.pending_core_cash) : '—'}</td>`;
-    html += `<td class="num">${fmt(s.shares, 2)}</td>`;
-    html += `<td class="num">$${fmt0(s.market_value)}</td>`;
-    html += `<td class="num">$${fmt0(s.cost_basis)}</td>`;
-    html += `<td class="num">$${fmt(s.avg_price, 2)}</td>`;
-    html += `<td class="num ${s.pnl >= 0 ? 'green' : 'red'}">${s.pnl >= 0 ? '+' : ''}$${fmt0(s.pnl)}</td>`;
+    html += `<td class="num">${sharesText}</td>`;
+    html += `<td class="num">${marketText}</td>`;
+    html += `<td class="num">${costText}</td>`;
+    html += `<td class="num">${avgText}</td>`;
+    html += `<td class="num ${isReal ? (pnl >= 0 ? 'green' : 'red') : 'gray'}">${pnlText}</td>`;
     html += `<td class="num">${s.tactical_fill_count > 0 ? '$' + fmt0(s.tactical_fill_amount) + ' · ' + fmt0(s.tactical_fill_count) + '笔' : '—'}</td>`;
     html += `<td>${adviceBadge(s.advice)}</td>`;
     html += `<td>${regimeBadge(s.tactical)}</td>`;
-    html += `<td>${s.entry_date || '—'}</td>`;
+    html += `<td>${s.entry_date || '未买入'}</td>`;
     html += `<td class="txt-center">${s.frozen ? '<span class="badge badge-frozen">冻结</span>' : '—'}</td>`;
-    html += `<td class="txt-center"><button class="btn btn-small" onclick="prefillPositionForm('${s.ticker}')">校准</button></td>`;
+    html += `<td class="txt-center"><button class="btn btn-small" onclick="prefillPositionForm('${s.ticker}')">${isReal ? '校准' : '记录'}</button></td>`;
     html += '</tr>';
   }
 
   html += '</tbody></table></div>';
+  html += '<div class="glossary"><span>有买入日 = 券商真实持仓</span><span>无买入日 = 策略账本/待建仓，不显示为真实股数和真实成本</span><span>储备金是策略账本配额，不等于券商可用现金</span></div>';
   $('holdingsBody').innerHTML = html;
 }
 
@@ -1541,14 +2405,16 @@ function renderSummary(totals, data) {
 
   let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">';
 
+  const realMarketValue = totals.real_market_value != null ? totals.real_market_value : totals.market_value;
+  const realCost = totals.real_cost_basis != null ? totals.real_cost_basis : totals.cost_basis;
+  const realPnl = totals.real_pnl != null ? totals.real_pnl : totals.pnl;
   const items = [
-    { label: '总市值', value: totals.market_value, fmt: 'dollar' },
-    { label: '总储备金', value: totals.reserve, fmt: 'dollar' },
+    { label: '真实股票市值', value: realMarketValue, fmt: 'dollar' },
+    { label: '策略储备金', value: totals.reserve, fmt: 'dollar' },
     ...(totals.pending_core_cash > 0 ? [{ label: '待分批核心', value: totals.pending_core_cash, fmt: 'dollar' }] : []),
-    { label: '总成本', value: totals.cost_basis, fmt: 'dollar' },
-    { label: '累计投入', value: totals.contributed, fmt: 'dollar' },
-    { label: '总价值', value: totals.total_value, fmt: 'dollar' },
-    { label: '总盈亏', value: totals.pnl, fmt: 'pnl' },
+    { label: '真实股票成本', value: realCost, fmt: 'dollar' },
+    { label: '真实股票盈亏', value: realPnl, fmt: 'pnl' },
+    { label: '账本目标额', value: totals.contributed, fmt: 'dollar' },
   ];
 
   for (const item of items) {
@@ -1568,6 +2434,9 @@ function renderSummary(totals, data) {
   }
 
   html += '</div>';
+  if ((totals.book_only_market_value || 0) > 0) {
+    html += `<div class="brief-callout">另有无买入日的账本仓位 $${fmt0(totals.book_only_market_value)} 没有计入真实股票市值；它们只用于待建仓跟踪和缺口排序，不代表券商真实持仓。</div>`;
+  }
   const pm = data && data.price_meta;
   if (pm) {
     const fallback = (pm.fallback || []).length ? `；回退日线: ${(pm.fallback || []).join(', ')}` : '';
@@ -1634,12 +2503,8 @@ function renderSummary(totals, data) {
 // Operations
 // ============================================================
 function populateTickerSelectors(symbols) {
-  const sel1 = $('injectTicker');
-  const sel2 = $('fillTicker');
   const sel3 = $('costTicker');
-  const sel4 = $('removeTicker');
-  const sel5 = $('tacticalFillTicker');
-  [sel1, sel2, sel3, sel4, sel5].forEach(sel => {
+  [sel3].forEach(sel => {
     if (!sel) return;
     const cur = sel.value;
     sel.innerHTML = symbols.map(s => `<option value="${s.ticker}" ${s.ticker === cur ? 'selected' : ''}>${s.ticker}</option>`).join('');
@@ -1647,10 +2512,6 @@ function populateTickerSelectors(symbols) {
   if (sel3) {
     sel3.onchange = () => prefillPositionForm(sel3.value, false);
     prefillPositionForm(sel3.value || (symbols[0] && symbols[0].ticker), false);
-  }
-  if (sel5) {
-    sel5.onchange = () => prefillTacticalFill(sel5.value);
-    prefillTacticalFill(sel5.value || (symbols[0] && symbols[0].ticker));
   }
 }
 
@@ -1662,30 +2523,14 @@ function findSymbol(ticker) {
 function prefillPositionForm(ticker, focusPanel = true) {
   const s = findSymbol(ticker);
   if (!s) return;
+  const isReal = !!(s.is_real_position || s.entry_date);
   $('costTicker').value = s.ticker;
-  $('costShares').value = s.shares != null ? Number(s.shares).toFixed(4) : '';
-  $('costPrice').value = s.entry_price || s.avg_price || '';
-  $('costDate').value = s.entry_date || '';
+  $('costShares').value = isReal && s.real_shares != null ? Number(s.real_shares).toFixed(4) : '';
+  $('costPrice').value = isReal ? (s.entry_price || s.real_avg_price || s.avg_price || '') : '';
+  $('costDate').value = isReal ? (s.entry_date || '') : '';
   if (focusPanel) {
-    $('panelOps').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-}
-
-function prefillTacticalFill(ticker) {
-  const s = findSymbol(ticker);
-  if (!s) return;
-  const t = s.tactical || {};
-  const today = new Date().toISOString().slice(0, 10);
-  if ($('tacticalFillDate')) $('tacticalFillDate').value = today;
-  if ($('tacticalFillAmount')) $('tacticalFillAmount').value = t.amount ? Number(t.amount).toFixed(0) : '0';
-  if ($('tacticalFillPrice')) $('tacticalFillPrice').value = t.limit ? Number(t.limit).toFixed(2) : '0';
-  const hint = $('tacticalFillHint');
-  if (hint) {
-    if (t.limit && t.amount) {
-      hint.innerHTML = `当前建议: 固定限价 $${fmt(t.limit, 2)}，金额 $${fmt0(t.amount)}，实时价 $${fmt(t.live_price, 2)}；回填后只写入战术流水。`;
-    } else {
-      hint.textContent = '当前没有战术固定限价建议；仍可手动按券商实际成交回填。';
-    }
+    switchPage('account');
+    setTimeout(() => $('panelOps').scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   }
 }
 
@@ -1697,37 +2542,6 @@ async function doInit() {
     await refreshAll();
   } catch (e) {
     showError('建仓失败: ' + e.message);
-  }
-}
-
-async function doInject() {
-  const ticker = $('injectTicker').value;
-  const newCap = parseFloat($('injectAmount').value);
-  if (!ticker || !newCap || newCap <= 0) { toast('请填写完整信息', 'error'); return; }
-  try {
-    await apiPost('/api/inject', { ticker, new_cap: newCap });
-    toast(`${ticker} 本金已调整`, 'success');
-    await refreshAll();
-  } catch (e) {
-    showError('加本金失败: ' + e.message);
-  }
-}
-
-async function doScaleUp() {
-  const amount = parseFloat($('scaleAmount').value);
-  if (!amount || amount <= 0) { toast('请填写新增总额', 'error'); return; }
-  if (!confirm(`确认按 74:26 提高总持仓 $${fmt0(amount)}？\n约 $${fmt0(amount * 0.74)} 注资进 8 名篮子（立即按现价买核心），约 $${fmt0(amount * 0.26)} 加 SGOV。请同步在券商下单。`)) return;
-  try {
-    const res = await apiPost('/api/scale_up', { amount });
-    const su = res && res.scale_up;
-    if (su) {
-      toast(`总持仓 +$${fmt0(su.total)}（篮子 $${fmt0(su.basket_portion)} + ${su.safe_ticker} $${fmt0(su.safe_portion)}）已落仓，请在券商同步下单`, 'success');
-    } else {
-      toast('提高总持仓完成', 'success');
-    }
-    await refreshAll();
-  } catch (e) {
-    showError('提高总持仓失败: ' + e.message);
   }
 }
 
@@ -1829,45 +2643,6 @@ async function doDailyUpdate() {
   }
 }
 
-async function doAddSymbol() {
-  const ticker = $('addTicker').value.trim().toUpperCase();
-  const buyDate = $('addDate').value;
-  const shares = parseFloat($('addShares').value);
-  const buyPrice = parseFloat($('addPrice').value);
-  const reserveCash = parseFloat($('addReserve').value) || 0;
-  if (!ticker || !buyDate || !shares || shares <= 0 || !buyPrice || buyPrice <= 0 || reserveCash < 0) {
-    toast('请填写新增股票的 ticker、买入日、股数、均价', 'error');
-    return;
-  }
-  try {
-    await apiPost('/api/add_symbol', {
-      ticker,
-      buy_date: buyDate,
-      shares,
-      buy_price: buyPrice,
-      reserve_cash: reserveCash
-    });
-    toast(`${ticker} 已加入当前策略`, 'success');
-    $('addTicker').value = '';
-    await refreshAll();
-  } catch (e) {
-    showError('新增股票失败: ' + e.message);
-  }
-}
-
-async function doRemoveSymbol() {
-  const ticker = $('removeTicker').value;
-  if (!ticker) { toast('请选择要删除的股票', 'error'); return; }
-  if (!confirm(`确认从当前策略中删除 ${ticker}？这会影响回测曲线和每日建议，但不会在券商执行交易。`)) return;
-  try {
-    await apiPost('/api/remove_symbol', { ticker });
-    toast(`${ticker} 已从当前策略删除`, 'success');
-    await refreshAll();
-  } catch (e) {
-    showError('删除股票失败: ' + e.message);
-  }
-}
-
 async function doSetPosition() {
   const ticker = $('costTicker').value;
   const buyDate = $('costDate').value;
@@ -1890,41 +2665,6 @@ async function doSetPosition() {
     await refreshAll();
   } catch (e) {
     showError('校准持仓失败: ' + e.message);
-  }
-}
-
-async function doFill() {
-  const ticker = $('fillTicker').value;
-  const tier = parseInt($('fillTier').value) || 0;
-  const amount = parseFloat($('fillAmount').value) || 0;
-  const price = parseFloat($('fillPrice').value) || 0;
-  if (!ticker || amount <= 0 || price <= 0) { toast('请填写完整信息', 'error'); return; }
-  try {
-    await apiPost('/api/fill', { ticker, tier, amount, price });
-    toast(`${ticker} 档 ${tier} 成交回填完成`, 'success');
-    await refreshAll();
-  } catch (e) {
-    showError('成交回填失败: ' + e.message);
-  }
-}
-
-async function doTacticalFill() {
-  const ticker = $('tacticalFillTicker').value;
-  const date = $('tacticalFillDate').value;
-  const amount = parseFloat($('tacticalFillAmount').value) || 0;
-  const price = parseFloat($('tacticalFillPrice').value) || 0;
-  if (!ticker || !date || amount <= 0 || price <= 0) {
-    toast('请填写战术成交的日期、金额和成交价', 'error');
-    return;
-  }
-  if (!confirm(`确认回填 ${ticker} 战术成交？\n金额 $${fmt0(amount)}，成交价 $${fmt(price, 2)}。\n这只会写入战术流水，不会关闭深跌棘轮档位。`)) return;
-  try {
-    const res = await apiPost('/api/tactical_fill', { ticker, date, amount, price });
-    const m = res && res.tactical_fill;
-    toast(m ? `${ticker} 战术成交已记录：$${fmt0(m.amount)} @ $${fmt(m.fill_price, 2)}` : '战术成交已记录', 'success');
-    await refreshAll();
-  } catch (e) {
-    showError('战术成交回填失败: ' + e.message);
   }
 }
 
@@ -1953,10 +2693,16 @@ async function refreshAll() {
   $('btnRefresh').disabled = true;
   $('btnRefresh').textContent = '⟳ 刷新中…';
   try { await apiPost('/api/refresh', {}); } catch (_) { /* ignore cache clear errors */ }
-  await Promise.all([
-    loadBacktest(),
-    loadState()
-  ]);
+  researchLoaded = false;
+  const tasks = [
+    loadState(),
+    loadResearchCandidates(false),
+    loadTacticalQuality()
+  ];
+  if (!document.body.classList.contains('research-collapsed')) {
+    tasks.push(loadBacktest());
+  }
+  await Promise.all(tasks);
   $('btnRefresh').disabled = false;
   $('btnRefresh').textContent = '⟳ 刷新';
 }
@@ -1971,6 +2717,8 @@ function startStateAutoRefresh() {
 
 // Load on startup
 document.addEventListener('DOMContentLoaded', () => {
+  arrangePanels();
+  loadPlannerPrefs();
   refreshAll();
   startStateAutoRefresh();
 });
