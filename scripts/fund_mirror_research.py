@@ -66,6 +66,8 @@ def main() -> int:
     cov = s["coverage"]
     print("\n目标基金最新披露 US 持仓镜像研究（research only）")
     print(f"基金: {s['fund_code']} {s.get('fund_name') or ''} | 报告期: {s.get('report_date') or '-'}")
+    versions = s.get("data_versions") or {}
+    print(f"数据版本: 持仓={versions.get('holdings_report') or '-'} | 净值={versions.get('target_nav') or '-'}")
     print(f"披露股票合计占净值: {_pct(cov.get('reported_nav_weight'), 2)} | "
           f"US子集占净值: {_pct(cov.get('us_nav_weight'), 2)} | "
           f"US/披露股票: {_pct(cov.get('us_share_of_reported'), 1)}")

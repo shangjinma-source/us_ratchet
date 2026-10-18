@@ -12,6 +12,8 @@ from typing import Any
 
 import numpy as np
 
+from backtest.research_ledger import finalize_research_ledger, source_policy_payloads
+
 
 STAGES = ("rejected", "watch", "config_candidate", "live_eligible")
 STAGE_LABELS = {
@@ -101,6 +103,7 @@ def _stage_from_config_row(row: dict) -> str:
 
 
 def _base_candidate(name: str, source: str, stage: str, *,
+                    candidate_key: str = "",
                     historical_result: dict | None = None,
                     rolling_result: dict | None = None,
                     vs_current_config: dict | None = None,
@@ -111,9 +114,17 @@ def _base_candidate(name: str, source: str, stage: str, *,
                     next_validation: list[str] | None = None,
                     detail: dict | None = None) -> dict:
     stage = stage if stage in STAGE_LABELS else "rejected"
+    today = dict(today_advice_impact or {
+        "would_change": False,
+        "summary": "不改变今日建议。",
+        "changes": [],
+    })
+    today.setdefault("evaluated", False)
+    today.setdefault("changes", [])
     return {
         "name": name,
         "source": source,
+        "candidate_key": candidate_key or source,
         "stage": stage,
         "stage_label": STAGE_LABELS[stage],
         "historical_result": historical_result or {"summary": "暂无历史结果"},
@@ -121,11 +132,7 @@ def _base_candidate(name: str, source: str, stage: str, *,
         "vs_current_config": vs_current_config or {"summary": "尚未对照当前配置"},
         "vs_012922": vs_012922 or {"summary": "此来源不直接对标 012922"},
         "drawdown_tradeoff": drawdown_tradeoff or "暂无回撤权衡结论",
-        "today_advice_impact": today_advice_impact or {
-            "would_change": False,
-            "summary": "不改变今日建议。",
-            "changes": [],
-        },
+        "today_advice_impact": today,
         "why_not_live": why_not_live or "未通过完整准入，不接入 config.yaml 或 /api/state。",
         "next_validation": next_validation or ["继续保持 research only。"],
         "detail": detail or {},
@@ -165,6 +172,7 @@ def _from_preference_gate(gate: dict | None) -> dict | None:
     return _base_candidate(
         name="动态自选篮子 live gate",
         source="dynamic_basket_live_gate",
+        candidate_key="dynamic_preference_basket",
         stage=stage,
         historical_result={
             "summary": _metric_summary(best.get("excess_p50"), best.get("dd_relief_p50"), "012922"),
@@ -177,7 +185,10 @@ def _from_preference_gate(gate: dict | None) -> dict | None:
             "passed": guard.get("passed"),
             "summary": guard.get("reason") or "当前配置守门未完成",
             "xirr_p50_vs_incumbent": margins.get("xirr_p50_vs_incumbent"),
+            "xirr_p10_vs_incumbent": margins.get("xirr_p10_vs_incumbent"),
             "dd_relief_p50_vs_incumbent": margins.get("dd_relief_p50_vs_incumbent"),
+            "dd_relief_p90_vs_incumbent": margins.get("dd_relief_p90_vs_incumbent"),
+            "comparison_basis": guard.get("comparison_basis"),
             "incumbent": guard.get("incumbent"),
         },
         vs_012922={
@@ -196,6 +207,8 @@ def _from_preference_gate(gate: dict | None) -> dict | None:
             "decision": gate.get("decision"),
             "current_market": gate.get("current_market"),
             "config_diff_preview": gate.get("config_diff_preview"),
+            "risk_envelope": gate.get("risk_envelope") or {},
+            "data_versions": best.get("data_versions") or {},
         },
     )
 
@@ -237,6 +250,7 @@ def _from_tactical_ab(ab: dict | None) -> dict | None:
         },
         rolling_result={
             "windows": rv.get("windows"),
+            "range": ab.get("range"),
             "candidate_rate": rv.get("candidate_rate"),
             "xirr_p50_vs_current": rx.get("p50"),
             "dd_relief_p50_vs_current": rd.get("p50"),
@@ -265,7 +279,11 @@ def _from_tactical_ab(ab: dict | None) -> dict | None:
             "进入配置候选后再做今日建议差异检查。",
             "人工确认后才允许改 tactical_orders。",
         ],
-        detail={"mode": best.get("mode"), "operation": best.get("operation")},
+        detail={
+            "mode": best.get("mode"),
+            "operation": best.get("operation"),
+            "data_versions": ab.get("data_versions") or {},
+        },
     )
 
 
@@ -301,6 +319,7 @@ def _from_config_ab(ab: dict | None, *, source: str, name: str,
         },
         rolling_result={
             "windows": rolling.get("windows"),
+            "range": ab.get("range"),
             "candidate_rate": rolling.get("candidate_rate"),
             "xirr_p50_vs_current": rx.get("p50"),
             "dd_relief_p50_vs_current": rd.get("p50"),
@@ -332,7 +351,10 @@ def _from_config_ab(ab: dict | None, *, source: str, name: str,
             "若进入配置候选，先输出今日建议 diff。",
             "人工确认后才允许改 config.yaml。",
         ],
-        detail={"row": {k: best.get(k) for k in ("label", "mode", "operation", "verdict")}},
+        detail={
+            "row": {k: best.get(k) for k in ("label", "mode", "operation", "verdict")},
+            "data_versions": ab.get("data_versions") or {},
+        },
     )
 
 
@@ -379,8 +401,161 @@ def _from_benchmark_rows(result: dict | None, *, source: str, title: str,
             "点时验证必须继续通过，禁止使用未来披露或未来涨幅。",
             "通过后再做当前配置对照和今日建议差异检查。",
         ],
-        detail={"summary": result.get("summary") or {}},
+        detail={
+            "summary": result.get("summary") or {},
+            "data_versions": result.get("data_versions") or best.get("data_versions") or {},
+            "data_manifest": result.get("data_manifest") or {},
+        },
     )
+
+
+def _from_ndx_competition(result: dict | None) -> dict | None:
+    if not result:
+        return None
+    summary = result.get("summary") or {}
+    best = summary.get("best_qqq") or summary.get("best") or {}
+    if not best:
+        return None
+
+    target_gate = best.get("target_envelope") or {}
+    incumbent_gate = best.get("incumbent_guard") or {}
+    admission_passed = bool(
+        best.get("admission_passed")
+        and target_gate.get("passed")
+        and incumbent_gate.get("passed")
+    )
+    basket = str(best.get("basket") or f"top{best.get('top_n') or '-'}")
+    current_selection = (
+        result.get("current_selection_best_qqq")
+        or result.get("current_selection")
+        or {}
+    )
+    candidate_key = ":".join([
+        "ndx",
+        basket,
+        f"lb{best.get('lookback_years')}",
+        f"rb{best.get('rebalance_months')}",
+        f"cap{best.get('max_weight')}",
+    ])
+    target_summary = _metric_summary(
+        best.get("excess_p50"), best.get("dd_relief_p50"), "012922"
+    )
+    qqq_summary = _metric_summary(
+        best.get("qqq_excess_p50"), best.get("qqq_dd_relief_p50"), "QQQ"
+    )
+    incumbent_summary = (
+        "通过当前配置配对守门。"
+        if incumbent_gate.get("passed")
+        else "未通过当前配置配对守门。"
+    )
+    if incumbent_gate.get("reason"):
+        incumbent_summary += f" {incumbent_gate['reason']}"
+
+    candidate = _base_candidate(
+        name=f"纳指100个股竞争：{basket}",
+        source="ndx_competition",
+        stage="config_candidate" if admission_passed else "rejected",
+        candidate_key=candidate_key,
+        historical_result={
+            "summary": f"{target_summary}；{qqq_summary}",
+            "best": best,
+        },
+        rolling_result={
+            "windows": best.get("windows"),
+            "range": best.get("range"),
+            "win_rate": best.get("win_rate"),
+            "excess_p50": best.get("excess_p50"),
+            "dd_relief_p50": best.get("dd_relief_p50"),
+            "qqq_win_rate": best.get("qqq_win_rate"),
+            "qqq_excess_p50": best.get("qqq_excess_p50"),
+            "qqq_dd_relief_p50": best.get("qqq_dd_relief_p50"),
+            "summary": (
+                f"窗口 {best.get('windows') or '-'}；"
+                f"对012922胜率 {_pct(best.get('win_rate'), 0)}；"
+                f"对QQQ胜率 {_pct(best.get('qqq_win_rate'), 0)}。"
+            ),
+        },
+        vs_012922={
+            "passed": bool(target_gate.get("passed")),
+            "summary": target_summary,
+            "win_rate": best.get("win_rate"),
+            "dd_win_rate": best.get("dd_win_rate"),
+            "gate": target_gate,
+        },
+        vs_current_config={
+            "passed": bool(incumbent_gate.get("passed")),
+            "summary": incumbent_summary,
+            "margins": incumbent_gate.get("margins") or {},
+            "paired_evidence": incumbent_gate.get("paired_evidence") or {},
+        },
+        drawdown_tradeoff=f"{target_summary}；{qqq_summary}",
+        today_advice_impact={
+            "evaluated": True,
+            "would_change": False,
+            "summary": "回测未通过准入；不改配置、不改变今日建议。",
+            "changes": [],
+        },
+        why_not_live=(
+            f"{target_gate.get('reason') or '未通过目标基准门槛'}；"
+            f"{incumbent_gate.get('reason') or '未通过当前配置门槛'}"
+        ),
+        next_validation=[
+            "补齐严格点时质量/价值因子后重新预注册训练与锁定验证。",
+            "加入行业与拥挤度上限，再检验坏尾部和集中度风险。",
+            "补充精确指数事件表以量化季度 SEC 代理误差。",
+        ],
+        detail={
+            "summary": summary,
+            "risk_envelope": {
+                "passed": admission_passed,
+                "target": target_gate,
+                "incumbent": incumbent_gate,
+            },
+            "data_manifest": result.get("data_manifest") or {},
+            "current_selection": current_selection,
+            "qqq_role": summary.get("qqq_role"),
+            "report_cache": result.get("report_cache") or {},
+        },
+    )
+    candidate["governance_evidence"] = {
+        "point_in_time": {
+            "status": "validated_sec_filing_availability_proxy_event_timing_not_exact",
+            "passed": True,
+            "evidence": {
+                "guard": (result.get("data_manifest") or {}).get("future_data_guard"),
+                "history": (result.get("data_manifest") or {}).get("ndx_history") or {},
+            },
+        },
+        "sample_out": {
+            "status": (
+                "pre_registered_train_validation_passed"
+                if admission_passed
+                else "pre_registered_train_validation_failed"
+            ),
+            "passed": admission_passed,
+            "evidence": {
+                "windows": best.get("windows"),
+                "range": best.get("range"),
+                "target_passed": bool(target_gate.get("passed")),
+                "incumbent_passed": bool(incumbent_gate.get("passed")),
+            },
+        },
+    }
+    candidate["research_lifecycle"] = {
+        "shape_status": (
+            "validation_passed" if admission_passed else "current_shape_failed_validation"
+        ),
+        "direction_status": (
+            "promotion_review" if admission_passed else "active_iteration"
+        ),
+        "terminal_direction_decision": False,
+        "failure_scope": "current_pre_registered_shape_only",
+        "next_experiment": (
+            "point-in-time quality/value factors plus industry and crowding constraints"
+        ),
+        "rule": "治理阶段 rejected 只阻断当前形态接入实盘，不终止后续研究迭代。",
+    }
+    return candidate
 
 
 def _finalize(rows: list[dict], *, source_errors: dict[str, str] | None = None,
@@ -388,6 +563,7 @@ def _finalize(rows: list[dict], *, source_errors: dict[str, str] | None = None,
               include_heavy: bool = False, computed: bool = True,
               as_of: str | None = None, note: str | None = None) -> dict:
     rows = [c for c in rows if c]
+    rows, ledger_summary = finalize_research_ledger(rows, computed=computed)
     rows.sort(
         key=lambda c: (
             STAGE_RANK.get(c["stage"], 0),
@@ -412,8 +588,11 @@ def _finalize(rows: list[dict], *, source_errors: dict[str, str] | None = None,
         "highest_stage_label": STAGE_LABELS.get(highest, highest),
         "current_market": market,
         "execution_summary": (execution or {}).get("summary"),
+        "ledger_schema_version": ledger_summary["schema_version"],
+        "ledger_id": ledger_summary["ledger_id"],
+        "governance": ledger_summary,
         "summary": note or (
-            "候选库只读：显示观察项和配置候选，不写 config.yaml，"
+            "策略研发台账只读：统一核对证据与晋级门，不写 config.yaml，"
             "不接入 /api/state，也不改变今日建议。"
         ),
     }
@@ -422,10 +601,13 @@ def _finalize(rows: list[dict], *, source_errors: dict[str, str] | None = None,
         "candidates": rows,
         "source_errors": source_errors or {},
         "stage_labels": STAGE_LABELS,
+        "promotion_policy": ledger_summary["policy"],
+        "source_policies": source_policy_payloads(),
     }
 
 
-def build_static_candidate_registry(*, market: dict | None = None,
+def build_static_candidate_registry(*, ndx_competition: dict | None = None,
+                                    market: dict | None = None,
                                     execution: dict | None = None,
                                     as_of: str | None = None) -> dict:
     """Fast dashboard summary from the latest recorded research conclusions.
@@ -434,23 +616,24 @@ def build_static_candidate_registry(*, market: dict | None = None,
     execution dashboard is not blocked by multi-minute research jobs.
     """
     rows = [
+        _from_ndx_competition(ndx_competition),
         _base_candidate(
             name="动态 top4/top6 自选篮子",
             source="dynamic_basket_live_gate",
             stage="rejected",
             historical_result={
-                "summary": "静态 top4_attack_score_risk 跑赢率 100%，超额 XIRR P50 +6.98pct。",
+                "summary": "截至 2026-07-09，静态 top4_ret_3y_risk 18 个窗口跑赢率 100%，超额 XIRR P50 +11.13pct。",
             },
             rolling_result={
-                "summary": "点时 top4_score_risk 跑赢率 0%，超额 XIRR P50 -35.40pct。",
+                "summary": "上一轮点时 top4_score_risk 17 个真实起点跑赢率 0%，超额 XIRR P50 -35.40pct。",
             },
             vs_current_config={
                 "summary": "未通过当前写死配置守门；不能接入 config 或今日建议。",
             },
             vs_012922={
-                "summary": "静态收益强，但 DD 中位比 012922 深约 24.5pct。",
+                "summary": "静态收益强，但最新同口径 DD 中位比 012922 深约 17.5pct。",
             },
-            drawdown_tradeoff="收益侧有 hindsight 吸引力，但点时失效且回撤显著更深。",
+            drawdown_tradeoff="收益侧有 hindsight 吸引力，但点时失效，DD 中位/坏尾部成本约 17.5pct/22.0pct。",
             why_not_live="点时 walk-forward 失败，静态强势主要来自 hindsight。",
             next_validation=[
                 "继续 top4/top6 点时验证。",
@@ -530,7 +713,7 @@ def build_static_candidate_registry(*, market: dict | None = None,
         execution=execution,
         computed=False,
         as_of=as_of,
-        note="快速候选摘要基于上一轮已记录研究结论；点“完整候选库”可重新计算来源。",
+        note="快速研发台账基于已记录研究结论；未携带本次数据版本/窗口的条目会被治理层按缺证据处理。",
     )
 
 
@@ -543,6 +726,7 @@ def build_candidate_registry(*,
                              preference_rebalance: dict | None = None,
                              fund_mirror: dict | None = None,
                              fund_quarterly: dict | None = None,
+                             ndx_competition: dict | None = None,
                              source_errors: dict[str, str] | None = None,
                              market: dict | None = None,
                              execution: dict | None = None,
@@ -582,6 +766,7 @@ def build_candidate_registry(*,
                 title="012922 季度点时镜像",
                 why="历史季度点时镜像未稳定跑赢，不能复制到实盘。",
             ),
+            _from_ndx_competition(ndx_competition),
         ])
     return _finalize(
         candidates,

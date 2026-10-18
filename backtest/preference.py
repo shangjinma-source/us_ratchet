@@ -18,7 +18,9 @@ import numpy as np
 import pandas as pd
 
 from backtest.engine import run_rolling_start_panel, run_rolling_voltarget_panel
+from backtest.risk_envelope import evaluate_target_risk_envelope
 from backtest.universe import cached_universe, parse_tickers
+from backtest.weights import bounded_proportional_weights
 from core.config import Symbol
 from data.fetch import get_bars
 
@@ -180,34 +182,11 @@ def _load_metrics(cfg, tickers: list[str]) -> pd.DataFrame:
 
 
 def _capped_weights(raw: pd.Series, max_weight: float, min_weight: float) -> pd.Series:
-    raw = raw.astype(float).clip(lower=0.0)
-    if float(raw.sum()) <= 0:
-        raw = pd.Series(1.0, index=raw.index)
-    w = raw / float(raw.sum())
-    cap = max(float(max_weight), 1.0 / max(1, len(w)))
-    for _ in range(20):
-        over = w > cap
-        if not bool(over.any()):
-            break
-        excess = float((w[over] - cap).sum())
-        w[over] = cap
-        under = ~over
-        if not bool(under.any()) or float(w[under].sum()) <= 0:
-            break
-        w[under] += w[under] / float(w[under].sum()) * excess
-
-    floor = float(min_weight)
-    if floor > 0 and floor * len(w) < 1.0:
-        below = w < floor
-        if bool(below.any()):
-            need = float((floor - w[below]).sum())
-            donors = ~below
-            available = float((w[donors] - floor).clip(lower=0.0).sum())
-            if available >= need and available > 0:
-                w[below] = floor
-                take = (w[donors] - floor).clip(lower=0.0)
-                w[donors] -= take / float(take.sum()) * need
-    return w / float(w.sum())
+    return bounded_proportional_weights(
+        raw,
+        max_weight=float(max_weight),
+        min_weight=float(min_weight),
+    )
 
 
 def _weights_for(tickers: list[str], metrics: pd.DataFrame, mode: str) -> dict[str, float]:
@@ -300,16 +279,16 @@ def _candidate_baskets(cfg, tickers: list[str], groups: Mapping[str, list[str]],
         return []
 
     baskets: list[BasketSpec] = []
-    current = [s.ticker for s in cfg.symbols if s.ticker in valid.index]
+    current = [s.ticker for s in cfg.symbols if float(s.cap_total) > 0]
     if current:
-        total = sum(float(s.cap_total) for s in cfg.symbols if s.ticker in current)
+        total = sum(float(s.cap_total) for s in cfg.symbols if float(s.cap_total) > 0)
         weights = tuple(
             (s.ticker, float(s.cap_total) / total)
             for s in cfg.symbols
-            if s.ticker in current and total > 0
+            if float(s.cap_total) > 0 and total > 0
         )
         baskets.append(BasketSpec("current_config", tuple(current), weights,
-                                  "当前 config.yaml 标的与 cap_total", "config_cap"))
+                                  "当前调用配置的完整标的与 cap_total", "caller_config_cap"))
 
     valid_tickers = [t for t in tickers if t in valid.index]
     baskets.append(_make_spec("all_equal", valid_tickers, metrics,
@@ -370,20 +349,54 @@ def _group_counts(tickers: Iterable[str], groups: Mapping[str, list[str]]) -> di
     return out
 
 
-def _admission_note(row: dict, target: str) -> dict:
-    windows = int(row.get("windows") or 0)
-    win = row.get("win_rate")
-    excess = row.get("excess_p50")
-    dd = row.get("dd_relief_p50")
-    if windows < 6:
-        return {"stage": "defer", "label": "样本不足", "reason": "012922可用窗口太少，不能作为准入依据。"}
-    if win is None or excess is None or win < 0.50 or excess <= 0:
-        return {"stage": "defer", "label": "收益未过关", "reason": f"滚动跑赢 {target} 的胜率或超额中位不足。"}
-    if dd is not None and dd < 0:
-        return {"stage": "candidate", "label": "收益候选", "reason": f"收益侧过关，但回撤中位仍深于 {target}，不能接实盘。"}
-    if (win or 0) >= 0.60 and (excess or 0) > 0:
-        return {"stage": "eligible", "label": "可继续验证", "reason": "收益和回撤初筛均过线，但仍需样本外/动态权重验证。"}
-    return {"stage": "show", "label": "仅展示", "reason": "结果不够稳定，只用于观察。"}
+def _admission_note(row: dict, target: str, policy=None) -> dict:
+    envelope = evaluate_target_risk_envelope(row, target=target, policy=policy)
+    result = {"risk_envelope": envelope}
+    if not envelope["available"] or not envelope["checks"][0]["passed"]:
+        return {
+            **result,
+            "stage": "defer",
+            "label": "样本不足",
+            "reason": "滚动窗口或尾部分位不足，不能作为准入依据。",
+        }
+    if not envelope["return_passed"]:
+        return {
+            **result,
+            "stage": "defer",
+            "label": "收益未过关",
+            "reason": f"滚动跑赢 {target} 的胜率或超额中位不足。",
+        }
+    if not envelope["risk_passed"]:
+        metrics = envelope["metrics"]
+        return {
+            **result,
+            "stage": "candidate",
+            "label": "包络外收益候选",
+            "reason": (
+                f"收益侧过关，但相对 {target} 的 DD 成本中位/坏尾部为 "
+                f"{metrics['dd_cost_p50']:.1%}/{metrics['dd_cost_bad_tail']:.1%}，"
+                "超过研究预算。"
+            ),
+        }
+    return {
+        **result,
+        "stage": "eligible",
+        "label": "风险包络内候选",
+        "reason": envelope["reason"] + " 仍需当前配置守门、点时样本外与 today diff。",
+    }
+
+
+def _rolling_risk_samples(roll: dict) -> list[dict]:
+    samples = []
+    for item in roll.get("rows") or []:
+        strategy = item.get("strategy") or {}
+        samples.append({
+            "start": item.get("start"),
+            "end": item.get("end"),
+            "xirr": strategy.get("xirr"),
+            "maxdd": strategy.get("maxdd"),
+        })
+    return samples
 
 
 def _evaluate(base_cfg, basket: BasketSpec, safe_weight: float,
@@ -403,6 +416,8 @@ def _evaluate(base_cfg, basket: BasketSpec, safe_weight: float,
     dd = s.get("dd_relief") or {}
     sx = s.get("strategy_xirr") or {}
     sd = s.get("strategy_maxdd") or {}
+    bx = s.get("benchmark_xirr") or {}
+    bd = s.get("benchmark_maxdd") or {}
     row = {
         "basket": basket.name,
         "construction": basket.construction,
@@ -422,12 +437,34 @@ def _evaluate(base_cfg, basket: BasketSpec, safe_weight: float,
         "dd_relief_p50": dd.get("p50"),
         "dd_relief_p10": dd.get("p10"),
         "dd_relief_p90": dd.get("p90"),
+        "xirr_p10": sx.get("p10"),
         "xirr_p50": sx.get("p50"),
+        "xirr_p90": sx.get("p90"),
+        "maxdd_p10": sd.get("p10"),
         "maxdd_p50": sd.get("p50"),
+        "maxdd_p90": sd.get("p90"),
+        "benchmark_xirr_p10": bx.get("p10"),
+        "benchmark_xirr_p50": bx.get("p50"),
+        "benchmark_xirr_p90": bx.get("p90"),
+        "benchmark_maxdd_p10": bd.get("p10"),
+        "benchmark_maxdd_p50": bd.get("p50"),
+        "benchmark_maxdd_p90": bd.get("p90"),
+        "distribution": {
+            "strategy_xirr": sx,
+            "strategy_maxdd": sd,
+            "benchmark_xirr": bx,
+            "benchmark_maxdd": bd,
+            "excess_xirr": ex,
+            "dd_relief": dd,
+        },
+        "rolling_samples": _rolling_risk_samples(roll),
         "range": [roll["rows"][0]["start"], roll["rows"][-1]["start"]] if roll.get("rows") else None,
         "benchmark_errors": roll.get("benchmark_errors", {}),
+        "data_versions": roll.get("data_versions", {}),
     }
-    row["admission"] = _admission_note(row, target)
+    row["admission"] = _admission_note(
+        row, target, getattr(base_cfg, "research_admission", None)
+    )
     return row
 
 
@@ -447,6 +484,8 @@ def _evaluate_voltarget(base_cfg, basket: BasketSpec, total_cap: float,
     dd = s.get("dd_relief") or {}
     sx = s.get("strategy_xirr") or {}
     sd = s.get("strategy_maxdd") or {}
+    bx = s.get("benchmark_xirr") or {}
+    bd = s.get("benchmark_maxdd") or {}
     avg_w = s.get("avg_safe_weight") or {}
     turn = s.get("turnover_x") or {}
     row = {
@@ -470,13 +509,35 @@ def _evaluate_voltarget(base_cfg, basket: BasketSpec, total_cap: float,
         "dd_relief_p50": dd.get("p50"),
         "dd_relief_p10": dd.get("p10"),
         "dd_relief_p90": dd.get("p90"),
+        "xirr_p10": sx.get("p10"),
         "xirr_p50": sx.get("p50"),
+        "xirr_p90": sx.get("p90"),
+        "maxdd_p10": sd.get("p10"),
         "maxdd_p50": sd.get("p50"),
+        "maxdd_p90": sd.get("p90"),
+        "benchmark_xirr_p10": bx.get("p10"),
+        "benchmark_xirr_p50": bx.get("p50"),
+        "benchmark_xirr_p90": bx.get("p90"),
+        "benchmark_maxdd_p10": bd.get("p10"),
+        "benchmark_maxdd_p50": bd.get("p50"),
+        "benchmark_maxdd_p90": bd.get("p90"),
+        "distribution": {
+            "strategy_xirr": sx,
+            "strategy_maxdd": sd,
+            "benchmark_xirr": bx,
+            "benchmark_maxdd": bd,
+            "excess_xirr": ex,
+            "dd_relief": dd,
+        },
+        "rolling_samples": _rolling_risk_samples(roll),
         "range": [roll["rows"][0]["start"], roll["rows"][-1]["start"]] if roll.get("rows") else None,
         "benchmark_errors": roll.get("benchmark_errors", {}),
         "voltarget_params": roll.get("params", {}),
+        "data_versions": roll.get("data_versions", {}),
     }
-    row["admission"] = _admission_note(row, target)
+    row["admission"] = _admission_note(
+        row, target, getattr(base_cfg, "research_admission", None)
+    )
     return row
 
 

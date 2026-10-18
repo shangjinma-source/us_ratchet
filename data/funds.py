@@ -7,6 +7,7 @@ research/backtest data layer and never feeds it into live execution signals.
 from __future__ import annotations
 
 import html
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -15,6 +16,11 @@ from pathlib import Path
 import pandas as pd
 
 from core.helpers import atomic_write_text, proxy_env
+from data.versioning import (
+    ensure_dataset_manifest,
+    utc_now_iso,
+    write_dataset_manifest,
+)
 
 log = logging.getLogger("us_ratchet")
 
@@ -32,6 +38,7 @@ class FundMeta:
     end: str
     cached: bool = False
     errors: dict = field(default_factory=dict)
+    manifest: dict = field(default_factory=dict)
 
 
 def _fund_cache_path(code: str, cfg) -> Path:
@@ -74,6 +81,26 @@ def _parse_eastmoney_rows(text: str) -> list[dict]:
     return rows
 
 
+def _parse_eastmoney_api_rows(payload: dict) -> list[dict]:
+    data = payload.get("Data") or {}
+    rows: list[dict] = []
+    for item in data.get("LSJZList") or []:
+        date = str(item.get("FSRQ") or "").strip()
+        if not re.match(r"\d{4}-\d{2}-\d{2}$", date):
+            continue
+        unit_nav = _to_float(item.get("DWJZ"))
+        accum_nav = _to_float(item.get("LJJZ"))
+        if unit_nav is None and accum_nav is None:
+            continue
+        rows.append({
+            "Date": date,
+            "UnitNav": unit_nav,
+            "AccumNav": accum_nav,
+            "DailyPct": _pct_to_float(item.get("JZZZL")),
+        })
+    return rows
+
+
 def _normalize(rows: list[dict], code: str, cfg) -> pd.DataFrame:
     if not rows:
         raise FundDataError(f"{code}: 基金净值返回空数据")
@@ -96,28 +123,65 @@ def _read_cache(code: str, cfg) -> tuple[pd.DataFrame, FundMeta]:
     path = _fund_cache_path(code, cfg)
     if not path.exists():
         raise FundDataError(f"基金缓存不存在: {path}")
-    df = pd.read_csv(path)
-    if df.empty:
+    raw = pd.read_csv(path)
+    if raw.empty:
         raise FundDataError(f"基金缓存为空: {path}")
-    df = _normalize(df.to_dict(orient="records"), code, cfg)
+    raw_dates = (
+        pd.to_datetime(raw["Date"], errors="coerce").dropna()
+        if "Date" in raw else pd.Series(dtype="datetime64[ns]")
+    )
+    manifest = ensure_dataset_manifest(
+        path,
+        dataset_type="fund_nav",
+        dataset_key=code,
+        row_count=len(raw),
+        data_start=raw_dates.min().strftime("%Y-%m-%d") if len(raw_dates) else None,
+        data_end=raw_dates.max().strftime("%Y-%m-%d") if len(raw_dates) else None,
+        legacy_source="legacy_fund_nav_cache",
+        extra={"fund_code": code},
+    )
+    df = _normalize(raw.to_dict(orient="records"), code, cfg)
     return df, FundMeta(
         code=code, source="fund_cache", rows=len(df),
         start=df.index[0].strftime("%Y-%m-%d"),
         end=df.index[-1].strftime("%Y-%m-%d"),
         cached=True,
+        manifest=manifest,
     )
 
 
-def _write_cache(code: str, df: pd.DataFrame, cfg) -> None:
+def _write_cache(code: str, df: pd.DataFrame, cfg, *, source: str,
+                 source_locator: str, fetched_at: str,
+                 source_record_count: int, source_page_count: int) -> dict:
+    path = _fund_cache_path(code, cfg)
     out = df.copy()
     out.index = out.index.strftime("%Y-%m-%d")
-    atomic_write_text(_fund_cache_path(code, cfg), out.to_csv(index_label="Date"))
+    atomic_write_text(path, out.to_csv(index_label="Date"))
+    return write_dataset_manifest(
+        path,
+        dataset_type="fund_nav",
+        dataset_key=code,
+        source=source,
+        source_locator=source_locator,
+        fetched_at=fetched_at,
+        row_count=len(df),
+        data_start=df.index[0].strftime("%Y-%m-%d"),
+        data_end=df.index[-1].strftime("%Y-%m-%d"),
+        extra={
+            "fund_code": code,
+            "publication_time_known": False,
+            "source_confidence": "runtime_http_response",
+            "completeness": "verified_against_source_record_count",
+            "source_record_count": int(source_record_count),
+            "source_page_count": int(source_page_count),
+        },
+    )
 
 
 def _fetch_eastmoney_fund_nav(code: str, cfg) -> tuple[pd.DataFrame, FundMeta]:
     import requests
 
-    base = "https://fundf10.eastmoney.com/F10DataApi.aspx"
+    base = "https://api.fund.eastmoney.com/f10/lsjz"
     headers = {
         "Referer": f"https://fundf10.eastmoney.com/jjjz_{code}.html",
         "User-Agent": "Mozilla/5.0",
@@ -128,56 +192,88 @@ def _fetch_eastmoney_fund_nav(code: str, cfg) -> tuple[pd.DataFrame, FundMeta]:
         session = requests.Session()
         first = session.get(
             base,
-            params={"type": "lsjz", "code": code, "page": 1, "per": 20},
+            params={"fundCode": code, "pageIndex": 1, "pageSize": 20},
             headers=headers,
             timeout=20,
         )
         if first.status_code != 200:
             raise FundDataError(f"{code}: 东方财富基金接口 HTTP {first.status_code}")
-        text = first.text
-        rows.extend(_parse_eastmoney_rows(text))
-        m = re.search(r"pages:(\d+)", text)
-        pages = int(m.group(1)) if m else 1
+        try:
+            payload = json.loads(first.text)
+        except (TypeError, ValueError) as exc:
+            raise FundDataError(f"{code}: 东方财富基金接口返回非 JSON 数据") from exc
+        first_rows = _parse_eastmoney_api_rows(payload)
+        expected_records = int(payload.get("TotalCount") or 0)
+        page_size = int(payload.get("PageSize") or 0)
+        if payload.get("ErrCode") != 0 or not expected_records or not page_size or not first_rows:
+            raise FundDataError(f"{code}: 东方财富基金接口缺少完整性元数据或首屏净值")
+        rows.extend(first_rows)
+        pages = (expected_records + page_size - 1) // page_size
         for page in range(2, pages + 1):
             try:
                 resp = session.get(
                     base,
-                    params={"type": "lsjz", "code": code, "page": page, "per": 20},
+                    params={"fundCode": code, "pageIndex": page, "pageSize": page_size},
                     headers=headers,
                     timeout=20,
                 )
                 if resp.status_code != 200:
                     errors[f"page_{page}"] = f"HTTP {resp.status_code}"
                     continue
-                rows.extend(_parse_eastmoney_rows(resp.text))
+                page_payload = json.loads(resp.text)
+                page_rows = _parse_eastmoney_api_rows(page_payload)
+                if not page_rows:
+                    errors[f"page_{page}"] = "no parsed NAV rows"
+                    continue
+                rows.extend(page_rows)
             except Exception as e:
                 errors[f"page_{page}"] = repr(e)
 
+    if errors:
+        raise FundDataError(f"{code}: 东方财富基金净值分页不完整: {errors!r}")
+    fetched_dates = {str(row.get("Date") or "") for row in rows}
+    if len(fetched_dates) != expected_records:
+        raise FundDataError(
+            f"{code}: 东方财富基金净值记录数不完整; "
+            f"expected={expected_records}, parsed_unique={len(fetched_dates)}"
+        )
     df = _normalize(rows, code, cfg)
+    fetched_at = utc_now_iso()
     meta = FundMeta(
-        code=code, source="eastmoney_fund", rows=len(df),
+        code=code, source="eastmoney_fund_api", rows=len(df),
         start=df.index[0].strftime("%Y-%m-%d"),
         end=df.index[-1].strftime("%Y-%m-%d"),
         cached=False,
         errors=errors,
     )
-    _write_cache(code, df, cfg)
+    meta.manifest = _write_cache(
+        code,
+        df,
+        cfg,
+        source="eastmoney_fund_nav_api",
+        source_locator=base,
+        fetched_at=fetched_at,
+        source_record_count=expected_records,
+        source_page_count=pages,
+    )
     log.info("%s ← eastmoney_fund | %s..%s | %d 行",
              code, meta.start, meta.end, meta.rows)
     return df, meta
 
 
-def get_fund_nav(code: str, cfg, *, local_only: bool = False) -> tuple[pd.DataFrame, FundMeta]:
+def get_fund_nav(code: str, cfg, *, local_only: bool = False,
+                 refresh: bool = False) -> tuple[pd.DataFrame, FundMeta]:
     code = str(code or "").strip()
     if not (len(code) == 6 and code.isdigit()):
         raise FundDataError(f"基金代码必须是 6 位数字: {code!r}")
     cache_error = None
-    try:
+    if local_only:
         return _read_cache(code, cfg)
-    except Exception as e:
-        cache_error = e
-        if local_only:
-            raise
+    if not refresh:
+        try:
+            return _read_cache(code, cfg)
+        except Exception as e:
+            cache_error = e
     try:
         return _fetch_eastmoney_fund_nav(code, cfg)
     except Exception as e:

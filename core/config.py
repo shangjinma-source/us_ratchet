@@ -123,12 +123,42 @@ class TacticalOrderConfig:
 
 
 @dataclass
+class ExecutionConfig:
+    """Broker/execution constraints shared by live advice, buy plans, and research metadata."""
+    venue: str = "汇丰银行"
+    currency: str = "USD"
+    lot_size: float = 1.0
+    allow_fractional: bool = False
+    cash_input_net_of_reserve: bool = True
+    fee_bps: float = 0.0
+    min_fee: float = 0.0
+    buy_plan_compact_target: int = 4
+
+
+@dataclass
+class ResearchAdmissionConfig:
+    """Fail-closed risk budget for research candidates; never drives live orders."""
+    target_benchmark: str = "012922"
+    min_rolling_windows: int = 12
+    min_target_win_rate: float = 0.50
+    min_target_excess_p50: float = 0.0
+    max_target_dd_cost_p50: float = 0.03
+    max_target_dd_cost_bad_tail: float = 0.05
+    min_incumbent_xirr_margin_p50: float = -0.001
+    min_incumbent_xirr_margin_p10: float = -0.02
+    max_incumbent_dd_cost_p50: float = 0.005
+    max_incumbent_dd_cost_p90: float = 0.02
+
+
+@dataclass
 class AppConfig:
     data: DataConfig
     portfolio: PortfolioConfig
     symbols: list[Symbol]
     safe_leg: Optional[SafeLeg] = None     # None = 不启用防御腿（向后兼容旧 config）
     tactical_orders: TacticalOrderConfig = field(default_factory=TacticalOrderConfig)
+    execution: ExecutionConfig = field(default_factory=ExecutionConfig)
+    research_admission: ResearchAdmissionConfig = field(default_factory=ResearchAdmissionConfig)
     cache_dir: Path = field(default=None)  # 解析后的绝对路径
 
 
@@ -290,7 +320,58 @@ def load_config(path: str | Path = "config/config.yaml") -> AppConfig:
     _require(bool(tactical_orders.market_gate_tickers),
              "tactical_orders.market_gate_tickers 不能为空")
 
+    # ---- execution（券商/整股执行约束）----
+    exec_raw = raw.get("execution") or {}
+    execution = ExecutionConfig(**{**ExecutionConfig().__dict__, **exec_raw})
+    execution.venue = str(execution.venue or "汇丰银行")
+    execution.currency = str(execution.currency or "USD").upper()
+    execution.lot_size = float(execution.lot_size)
+    execution.fee_bps = float(execution.fee_bps)
+    execution.min_fee = float(execution.min_fee)
+    execution.buy_plan_compact_target = int(execution.buy_plan_compact_target)
+    _require(execution.lot_size > 0, "execution.lot_size 必须 > 0")
+    _require(execution.fee_bps >= 0, "execution.fee_bps 不能为负")
+    _require(execution.min_fee >= 0, "execution.min_fee 不能为负")
+    _require(execution.buy_plan_compact_target > 0,
+             "execution.buy_plan_compact_target 必须 > 0")
+
+    # ---- research_admission（只读研究准入，不进入执行层）----
+    admission_raw = raw.get("research_admission") or {}
+    research_admission = ResearchAdmissionConfig(
+        **{**ResearchAdmissionConfig().__dict__, **admission_raw}
+    )
+    research_admission.target_benchmark = str(
+        research_admission.target_benchmark or "012922"
+    ).upper().strip()
+    research_admission.min_rolling_windows = int(research_admission.min_rolling_windows)
+    for field_name in (
+        "min_target_win_rate",
+        "min_target_excess_p50",
+        "max_target_dd_cost_p50",
+        "max_target_dd_cost_bad_tail",
+        "min_incumbent_xirr_margin_p50",
+        "min_incumbent_xirr_margin_p10",
+        "max_incumbent_dd_cost_p50",
+        "max_incumbent_dd_cost_p90",
+    ):
+        setattr(research_admission, field_name, float(getattr(research_admission, field_name)))
+    _require(bool(research_admission.target_benchmark),
+             "research_admission.target_benchmark 不能为空")
+    _require(research_admission.min_rolling_windows >= 6,
+             "research_admission.min_rolling_windows 必须 >= 6")
+    _require(0 <= research_admission.min_target_win_rate <= 1,
+             "research_admission.min_target_win_rate 必须在 [0, 1]")
+    _require(research_admission.max_target_dd_cost_p50 >= 0,
+             "research_admission.max_target_dd_cost_p50 不能为负")
+    _require(research_admission.max_target_dd_cost_bad_tail >= 0,
+             "research_admission.max_target_dd_cost_bad_tail 不能为负")
+    _require(research_admission.max_incumbent_dd_cost_p50 >= 0,
+             "research_admission.max_incumbent_dd_cost_p50 不能为负")
+    _require(research_admission.max_incumbent_dd_cost_p90 >= 0,
+             "research_admission.max_incumbent_dd_cost_p90 不能为负")
+
     cfg = AppConfig(data=data, portfolio=portfolio, symbols=symbols,
-                    safe_leg=safe_leg, tactical_orders=tactical_orders)
+                    safe_leg=safe_leg, tactical_orders=tactical_orders,
+                    execution=execution, research_admission=research_admission)
     cfg.cache_dir = resolve(data.cache_dir)
     return cfg

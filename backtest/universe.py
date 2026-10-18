@@ -16,6 +16,7 @@ import pandas as pd
 
 from backtest.engine import run_nav_panel, run_rolling_start_panel
 from backtest import metrics as M
+from backtest.weights import bounded_proportional_weights
 from core.config import Symbol
 from data.fetch import get_bars
 
@@ -124,34 +125,11 @@ def _rank_pct(values: pd.Series, higher_is_better: bool = True) -> pd.Series:
 
 
 def _capped_weights(raw: pd.Series, max_weight: float, min_weight: float) -> pd.Series:
-    raw = raw.clip(lower=0.0)
-    if float(raw.sum()) <= 0:
-        raw = pd.Series(1.0, index=raw.index)
-    w = raw / raw.sum()
-    cap = max(float(max_weight), 1.0 / max(1, len(w)))
-    for _ in range(20):
-        over = w > cap
-        if not bool(over.any()):
-            break
-        excess = float((w[over] - cap).sum())
-        w[over] = cap
-        under = ~over
-        if not bool(under.any()) or float(w[under].sum()) <= 0:
-            break
-        w[under] += w[under] / float(w[under].sum()) * excess
-
-    floor = float(min_weight)
-    if floor > 0 and floor * len(w) < 1.0:
-        below = w < floor
-        if bool(below.any()):
-            need = float((floor - w[below]).sum())
-            donors = ~below
-            available = float((w[donors] - floor).clip(lower=0.0).sum())
-            if available >= need and available > 0:
-                w[below] = floor
-                take = (w[donors] - floor).clip(lower=0.0)
-                w[donors] -= take / float(take.sum()) * need
-    return w / w.sum()
+    return bounded_proportional_weights(
+        raw,
+        max_weight=float(max_weight),
+        min_weight=float(min_weight),
+    )
 
 
 def _symbols_from_weight_map(weight_map: dict[str, float], total_cap: float,
@@ -193,6 +171,7 @@ def _rolling_target_summary(res: dict) -> dict:
         "strategy_maxdd": summary.get("strategy_maxdd"),
         "range": [rows[0]["start"], rows[-1]["start"]] if rows else None,
         "benchmark_errors": res.get("benchmark_errors", {}),
+        "data_versions": res.get("data_versions", {}),
     }
 
 
@@ -419,6 +398,7 @@ def run_universe_research(cfg, tickers: str | Iterable[str], *,
                 if k not in {"纯棘轮"} and "策略" not in k
             },
             "benchmark_errors": res.get("benchmark_errors", {}),
+            "data_versions": res.get("data_versions", {}),
             "safe_weight_current": res.get("safe_weight"),
             "safe_weight_estimate_for_budget": safe_weight_estimate,
         }

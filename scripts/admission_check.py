@@ -85,13 +85,19 @@ def main() -> None:
     assert gate["does_change_today_advice"] is False
 
     pref_research["rows"][0]["dd_relief_p50"] = 0.01
+    pref_research["rows"][0]["dd_relief_p10"] = -0.01
+    pref_research["rows"][0]["windows"] = 18
+    pref_research["rows"][0]["xirr_p10"] = 0.12
     pref_research["rows"][0]["xirr_p50"] = 0.16
     pref_research["rows"][0]["maxdd_p50"] = 0.30
+    pref_research["rows"][0]["maxdd_p90"] = 0.33
     pref_research["rows"][0]["admission"] = {"stage": "eligible", "label": "可继续验证"}
     pref_research["summary"]["incumbent_guard"] = {
         "available": True,
+        "xirr_p10": 0.11,
         "xirr_p50": 0.15,
         "maxdd_p50": 0.31,
+        "maxdd_p90": 0.34,
     }
     gate = evaluate_preference_live_gate(pref_research, market=market)
     assert gate["decision"] == "RESEARCH_CANDIDATE_ONLY"
@@ -99,8 +105,10 @@ def main() -> None:
 
     pref_research["summary"]["incumbent_guard"] = {
         "available": True,
+        "xirr_p10": 0.15,
         "xirr_p50": 0.17,
         "maxdd_p50": 0.28,
+        "maxdd_p90": 0.29,
     }
     gate = evaluate_preference_live_gate(pref_research, market=market)
     assert gate["decision"] == "BLOCKED_BY_INCUMBENT"
