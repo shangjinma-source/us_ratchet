@@ -90,6 +90,8 @@ def main() -> int:
     s = res["summary"]
     print("\n012922季度披露US持仓点时镜像研究（research only）")
     print(f"基金: {s['fund_code']} {s.get('fund_name') or ''} | 最新报告期: {s.get('latest_report_date') or '-'}")
+    versions = s.get("data_versions") or {}
+    print(f"数据版本: 历史持仓={versions.get('holdings_history') or '-'} | 净值={versions.get('target_nav') or '-'}")
     print(f"点时规则: report_date + {s['availability_delay_days']}天后可用；每{s['rebalance_months']}个月检查一次；成本 {s['trade_cost_bps']:.1f}bp")
     print(f"US历史ticker: {s['us_ticker_count']} | 可用行情: {s['available_ticker_count']} | 滚动起点: {s['start_count']}")
     print(f"{'组合':<34}{'core':>7}{'W':>6}{'窗':>5}{'胜率':>7}"

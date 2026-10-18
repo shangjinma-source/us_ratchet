@@ -18,6 +18,7 @@ from core.config import Symbol
 from core.state import CashFlow, Portfolio, SymbolState
 from data.fetch import get_bars, DataError
 from data.funds import get_fund_nav
+from data.versioning import data_version_payload
 from backtest import metrics as M
 from backtest.benchmarks import run_benchmark
 
@@ -1557,7 +1558,20 @@ def run_crash_sleeve_ab(cfg, monthly: float = 0.0, *,
         label = _benchmark_label(tk)
         try:
             close, meta = _fetch_benchmark_close(tk, cfg, grid)
-            benchmark_close[label] = {"close": close, "source": getattr(meta, "source", "?")}
+            version_start_i = _first_valid_price_i(close)
+            version = data_version_payload(
+                meta,
+                used_start=(
+                    grid[version_start_i].strftime("%Y-%m-%d")
+                    if version_start_i is not None else None
+                ),
+                used_end=grid[-1].strftime("%Y-%m-%d"),
+            )
+            benchmark_close[label] = {
+                "close": close,
+                "source": getattr(meta, "source", "?"),
+                "data_version": version if version.get("version_id") else None,
+            }
         except Exception as e:
             benchmark_errors[label] = str(e)
 
@@ -2570,7 +2584,8 @@ def run_tactical_overlay_ab(cfg, monthly: float = 0.0, *,
 # ===========================================================================
 def _run_defensive_fund(grid, risky_nav, flows, safe_annual: float,
                         w_safe: float, rebal_days: int, rebal_band: float,
-                        w_safe_series=None):
+                        w_safe_series=None, *, trade_cost_bps: float = 0.0,
+                        execution_stats: dict | None = None):
     """把已验证的风险腿单位NAV(risky_nav)与固定收益安全腿，按目标权重组合成一只基金。
     申购现金流复用 flows(=策略的申购：上市cap + 按月注资，与权重无关)。
     w_safe_series=None：目标安全权重恒为 w_safe（静态防御层，与原实现逐位一致）；
@@ -2594,9 +2609,12 @@ def _run_defensive_fund(grid, risky_nav, flows, safe_annual: float,
     units = 0.0
     nav = np.zeros(n)
     equity = np.zeros(n)
+    actual_safe_weights = np.zeros(n)
     turnover = 0.0
+    cost_paid = 0.0
     n_rebal = 0
     P = int(rebal_days) if (rebal_days and rebal_days >= 1) else 0
+    trade_cost = max(0.0, float(trade_cost_bps)) / 10000.0
 
     for i in range(n):
         if i > 0:                          # 先按当日收益给两腿计值（mark-to-close）
@@ -2630,12 +2648,27 @@ def _run_defensive_fund(grid, risky_nav, flows, safe_annual: float,
                     move = None
             if move is not None:
                 turnover += abs(move)
+                cost = abs(move) * trade_cost
                 safe_val += move
                 risky_val -= move
+                if move > 0:
+                    safe_val -= cost
+                else:
+                    risky_val -= cost
+                cost_paid += cost
                 n_rebal += 1
         tv = risky_val + safe_val
         equity[i] = tv
         nav[i] = (tv / units) if units > 0 else (nav[i - 1] if i > 0 else 1.0)
+        actual_safe_weights[i] = safe_val / tv if tv > 0 else 0.0
+    if execution_stats is not None:
+        execution_stats.update({
+            "turnover": float(turnover),
+            "cost_paid": float(cost_paid),
+            "n_rebal": int(n_rebal),
+            "trade_cost_bps": float(trade_cost_bps),
+            "actual_safe_weight_series": actual_safe_weights,
+        })
     return nav, equity, flow_by_i, turnover, n_rebal
 
 
@@ -2767,9 +2800,17 @@ def run_nav_panel(cfg, monthly: float = 0.0, *,
                 beq = beq.copy()
                 bnav[:start_i] = np.nan
                 beq[:start_i] = np.nan
-            curves[label] = {"nav": bnav, "equity": beq,
-                             "metrics": metrics,
-                             "source": getattr(bmeta, "source", "?")}
+            curve_item = {"nav": bnav, "equity": beq,
+                          "metrics": metrics,
+                          "source": getattr(bmeta, "source", "?")}
+            version = data_version_payload(
+                bmeta,
+                used_start=metrics.get("start") or grid[0].strftime("%Y-%m-%d"),
+                used_end=grid[-1].strftime("%Y-%m-%d"),
+            )
+            if version.get("version_id"):
+                curve_item["data_version"] = version
+            curves[label] = curve_item
         except Exception as e:
             benchmark_errors[label] = str(e)
 
@@ -2783,6 +2824,10 @@ def run_nav_panel(cfg, monthly: float = 0.0, *,
             "baseline_label": baseline_label,
             "safe_weight": safe_weight, "safe_annual": safe_annual,
             "rebal_days": rebal_days, "rebal_band": rebal_band,
+            "data_versions": {
+                name: item["data_version"]
+                for name, item in curves.items() if item.get("data_version")
+            },
             "tier_contrib": {
                 i: {"amount": sum(f.amount for st in pf.symbols.values()
                                   for f in st.fires if f.tier_index == i),
@@ -2837,7 +2882,20 @@ def run_rolling_start_panel(cfg, monthly: float = 0.0, *,
         label = _benchmark_label(tk)
         try:
             close, meta = _fetch_benchmark_close(tk, cfg, grid)
-            benchmark_close[label] = {"close": close, "source": getattr(meta, "source", "?")}
+            version_start_i = _first_valid_price_i(close)
+            version = data_version_payload(
+                meta,
+                used_start=(
+                    grid[version_start_i].strftime("%Y-%m-%d")
+                    if version_start_i is not None else None
+                ),
+                used_end=grid[-1].strftime("%Y-%m-%d"),
+            )
+            benchmark_close[label] = {
+                "close": close,
+                "source": getattr(meta, "source", "?"),
+                "data_version": version if version.get("version_id") else None,
+            }
         except Exception as e:
             benchmark_errors[label] = str(e)
 
@@ -2939,6 +2997,14 @@ def run_rolling_start_panel(cfg, monthly: float = 0.0, *,
         "strategy_xirr": qs([r["strategy"]["xirr"] for r in rows]),
         "strategy_maxdd": qs([r["strategy"]["maxdd"] for r in rows]),
         "strategy_mult": qs([r["strategy"]["mult"] for r in rows]),
+        "benchmark_xirr": qs([
+            (r.get("benchmarks", {}).get(baseline_label) or {}).get("xirr")
+            for r in rows
+        ]),
+        "benchmark_maxdd": qs([
+            (r.get("benchmarks", {}).get(baseline_label) or {}).get("maxdd")
+            for r in rows
+        ]),
         "excess_xirr": qs(excess),
         "dd_relief": qs(relief),
         "win_rate": (sum(1 for v in valid_excess if v > 0) / len(valid_excess))
@@ -2951,6 +3017,10 @@ def run_rolling_start_panel(cfg, monthly: float = 0.0, *,
             "strategy_label": f"策略+防御层(W={safe_weight:.0%})" if safe_weight > 0 else "策略",
             "safe_weight": safe_weight, "safe_annual": safe_annual,
             "rebal_days": rebal_days, "rebal_band": rebal_band,
+            "data_versions": {
+                name: item["data_version"]
+                for name, item in benchmark_close.items() if item.get("data_version")
+            },
             "benchmark_errors": benchmark_errors}
 
 
@@ -3002,7 +3072,20 @@ def run_rolling_voltarget_panel(cfg, monthly: float = 0.0, *,
         label = _benchmark_label(tk)
         try:
             close, meta = _fetch_benchmark_close(tk, cfg, grid)
-            benchmark_close[label] = {"close": close, "source": getattr(meta, "source", "?")}
+            version_start_i = _first_valid_price_i(close)
+            version = data_version_payload(
+                meta,
+                used_start=(
+                    grid[version_start_i].strftime("%Y-%m-%d")
+                    if version_start_i is not None else None
+                ),
+                used_end=grid[-1].strftime("%Y-%m-%d"),
+            )
+            benchmark_close[label] = {
+                "close": close,
+                "source": getattr(meta, "source", "?"),
+                "data_version": version if version.get("version_id") else None,
+            }
         except Exception as e:
             benchmark_errors[label] = str(e)
 
@@ -3102,6 +3185,14 @@ def run_rolling_voltarget_panel(cfg, monthly: float = 0.0, *,
         "strategy_xirr": qs([r["strategy"]["xirr"] for r in rows]),
         "strategy_maxdd": qs([r["strategy"]["maxdd"] for r in rows]),
         "strategy_mult": qs([r["strategy"]["mult"] for r in rows]),
+        "benchmark_xirr": qs([
+            (r.get("benchmarks", {}).get(baseline_label) or {}).get("xirr")
+            for r in rows
+        ]),
+        "benchmark_maxdd": qs([
+            (r.get("benchmarks", {}).get(baseline_label) or {}).get("maxdd")
+            for r in rows
+        ]),
         "avg_safe_weight": qs([r["strategy"].get("avg_safe_weight") for r in rows]),
         "turnover_x": qs([r["strategy"].get("turnover_x") for r in rows]),
         "n_rebal": qs([r["strategy"].get("n_rebal") for r in rows]),
@@ -3116,6 +3207,10 @@ def run_rolling_voltarget_panel(cfg, monthly: float = 0.0, *,
             "strategy_label": "策略+vol-target动态防御层",
             "safe_annual": safe_annual,
             "benchmark_errors": benchmark_errors,
+            "data_versions": {
+                name: item["data_version"]
+                for name, item in benchmark_close.items() if item.get("data_version")
+            },
             "params": {"target_vol": target_vol, "base_w": base_w, "band": band,
                        "vol_win": vol_win, "exec_band": exec_band}}
 

@@ -19,6 +19,11 @@ import numpy as np
 
 from backtest.engine import run_rolling_start_panel
 from backtest.preference import PREFERRED_MAX_HOLDINGS, run_preference_portfolio_research
+from backtest.risk_envelope import (
+    evaluate_candidate_risk_envelope,
+    evaluate_incumbent_risk_guard,
+    resolve_risk_envelope_policy,
+)
 
 
 STAGE_RANK = {"eligible": 3, "candidate": 2, "defer": 1, "show": 0}
@@ -79,10 +84,15 @@ def _row_summary(row: dict) -> dict:
         "win_rate": row.get("win_rate"),
         "dd_win_rate": row.get("dd_win_rate"),
         "excess_p50": row.get("excess_p50"),
+        "excess_p10": row.get("excess_p10"),
         "dd_relief_p50": row.get("dd_relief_p50"),
+        "dd_relief_p10": row.get("dd_relief_p10"),
+        "xirr_p10": row.get("xirr_p10"),
         "xirr_p50": row.get("xirr_p50"),
+        "maxdd_p90": row.get("maxdd_p90"),
         "maxdd_p50": row.get("maxdd_p50"),
         "range": row.get("range"),
+        "data_versions": row.get("data_versions") or {},
         "admission": row.get("admission") or {},
     }
 
@@ -91,23 +101,48 @@ def _roll_summary_for_guard(roll: dict) -> dict:
     s = roll.get("summary") or {}
     sx = s.get("strategy_xirr") or {}
     sd = s.get("strategy_maxdd") or {}
+    bx = s.get("benchmark_xirr") or {}
+    bd = s.get("benchmark_maxdd") or {}
     ex = s.get("excess_xirr") or {}
     dd = s.get("dd_relief") or {}
     return {
         "windows": s.get("windows"),
         "win_rate": s.get("win_rate"),
         "dd_win_rate": s.get("dd_win_rate"),
+        "xirr_p10": sx.get("p10"),
         "xirr_p50": sx.get("p50"),
+        "xirr_p90": sx.get("p90"),
+        "maxdd_p10": sd.get("p10"),
         "maxdd_p50": sd.get("p50"),
+        "maxdd_p90": sd.get("p90"),
         "excess_p50": ex.get("p50"),
         "dd_relief_p50": dd.get("p50"),
+        "distribution": {
+            "strategy_xirr": sx,
+            "strategy_maxdd": sd,
+            "benchmark_xirr": bx,
+            "benchmark_maxdd": bd,
+            "excess_xirr": ex,
+            "dd_relief": dd,
+        },
+        "rolling_samples": [
+            {
+                "start": item.get("start"),
+                "end": item.get("end"),
+                "xirr": (item.get("strategy") or {}).get("xirr"),
+                "maxdd": (item.get("strategy") or {}).get("maxdd"),
+            }
+            for item in roll.get("rows") or []
+        ],
         "range": [roll["rows"][0]["start"], roll["rows"][-1]["start"]] if roll.get("rows") else None,
         "benchmark_errors": roll.get("benchmark_errors", {}),
+        "data_versions": roll.get("data_versions", {}),
     }
 
 
 def _incumbent_research(cfg, monthly: float, target_benchmark: str,
-                        min_years: float) -> dict:
+                        min_years: float,
+                        incumbent_basis: str = "caller_cfg") -> dict:
     if cfg is None:
         return {"available": False, "reason": "cfg unavailable"}
     target = str(target_benchmark or "012922").upper().strip()
@@ -130,54 +165,14 @@ def _incumbent_research(cfg, monthly: float, target_benchmark: str,
         "label": f"current_config+defense(W={safe_weight:.0%})",
         "target_benchmark": target,
         "safe_weight": safe_weight,
+        "basis": str(incumbent_basis or "caller_cfg"),
     })
     return out
 
 
-def _evaluate_incumbent_guard(best: dict | None, incumbent: dict | None) -> dict:
-    if not incumbent or not incumbent.get("available"):
-        return {
-            "available": False,
-            "passed": False,
-            "reason": (incumbent or {}).get("reason") or "incumbent research unavailable",
-        }
-    if not best:
-        return {"available": True, "passed": False, "reason": "no candidate row"}
-
-    cand_x = _num(best.get("xirr_p50"))
-    cand_dd = _num(best.get("maxdd_p50"))
-    inc_x = _num(incumbent.get("xirr_p50"))
-    inc_dd = _num(incumbent.get("maxdd_p50"))
-    x_margin = (cand_x - inc_x) if cand_x is not None and inc_x is not None else None
-    dd_margin = (inc_dd - cand_dd) if cand_dd is not None and inc_dd is not None else None
-    return_ok = x_margin is not None and x_margin >= -0.001
-    dd_ok = dd_margin is not None and dd_margin >= -0.005
-    passed = bool(return_ok and dd_ok)
-    if passed:
-        reason = "candidate is not materially worse than current config on rolling XIRR and NAV-DD"
-    else:
-        reason = "candidate fails incumbent guard: it must not trail current config on rolling XIRR or materially deepen NAV-DD"
-    return {
-        "available": True,
-        "passed": passed,
-        "reason": reason,
-        "candidate": {
-            "basket": best.get("basket"),
-            "defense_mode": best.get("defense_mode"),
-            "safe_weight": best.get("safe_weight"),
-            "xirr_p50": cand_x,
-            "maxdd_p50": cand_dd,
-        },
-        "incumbent": incumbent,
-        "margins": {
-            "xirr_p50_vs_incumbent": x_margin,
-            "dd_relief_p50_vs_incumbent": dd_margin,
-        },
-        "thresholds": {
-            "min_xirr_margin": -0.001,
-            "min_dd_margin": -0.005,
-        },
-    }
+def _evaluate_incumbent_guard(best: dict | None, incumbent: dict | None,
+                              policy=None) -> dict:
+    return evaluate_incumbent_risk_guard(best, incumbent, policy=policy)
 
 
 def _stage_counts(rows: list[dict]) -> dict[str, int]:
@@ -277,7 +272,15 @@ def evaluate_preference_live_gate(research: dict, cfg=None,
     }
     best_compact = ((summary.get("best") or {}).get("best_compact"))
     incumbent = (research.get("summary") or {}).get("incumbent_guard")
-    guard = _evaluate_incumbent_guard(best, incumbent)
+    policy = resolve_risk_envelope_policy(cfg)
+    target_benchmark = str(summary.get("target_benchmark") or policy.target_benchmark).upper()
+    risk_envelope = evaluate_candidate_risk_envelope(
+        best,
+        incumbent,
+        target=target_benchmark,
+        policy=policy,
+    )
+    guard = risk_envelope["incumbent"]
 
     if not rows:
         decision = "NO_RESEARCH"
@@ -310,8 +313,10 @@ def evaluate_preference_live_gate(research: dict, cfg=None,
 
     history = {
         "improved_return": bool(best and (_num(best.get("excess_p50")) or -9.0) > 0),
-        "drawdown_ok": bool(best and (_num(best.get("dd_relief_p50")) or -9.0) >= 0),
+        "drawdown_ok": bool(risk_envelope["target"].get("risk_passed")),
         "incumbent_guard_passed": bool(guard.get("passed")),
+        "risk_envelope_passed": bool(risk_envelope.get("passed")),
+        "drawdown_tradeoff": risk_envelope["target"].get("metrics"),
         "best": _row_summary(best) if best else None,
         "eligible_count": len(eligible),
         "candidate_count": len(candidates),
@@ -328,6 +333,7 @@ def evaluate_preference_live_gate(research: dict, cfg=None,
         "live_stage": live_stage,
         "target_benchmark": (research.get("summary") or {}).get("target_benchmark"),
         "history": history,
+        "risk_envelope": risk_envelope,
         "incumbent_guard": guard,
         "current_market": _market_summary(market),
         "today": {
@@ -337,8 +343,8 @@ def evaluate_preference_live_gate(research: dict, cfg=None,
         },
         "blockers": blockers,
         "next_validation": [
-            "Require eligible admission versus 012922 on rolling starts.",
-            "Require the incumbent guard: candidate rolling XIRR and NAV-DD cannot be materially worse than current config.",
+            "Require the configured target DD-cost envelope on rolling starts, including the adverse tail.",
+            "Require the incumbent guard on XIRR P50/P10 and maximum-drawdown P50/P90.",
             f"Prefer compact baskets with <= {PREFERRED_MAX_HOLDINGS} holdings when evidence is otherwise comparable.",
             "Run sample-out or expanding-window validation; do not tune on the same 2022-2026 slice only.",
             "Replay dynamic weight selection with /api/preference_walkforward before any config write.",
@@ -351,6 +357,7 @@ def evaluate_preference_live_gate(research: dict, cfg=None,
             "group_count": (research.get("summary") or {}).get("group_count"),
             "evaluation_count": len(rows),
             "include_voltarget": (research.get("summary") or {}).get("include_voltarget"),
+            "risk_envelope_policy": risk_envelope.get("policy"),
         },
     }
 
@@ -367,6 +374,7 @@ def run_preference_live_gate(cfg, tickers: str | Iterable[str] = "",
                              voltarget_top_k: int = 4,
                              local_only: bool = True,
                              market: dict | None = None,
+                             incumbent_basis: str = "caller_cfg",
                              include_research: bool = False) -> dict:
     """Run preference research and return the read-only live gate decision."""
     research = run_preference_portfolio_research(
@@ -388,10 +396,12 @@ def run_preference_live_gate(cfg, tickers: str | Iterable[str] = "",
             monthly=float(monthly),
             target_benchmark=target_benchmark,
             min_years=float(min_years),
+            incumbent_basis=incumbent_basis,
         )
     except Exception as e:
         incumbent = {"available": False, "reason": repr(e)}
     research.setdefault("summary", {})["incumbent_guard"] = incumbent
+    research["summary"]["incumbent_basis"] = str(incumbent_basis or "caller_cfg")
     gate = evaluate_preference_live_gate(research, cfg=cfg, market=market)
     if include_research:
         gate["research"] = research

@@ -13,14 +13,18 @@ from backtest.engine import (
     _benchmark_label,
     _build_panels,
     _fetch_benchmark_close,
+    _first_valid_price_i,
     _run_defensive_fund,
     _run_single_asset_fund,
     run_rolling_start_panel,
 )
 from backtest.preference import _admission_note, _cfg_for_basket, parse_safe_weights
+from backtest.weights import bounded_proportional_weights
 from core import engine as eng
 from data.fetch import get_bars
+from data.funds import get_fund_nav
 from data.fund_holdings import get_fund_holding_history, get_fund_holdings
+from data.versioning import data_version_payload, modeled_availability_manifest
 
 
 def _parse_float_list(raw: str | Iterable[float]) -> list[float]:
@@ -211,6 +215,27 @@ def run_fund_mirror_research(cfg, fund_code: str = "012922", *,
         ),
         reverse=True,
     )
+    holdings_version = data_version_payload(
+        meta,
+        used_rows=len(holdings),
+        used_report_date=meta.report_date,
+    )
+    target_version = {}
+    if len(target) == 6 and target.isdigit():
+        target_nav, target_meta = get_fund_nav(target, c, local_only=local_only)
+        target_version = data_version_payload(
+            target_meta,
+            used_rows=len(target_nav),
+            used_start=target_nav.index[0].strftime("%Y-%m-%d"),
+            used_end=target_nav.index[-1].strftime("%Y-%m-%d"),
+        )
+    data_manifest = {
+        "schema_version": 1,
+        "fund_code": str(fund_code),
+        "latest_holdings_hindsight": True,
+        "holdings_report": holdings_version,
+        "target_nav": target_version,
+    }
     return {
         "summary": {
             "research_only": True,
@@ -221,6 +246,10 @@ def run_fund_mirror_research(cfg, fund_code: str = "012922", *,
             "fund_name": meta.fund_name,
             "report_date": meta.report_date,
             "holdings_source": meta.source,
+            "data_versions": {
+                "holdings_report": holdings_version.get("version_id"),
+                "target_nav": target_version.get("version_id"),
+            },
             "target_benchmark": target,
             "total_cap": float(total_cap),
             "monthly": float(monthly),
@@ -233,6 +262,7 @@ def run_fund_mirror_research(cfg, fund_code: str = "012922", *,
             "note": "仅镜像基金最新披露持仓中的 US ticker 子集；不是基金完整历史持仓回放，不改变今日建议。",
         },
         "holdings": _holding_records(holdings),
+        "data_manifest": data_manifest,
         "rows": rows,
     }
 
@@ -352,30 +382,11 @@ def _capped_weights(raw: Mapping[str, float], max_weight: float, min_weight: flo
     s = pd.Series({str(k).upper(): float(v) for k, v in raw.items() if float(v) > 0})
     if s.empty:
         return {}
-    w = s / float(s.sum())
-    cap = max(float(max_weight), 1.0 / len(w))
-    for _ in range(30):
-        over = w > cap
-        if not bool(over.any()):
-            break
-        excess = float((w[over] - cap).sum())
-        w[over] = cap
-        under = ~over
-        if not bool(under.any()) or float(w[under].sum()) <= 0:
-            break
-        w[under] += w[under] / float(w[under].sum()) * excess
-    floor = float(min_weight)
-    if floor > 0 and floor * len(w) < 1.0:
-        below = w < floor
-        if bool(below.any()):
-            need = float((floor - w[below]).sum())
-            donors = ~below
-            available = float((w[donors] - floor).clip(lower=0.0).sum())
-            if available >= need and available > 0:
-                w[below] = floor
-                take = (w[donors] - floor).clip(lower=0.0)
-                w[donors] -= take / float(take.sum()) * need
-    w = w / float(w.sum())
+    w = bounded_proportional_weights(
+        s,
+        max_weight=float(max_weight),
+        min_weight=float(min_weight),
+    )
     return {t: float(v) for t, v in w.items()}
 
 
@@ -451,9 +462,12 @@ def _load_series(cfg, tickers: Iterable[str]) -> tuple[dict[str, pd.DataFrame], 
 
 
 def _history_with_availability(history: pd.DataFrame, availability_delay_days: int) -> pd.DataFrame:
+    if int(availability_delay_days) < 0:
+        raise ValueError("availability_delay_days must be >= 0")
     h = history.copy()
     h["report_ts"] = pd.to_datetime(h["report_date"])
     h["available_ts"] = h["report_ts"] + pd.to_timedelta(int(availability_delay_days), unit="D")
+    h["available_date"] = h["available_ts"].dt.strftime("%Y-%m-%d")
     return h
 
 
@@ -462,7 +476,10 @@ def _available_report(history: pd.DataFrame, asof: pd.Timestamp) -> tuple[str | 
     if h.empty:
         return None, None
     rd = str(h["report_date"].max())
-    return rd, h[h["report_date"].astype(str) == rd].copy()
+    selected = h[h["report_date"].astype(str) == rd].copy()
+    if (selected["available_ts"] > pd.Timestamp(asof)).any():
+        raise RuntimeError(f"future disclosure selected: report={rd} asof={pd.Timestamp(asof).date()}")
+    return rd, selected
 
 
 def _months_between(a: pd.Timestamp, b: pd.Timestamp) -> int:
@@ -608,6 +625,7 @@ def _active_quarterly_mirror_risk_leg(cfg, grid: pd.DatetimeIndex,
                         selections.append({
                             "date": grid[i].strftime("%Y-%m-%d"),
                             "report_date": report_date,
+                            "available_date": str(report_df["available_date"].iloc[0]),
                             "mode": mode,
                             "top_n": int(top_n),
                             "tickers": sorted(cur),
@@ -749,6 +767,10 @@ def _history_coverage(history: pd.DataFrame) -> list[dict]:
         ]
         rows.append({
             "report_date": str(rd),
+            "available_date": (
+                str(g["available_date"].dropna().iloc[0])
+                if "available_date" in g and not g["available_date"].dropna().empty else None
+            ),
             "reported_nav_weight": total,
             "us_nav_weight": us,
             "us_count": len(us_tickers),
@@ -793,6 +815,17 @@ def run_fund_quarterly_mirror_research(cfg, fund_code: str = "012922", *,
         local_only=local_only,
         top_line=100,
     )
+    report_dates = sorted({str(value)[:10] for value in history["report_date"].dropna().tolist()})
+    availability_manifest = modeled_availability_manifest(
+        report_dates, int(availability_delay_days)
+    )
+    holdings_version = data_version_payload(
+        holding_meta,
+        used_rows=len(history),
+        used_report_start=report_dates[0] if report_dates else None,
+        used_report_end=report_dates[-1] if report_dates else None,
+        used_report_count=len(report_dates),
+    )
     if local_only:
         c.data.fallback_chain = ["local_cache"]
     history = _history_with_availability(history, int(availability_delay_days))
@@ -812,6 +845,15 @@ def run_fund_quarterly_mirror_research(cfg, fund_code: str = "012922", *,
     target = str(target_benchmark or fund_code).upper().strip()
     target_label = _benchmark_label(target)
     target_close, target_meta = _fetch_benchmark_close(target, c, grid)
+    target_start_i = _first_valid_price_i(target_close)
+    target_version = data_version_payload(
+        target_meta,
+        used_start=(
+            grid[target_start_i].strftime("%Y-%m-%d")
+            if target_start_i is not None else None
+        ),
+        used_end=grid[-1].strftime("%Y-%m-%d"),
+    )
 
     min_len = max(2, int(float(min_years) * 252))
     starts = []
@@ -831,6 +873,7 @@ def run_fund_quarterly_mirror_research(cfg, fund_code: str = "012922", *,
         for mode in modes for top_n in top_n_list for cr in cr_list for sw in sw_list
     }
     skipped = []
+    selection_audit = []
 
     for si in starts:
         grid2 = grid[si:]
@@ -876,6 +919,7 @@ def run_fund_quarterly_mirror_research(cfg, fund_code: str = "012922", *,
                     bnav, beq = _run_single_asset_fund(grid2, target_close[si:], flows)
                     benchmark = _metric_block(grid2, bnav, beq, flows, contributed)
                     selections = stats.get("selections") or []
+                    selection_audit.extend(selections)
                     tickers_observed = sorted({t for s in selections for t in s.get("tickers", [])})
                     for sw in sw_list:
                         if float(sw) > 0:
@@ -934,6 +978,25 @@ def run_fund_quarterly_mirror_research(cfg, fund_code: str = "012922", *,
         reverse=True,
     )
     best = _best_rows(rows)
+    future_violations = [
+        selection for selection in selection_audit
+        if str(selection.get("available_date") or "9999-12-31") > str(selection.get("date") or "")
+    ]
+    if future_violations:
+        raise RuntimeError(f"point-in-time disclosure guard failed: {future_violations[:3]}")
+    data_manifest = {
+        "schema_version": 1,
+        "fund_code": str(fund_code),
+        "holdings_history": holdings_version,
+        "target_nav": target_version,
+        "availability": availability_manifest,
+        "point_in_time_guard": {
+            "rule": "available_date <= rebalance_date",
+            "checked_selection_count": len(selection_audit),
+            "violation_count": 0,
+            "passed": True,
+        },
+    }
     out = {
         "summary": {
             "research_only": True,
@@ -947,6 +1010,10 @@ def run_fund_quarterly_mirror_research(cfg, fund_code: str = "012922", *,
             "target_benchmark": target,
             "target_label": target_label,
             "target_source": getattr(target_meta, "source", "?"),
+            "data_versions": {
+                "holdings_history": holdings_version.get("version_id"),
+                "target_nav": target_version.get("version_id"),
+            },
             "total_cap": float(total_cap),
             "monthly": float(monthly),
             "min_years": float(min_years),
@@ -970,6 +1037,7 @@ def run_fund_quarterly_mirror_research(cfg, fund_code: str = "012922", *,
         "history_coverage": _history_coverage(history),
         "price_coverage": coverage,
         "price_meta": price_meta,
+        "data_manifest": data_manifest,
         "dropped": price_errors,
         "skipped": skipped[:100],
         "rows": rows,

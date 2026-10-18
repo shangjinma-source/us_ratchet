@@ -64,6 +64,7 @@ def main() -> int:
         include_voltarget=args.include_voltarget,
         voltarget_top_k=args.voltarget_top_k,
         local_only=args.local_only,
+        incumbent_basis="config_yaml",
     )
     if args.json:
         print(json.dumps(gate, ensure_ascii=False, indent=2))
@@ -75,6 +76,8 @@ def main() -> int:
     pref = hist.get("holding_preference") or {}
     preview = gate.get("config_diff_preview") or {}
     guard = gate.get("incumbent_guard") or {}
+    envelope = gate.get("risk_envelope") or {}
+    target_envelope = envelope.get("target") or {}
 
     print("\n动态候选篮子实盘准入预检（read-only）")
     print(f"决策: {gate.get('decision')} | live_connected={gate.get('live_connected')} | "
@@ -88,6 +91,13 @@ def main() -> int:
               f"DD改善P50 {_pct(best.get('dd_relief_p50'), 1)} | "
               f"策略DD P50 {_pct(best.get('maxdd_p50'), 1)}")
         print("标的: " + ", ".join(best.get("tickers") or []))
+    if target_envelope:
+        tm = target_envelope.get("metrics") or {}
+        print("\n012922 风险包络")
+        print(f"- 分类: {target_envelope.get('classification')} | 通过: {target_envelope.get('passed')}")
+        print(f"- DD 成本 P50 {_pct(tm.get('dd_cost_p50'), 1)} / "
+              f"坏尾部 {_pct(tm.get('dd_cost_bad_tail'), 1)}")
+        print(f"- {target_envelope.get('reason') or '-'}")
     if pref:
         print("\n持仓数量偏好")
         print(f"- 偏好最多 {pref.get('preferred_max_holdings')} 只；{pref.get('rule') or ''}")
@@ -105,9 +115,17 @@ def main() -> int:
         cand = guard.get("candidate") or {}
         margins = guard.get("margins") or {}
         print(f"- 通过: {guard.get('passed')} | {guard.get('reason')}")
-        print(f"- 候选 XIRR P50 {_pct(cand.get('xirr_p50'), 2)} / DD P50 {_pct(cand.get('maxdd_p50'), 1)}")
-        print(f"- 当前配置 XIRR P50 {_pct(inc.get('xirr_p50'), 2)} / DD P50 {_pct(inc.get('maxdd_p50'), 1)}")
-        print(f"- 差值 XIRR {_pct(margins.get('xirr_p50_vs_incumbent'), 2)} / DD改善 {_pct(margins.get('dd_relief_p50_vs_incumbent'), 1)}")
+        print(f"- 现有方案来源: {inc.get('basis') or '-'} | "
+              f"比较口径: {guard.get('comparison_basis') or '-'} | "
+              f"配对窗口 {((guard.get('paired_evidence') or {}).get('windows') or 0)}")
+        print(f"- 候选 XIRR P50/P10 {_pct(cand.get('xirr_p50'), 2)}/{_pct(cand.get('xirr_p10'), 2)} | "
+              f"DD P50/P90 {_pct(cand.get('maxdd_p50'), 1)}/{_pct(cand.get('maxdd_p90'), 1)}")
+        print(f"- 当前配置 XIRR P50/P10 {_pct(inc.get('xirr_p50'), 2)}/{_pct(inc.get('xirr_p10'), 2)} | "
+              f"DD P50/P90 {_pct(inc.get('maxdd_p50'), 1)}/{_pct(inc.get('maxdd_p90'), 1)}")
+        print(f"- 差值 XIRR P50/P10 {_pct(margins.get('xirr_p50_vs_incumbent'), 2)}/"
+              f"{_pct(margins.get('xirr_p10_vs_incumbent'), 2)} | "
+              f"DD改善 P50/P90 {_pct(margins.get('dd_relief_p50_vs_incumbent'), 1)}/"
+              f"{_pct(margins.get('dd_relief_p90_vs_incumbent'), 1)}")
     else:
         print(f"- 未能计算: {guard.get('reason') or '-'}")
     print("\n今天是否改变建议")

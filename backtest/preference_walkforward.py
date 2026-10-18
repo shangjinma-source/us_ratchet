@@ -21,11 +21,13 @@ from backtest.engine import (
     _benchmark_label,
     _build_panels,
     _fetch_benchmark_close,
+    _first_valid_price_i,
     _run_defensive_fund,
     _run_single_asset_fund,
     _run_strategy_fund,
 )
 from core import engine as eng
+from data.versioning import data_version_payload
 from backtest.preference import (
     COMPACT_TOP_NS,
     DEFAULT_GROUP,
@@ -612,6 +614,15 @@ def run_preference_rebalance_research(cfg, tickers: str | Iterable[str] = "",
     target = str(target_benchmark or "012922").upper().strip()
     target_label = _benchmark_label(target)
     target_close, target_meta = _fetch_benchmark_close(target, c, grid)
+    target_start_i = _first_valid_price_i(target_close)
+    target_version = data_version_payload(
+        target_meta,
+        used_start=(
+            grid[target_start_i].strftime("%Y-%m-%d")
+            if target_start_i is not None else None
+        ),
+        used_end=grid[-1].strftime("%Y-%m-%d"),
+    )
 
     min_len = max(2, int(float(min_years) * 252))
     lookback_days = max(63, int(float(lookback_years) * 252))
@@ -742,6 +753,7 @@ def run_preference_rebalance_research(cfg, tickers: str | Iterable[str] = "",
             "target_benchmark": target,
             "target_label": target_label,
             "target_source": getattr(target_meta, "source", "?"),
+            "data_versions": {"target_nav": target_version.get("version_id")},
             "total_cap": float(total_cap),
             "monthly": float(monthly),
             "min_years": float(min_years),
@@ -767,6 +779,7 @@ def run_preference_rebalance_research(cfg, tickers: str | Iterable[str] = "",
         "groups": [{"name": name, "tickers": vals} for name, vals in group_map.items()],
         "coverage": coverage,
         "meta": meta,
+        "data_manifest": {"schema_version": 1, "target_nav": target_version},
         "dropped": errors,
         "rows": rows,
         "skipped": skipped[:100],
@@ -815,6 +828,15 @@ def run_preference_walkforward_research(cfg, tickers: str | Iterable[str] = "",
     target = str(target_benchmark or "012922").upper().strip()
     target_label = _benchmark_label(target)
     target_close, target_meta = _fetch_benchmark_close(target, c, grid)
+    target_start_i = _first_valid_price_i(target_close)
+    target_version = data_version_payload(
+        target_meta,
+        used_start=(
+            grid[target_start_i].strftime("%Y-%m-%d")
+            if target_start_i is not None else None
+        ),
+        used_end=grid[-1].strftime("%Y-%m-%d"),
+    )
 
     min_len = max(2, int(float(min_years) * 252))
     lookback_days = max(63, int(float(lookback_years) * 252))
@@ -934,6 +956,7 @@ def run_preference_walkforward_research(cfg, tickers: str | Iterable[str] = "",
             "target_benchmark": target,
             "target_label": target_label,
             "target_source": getattr(target_meta, "source", "?"),
+            "data_versions": {"target_nav": target_version.get("version_id")},
             "total_cap": float(total_cap),
             "monthly": float(monthly),
             "min_years": float(min_years),
@@ -957,6 +980,7 @@ def run_preference_walkforward_research(cfg, tickers: str | Iterable[str] = "",
         "groups": [{"name": name, "tickers": vals} for name, vals in group_map.items()],
         "coverage": coverage,
         "meta": meta,
+        "data_manifest": {"schema_version": 1, "target_nav": target_version},
         "dropped": errors,
         "rows": rows,
         "skipped": skipped[:100],
