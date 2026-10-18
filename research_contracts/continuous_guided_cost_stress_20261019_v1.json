@@ -1,0 +1,36 @@
+{
+  "schema": "CONTINUOUS_GUIDED_COST_STRESS_V1",
+  "status": "DECLARED_BEFORE_ECONOMIC_EXECUTION",
+  "parameter_authority": "FIXED_RESEARCH_STRESS_NOT_BROKER_FEE_CERTIFICATION",
+  "initial_cash": "20000",
+  "scenarios": {
+    "slippage5": {"fee_bps": "0", "slippage_bps": "5"},
+    "fee1_slippage10": {"fee_bps": "1", "slippage_bps": "10"}
+  },
+  "arms": ["continuous32", "continuous32_half"],
+  "continuous_iterations": 32,
+  "max_objective_evaluations": 8192,
+  "signal_window": 20,
+  "off_exposure": "1/2",
+  "prepared_path": "tmp/daily_verified_domain_experiment_20261016_v2/prepared.json",
+  "prepared_sha256": "83f30b31b941c5a406179ae2625395794d15a1a1e1a2427876ab307d2df19921",
+  "zero_cost_comparison": "tmp/continuous_guided_half_comparison_20261016_v2/comparison.json",
+  "zero_cost_comparison_sha256": "96fb0be608f4752974db0753e23ec3289d37dc78fe383376b3a7d49b8c7fb7b2",
+  "rules": [
+    "Exactly four fresh independent account paths. Reuse saved zero-cost evidence only; never rerun sealed experiments.",
+    "Same fixed98 TRI-excluded conditional domain, calendar, prices, actions, initial capital, fixed seeds, original8192 and continuous32 search budgets in all arms.",
+    "Every monthly search uses its own actual cash and marked shares after incurred costs. Align monthly search fee_bps to execution fee_bps; slippage applies only to next-open execution.",
+    "BUY open*(1+slippage_bps/10000), SELL open*(1-slippage_bps/10000); fees charged per filled notional on each side. Use existing whole-share cash rationing and action accounting.",
+    "Do not copy old monthly targets or subtract a cost estimate from saved NAV. Do not change SMA20 or floor-half rules after outcomes.",
+    "The 1bp charge is an aggregate research stress, not a claim about actual HSBC charges. Zero commission does not establish zero slippage.",
+    "Freeze reviewed implementation and input hashes before any historical execution. Create-only run directories; preserve failures, no automatic retries or production changes."
+  ],
+  "acceptance": {
+    "per_scenario": "half exact final_equity >= continuous32 exact final_equity AND half exact maximum_close_drawdown < continuous32 exact maximum_close_drawdown",
+    "joint": "Both fixed scenarios pass per_scenario; otherwise report tradeoffs without changing thresholds or selecting the best scenario.",
+    "required_reports": ["every calendar-year return and drawdown;2026 period only", "whole-period CAGR and maximum close drawdown", "fees and modeled slippage notional", "turnover and cash exposure", "dated stock and quantity changes", "independent ledger, cost and own-capital monthly checks"]
+  },
+  "automatic_promotion": false,
+  "independent_oos": false,
+  "point_in_time_certified": false
+}
