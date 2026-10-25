@@ -55,6 +55,23 @@ class ExposureGateTests(unittest.TestCase):
         self.assertFalse(exposed_action_blockers(self.arguments,self.selection,'2021-02-26',self.prices,
             active_date='2021-02-01')['admitted'])
 
+    def test_ex_date_new_purchase_has_zero_reviewed_ordinary_dividend(self):
+        event=dict(security_id='new',date='2021-02-01',kind='dividends')
+        self.prices['provider_event_inventory']=[event]
+        evidence=dict(rows=[dict(status='REVIEWED_ORDINARY_CASH_DIVIDEND',security_id='new',ex_date='2021-02-01')])
+        result=exposed_action_blockers(self.arguments,self.selection,'2021-02-26',self.prices,evidence,'2021-02-01')
+        self.assertTrue(result['admitted'])
+        self.assertEqual(result['ignored_zero_entitlement'][0]['opening_quantity'],0)
+        self.assertFalse(exposed_action_blockers(self.arguments,self.selection,'2021-02-26',self.prices,
+            active_date='2021-02-01')['admitted'])
+        self.arguments['account_state']['shares']['new']=1
+        self.assertFalse(exposed_action_blockers(self.arguments,self.selection,'2021-02-26',self.prices,evidence,'2021-02-01')['admitted'])
+
+    def test_zero_dividend_rule_never_waives_split(self):
+        self.prices['provider_event_inventory']=[dict(security_id='new',date='2021-02-01',kind='splits')]
+        evidence=dict(rows=[dict(status='REVIEWED_ORDINARY_CASH_DIVIDEND',security_id='new',ex_date='2021-02-01')])
+        self.assertFalse(exposed_action_blockers(self.arguments,self.selection,'2021-02-26',self.prices,evidence,'2021-02-01')['admitted'])
+
 
 if __name__ == '__main__':
     unittest.main()

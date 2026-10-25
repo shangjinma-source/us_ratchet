@@ -53,6 +53,16 @@ def exposed_action_blockers(arguments, selected, end_date, prices, action_review
             unknown.remove(row['security_id'])
     events = [event for event in prices['provider_event_inventory']
               if event['security_id'] in exposed and start < event['date'] <= exposure_ends[event['security_id']]]
+    zero_entitlement = []
+    for event in list(events):
+        reviews = [row for row in (action_review or {}).get('rows',[])
+                   if row['status']=='REVIEWED_ORDINARY_CASH_DIVIDEND'
+                   and row['security_id']==event['security_id'] and row['ex_date']==event['date']]
+        if (event['kind']=='dividends' and event['date']==active_date
+                and not arguments['account_state']['shares'].get(event['security_id'],0) and len(reviews)==1):
+            zero_entitlement.append(dict(provider_event=event,review=reviews[0],opening_quantity=0,
+                reason='ZERO_OPENING_HOLDING_ORDINARY_CASH_DIVIDEND_ONLY'))
+            events.remove(event)
     events += [dict(security_id='research:security:'+ticker,date=day,kind=kind,
                     origin='KNOWN_ACTION_REVIEW_BARRIER_NOT_EXECUTION_INSTRUCTION')
                for ticker,day,kind in KNOWN_ACTION_BARRIERS
@@ -61,6 +71,7 @@ def exposed_action_blockers(arguments, selected, end_date, prices, action_review
                 missing_action_streams=unknown, unmapped_events=events,
                 admitted=not unknown and not events,accepted_period_reviews=accepted_reviews,
                 exposure_end_by_security=exposure_ends,
+                ignored_zero_entitlement=zero_entitlement,
                 evidence_scope='CONDITIONAL_PROVIDER_ABSENCE_ONLY_NOT_OFFICIAL_EXHAUSTIVE_PROOF')
 
 
@@ -120,9 +131,12 @@ def main():
             if digest(ROOT/filename)!=expected:
                 raise ValueError('ACTION_REVIEW_SOURCE_CHANGED:'+filename)
         for row in action_review['rows']:
-            if (row['status']!='REVIEWED_NO_ACTION_FOR_PERIOD' or not row['source_references']
+            if (row['status'] not in ('REVIEWED_NO_ACTION_FOR_PERIOD','REVIEWED_ORDINARY_CASH_DIVIDEND') or not row['source_references']
                     or any(reference not in pins for reference in row['source_references'])):
                 raise ValueError('UNPINNED_PERIOD_ACTION_REVIEW')
+            if row['status']=='REVIEWED_ORDINARY_CASH_DIVIDEND':
+                if not row['ex_date'] or row['currency']!='USD' or Fraction(row['amount_per_share'])<=0:
+                    raise ValueError('ORDINARY_CASH_DIVIDEND_REVIEW_REQUIRED')
             sources = [source for source in prices['source_reviews'] if source['security_id']==row['security_id']]
             if not sources or any(pins.get(source['source'])!=source['sha256'] for source in sources):
                 raise ValueError('ACTION_REVIEW_PRICE_SOURCE_NOT_BOUND')
@@ -175,6 +189,7 @@ def main():
     dates = [plan['decision_date'] for plan in assembled['monthly_inputs']] + [assembled['session_dates'][-1]]
     new_count, reused_count = 0, 0
     liquidation_obligations = []
+    zero_dividend_obligations = []
 
     def decide(**arguments):
         nonlocal new_count, reused_count
@@ -205,6 +220,7 @@ def main():
         liquidation_obligations.extend(dict(date=active_date,security_id=sid,quantity=quantity)
             for sid,quantity in arguments['account_state']['shares'].items()
             if quantity and not selected['target_quantities'].get(sid,0))
+        zero_dividend_obligations.extend(gate['ignored_zero_entitlement'])
         return raw
 
     # Single bounded process only: instrument the selector without changing any
@@ -229,6 +245,21 @@ def main():
             raise ValueError('SHORT_EXPOSURE_LIQUIDATION_NOT_PROVEN')
     save(options.output/'liquidation_review.json',dict(obligations=liquidation_obligations,
         verified_executed=[row for row in liquidation_obligations if row['date'] in by_date]))
+    checked_zero = []
+    for obligation in zero_dividend_obligations:
+        event = obligation['provider_event']
+        day,sid = event['date'],event['security_id']
+        if day not in by_date:
+            continue
+        prior_day = assembled['session_dates'][assembled['session_dates'].index(day)-1]
+        prior_shares = by_date[prior_day]['shares'] if prior_day in by_date else {}
+        records = book.get('dividend_ledger',{}).get('events',{}).values()
+        if prior_shares.get(sid,0) or any(record['event']['security_id']==sid
+                and record['event']['ex_date']==day and Fraction(record['net'])!=0 for record in records):
+            raise ValueError('ZERO_DIVIDEND_ENTITLEMENT_NOT_PROVEN')
+        checked_zero.append(obligation)
+    save(options.output/'zero_dividend_review.json',dict(obligations=zero_dividend_obligations,
+        verified_executed=checked_zero))
     save(options.output/'book.json',book)
     save(options.output/'summary.json',dict(status=book['status'],reason=book.get('reason'),
         completed_sessions=len(book.get('daily_ledger',[])),new_searches=new_count,reused_searches=reused_count,
