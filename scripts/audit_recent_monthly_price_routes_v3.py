@@ -53,6 +53,14 @@ def audit():
         'tmp/xlnx_cern_gap_20261025/manifest.json',
         'tmp/splk_sgen_bridge_20261025/overlap_audit.json',
         'tmp/zenodo_wba_20261026/independent_wba_price_review.json',
+        'tmp/abr_gap_probe_20261026/CERN_audit.json',
+        'tmp/wbd_routes_20261026/wbd_price_audit.json',
+        'tmp/recent_price_bridges_20261026/SGEN_audit.json',
+        'tmp/recent_price_bridges_20261026/SPLK_audit.json',
+        'tmp/recent_price_bridges_20261026/CERN_audit.json',
+        'tmp/recent_price_bridges_20261026/XLNX_audit.json',
+        'tmp/xlnx_tsaustin_20261026/download_manifest.json',
+        'tmp/xlnx_tsaustin_20261026/extraction_audit.json',
     ):
         path = ROOT / evidence_path
         if path.exists():
@@ -75,6 +83,9 @@ def audit():
             ROOT / f'tmp/xlnx_cern_gap_20261025/{ticker}_chart.csv',
             ROOT / f'tmp/splk_sgen_bridge_20261025/{ticker}.csv',
             ROOT / f'tmp/zenodo_wba_20261026/{ticker}_stock_data.csv',
+            ROOT / f'tmp/abr_gap_probe_20261026/{ticker}_price_candidate.csv',
+            ROOT / f'tmp/wbd_routes_20261026/{ticker}_stock_data.csv',
+            ROOT / f'tmp/recent_price_bridges_20261026/{ticker}_price_candidate.csv',
         ) if path.exists())
         # Explicit candidates retain fixed source priority; date coverage alone is not admission.
         routes = {}
@@ -115,7 +126,7 @@ def audit():
             routes[path.relative_to(ROOT).as_posix()] = dict(rows=valid, suspect_dates=suspect,
                 close_dates=close_dates, open_close_dates=open_close_dates,
                 first=min(valid) if valid else None, last=max(valid) if valid else None,
-                explicit_priority_reviewed=path.name in ('ATVI_price_candidate_2020_2023.csv','ALXN_price_candidate_2020_2021.csv','MXIM_price_candidate.csv','XLNX_price_candidate.csv'))
+                explicit_priority_reviewed=path.name in ('ATVI_price_candidate_2020_2023.csv','ALXN_price_candidate_2020_2021.csv','MXIM_price_candidate.csv','XLNX_price_candidate.csv','CERN_price_candidate.csv','SGEN_price_candidate.csv','SPLK_price_candidate.csv'))
         candidates[ticker] = routes
     matrix = []
     for old in previous['matrix']:
@@ -213,12 +224,40 @@ def audit():
                 else:
                     parts[-1].append(day)
             field_gap_segments.extend(dict(ticker=ticker, requirement=kind,start=part[0],end=part[-1],sessions=len(part)) for part in parts)
+    # Freeze one source across every required month instead of selecting a
+    # different provider after observing each month's prices or returns.
+    fixed_sources = {
+        'ALXN': 'tmp/candlestick_gap_probe_20261025/ALXN_price_candidate_2020_2021.csv',
+        'ATVI': 'tmp/modern_archive_inventory_20261025/ATVI_price_candidate_2020_2023.csv',
+        'ANSS': 'tmp/andrewmvd_inventory_20261025/ANSS_stocks.csv',
+        'EA': 'tmp/andrewmvd_inventory_20261025/EA_stocks.csv',
+        'MXIM': 'tmp/chartexchange_gap_20261025/MXIM_price_candidate.csv',
+        'WBA': 'tmp/zenodo_wba_20261026/WBA_stock_data.csv',
+        'WBD': 'tmp/wbd_routes_20261026/WBD_stock_data.csv',
+        **{ticker: f'tmp/recent_price_bridges_20261026/{ticker}_price_candidate.csv'
+           for ticker in ('CERN', 'XLNX', 'SGEN', 'SPLK')},
+    }
+    source_plan = []
+    for ticker in sorted(candidates):
+        group = [row for row in matrix if row['ticker'] == ticker]
+        common = set(candidates[ticker])
+        for row in group:
+            common &= set(row['execution_old_security_coverage']['single_source_complete'])
+            if not row['training_rule_exclusion']:
+                common &= set(row['training_close_coverage']['single_source_complete'])
+        preferred = fixed_sources.get(ticker, selected.get(ticker))
+        chosen = preferred if preferred in common else None
+        source_plan.append(dict(ticker=ticker, source=chosen,
+            status='DATE_COVERAGE_COMPLETE_NOT_UNIT_ADMISSION' if chosen else 'SOURCE_PLAN_REQUIRES_REVIEW',
+            sha256=hashes.get(chosen), complete_source_alternatives=sorted(common),
+            required_months=len(group), units_identity_actions_admitted=False))
     return dict(revision='V5_FIELD_REQUIREMENTS_DIAGNOSTIC_NO_SCHEMA_RELAXATION', source_hashes=hashes, windows=windows, matrix=matrix,
+                fixed_source_plan=source_plan,
                 field_gap_segments=field_gap_segments,
                 remaining_quote_gap_segments=gap_segments,
                 limitations=['Date unions are diagnostics only, never admitted training/execution quotes.',
                              'Price disagreements can be rounding, units or real source errors; no source is selected by performance.',
-                             'ATVI, ALXN, MXIM and partial XLNX candidates have explicit priority reviews; other route splicing needs review.',
+                             'Explicit price candidates have fixed priority reviews; unrelated route unions still require review.',
                              'Training ready here is date-level only, not identity/unit/action admission.',
                              'Known post-last-trade dates require conversion/receivable handling, never manufactured old-stock quotes.'])
 
@@ -227,5 +266,7 @@ if __name__ == '__main__':
     result = audit()
     (OUT / 'monthly_price_routes_v5_fields.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps({'windows':len(result['windows']), 'security_windows':len(result['matrix']),
+                      'fixed_source_count':sum(row['source'] is not None for row in result['fixed_source_plan']),
+                      'unresolved_source_tickers':[row['ticker'] for row in result['fixed_source_plan'] if row['source'] is None],
                       'training_date_ready':[w['execution_month'] for w in result['windows'] if w['training_ready_at_date_level']],
                       'field_gap_segments':result['field_gap_segments']}))
