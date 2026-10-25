@@ -224,6 +224,23 @@ class IsolatedFrontierPipelineTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.run_case(case)
 
+    def test_expiry_after_difference_before_return_rejects(self):
+        import data.saved_frontier_isolated_pipeline as pipeline
+        for seconds, reason in ((121, 'REQUOTE_REQUIRED'),
+                                (86400, 'DAILY_SIGNAL_EXPIRED_DURING_PREVIEW'),
+                                (-1, 'SERVER_CLOCK_MOVED_BACKWARDS')):
+            with self.subTest(seconds=seconds), TemporaryDirectory(dir=Path(__file__).resolve().parents[1]/'tmp') as root:
+                case = self.case(root, cash='100', cancel=True)
+                original = pipeline.preview_scoped_account
+                def delayed_difference(**kwargs):
+                    result = original(**kwargs)
+                    self.assertTrue(result['new_orders'])
+                    case['clock'][0] += timedelta(seconds=seconds)
+                    return result
+                with patch.object(pipeline, 'preview_scoped_account', side_effect=delayed_difference), \
+                     self.assertRaisesRegex(ValueError, reason):
+                    self.run_case(case)
+
     def test_zero_capped_candidate_needs_no_fabricated_source_domain(self):
         with TemporaryDirectory(dir=Path(__file__).resolve().parents[1]/'tmp') as root:
             case = self.case(root, cancel=True)

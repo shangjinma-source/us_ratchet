@@ -29,3 +29,7 @@
 这条链没有冒充现有 `DailyCompositionV7` 接通：现有 V7 使用原月目标确定证券域，无法直接接纳只出现在新提案中的证券。本服务显式以已审核提案及风险零键调用原门控，返回 `ISOLATED_RESEARCH_PREVIEW_ONLY`、`production_admitted=False`。前端、现有 V7、生产配置及真实月末/新月目标采用仍未连接；真实市场原始资料尚未完成本新链的业务准入。它不是新增历史收益结论，也不证明下月自动启用已完成。
 
 关联：[生产接入剩余步骤](capped_frontier_production_integration_plan.md)、[原提案归档](saved_frontier_archive_20261025.md)、[历史有限重排结果](capped_frontier_rerank_result_20261025.md)。所有合成运行副本、实际账户数据及完整归档字节均留在本地 `tmp/`，不随公开源码提交。
+
+## 返回前有效期复核
+
+独立审查发现：差额计算及最终来源重读可能跨过报价有效期。已在最后来源/账户核验之后再次检查时钟、信号和返回报价有效期；三个定向反例覆盖报价到期、信号到期和时钟倒退。该修复仅作用于隔离链。真实事件验收边界见[验收清单](real_event_acceptance_checklist.md)。

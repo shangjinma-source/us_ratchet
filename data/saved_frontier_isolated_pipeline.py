@@ -241,6 +241,12 @@ def run_isolated_saved_frontier_pipeline(*, research_root, account_store, saved_
                 execution_binding=bridge.last_binding,
                 effective_target_quantities=deepcopy(effective), execution_quantities=quantities)
     unchanged()
+    returned_at = clock()
+    require(returned_at >= now, 'SERVER_CLOCK_MOVED_BACKWARDS')
+    require(timestamp(signal['valid_from']) <= returned_at < timestamp(signal['valid_until']),
+            'DAILY_SIGNAL_EXPIRED_DURING_PREVIEW')
+    for quote in result['reference_quotes'].values():
+        require(returned_at < timestamp(quote['reference_valid_until']), 'REQUOTE_REQUIRED')
     require(result['status'] == 'READY' or not result['new_orders'], 'WAIT_CANNOT_CONTAIN_ORDERS')
     for order in result['new_orders']:
         order.update(source_target_id=target['target_id'], proposal_id=proposal['proposal_id'])
