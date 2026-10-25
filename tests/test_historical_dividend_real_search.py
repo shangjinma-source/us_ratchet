@@ -41,6 +41,15 @@ class RealSearchWiring(unittest.TestCase):
 
         proof=review(result,a,bars,initial_cash='1000',dividend_events=[event],expected_fee_bps='0',expected_slippage_bps='5',verify_selections=True)
         self.assertEqual(proof['selection_proofs_checked'],2)
+        for field,reason in [('source_hashes','SELECTION_SOURCE_BINDING'),('search_arguments','SELECTION_SEARCH_BINDING'),('valuation_quotes','SELECTION_QUOTES_BINDING')]:
+            tampered=deepcopy(a)
+            if field=='source_hashes':tampered['monthly_inputs'][0][field]={'tamper':'other-source'}
+            elif field=='search_arguments':tampered['monthly_inputs'][0][field]['entered_cash']='999'
+            else:tampered['monthly_inputs'][0][field][0]['source_references']=['other-source']
+            if field=='search_arguments':tampered['monthly_inputs'][0][field]['fee_bps']='2'
+            with self.assertRaisesRegex(ValueError,reason):
+                review(result,tampered,bars,initial_cash='1000',dividend_events=[event],expected_fee_bps='0',expected_slippage_bps='5',verify_selections=True)
+
         self.assertEqual(proof['status'],'REVIEWED_ORDINARY_DIVIDEND_ACCOUNT')
         print('REAL_SELECTION_INDEPENDENT_REVIEW',proof)
         print('INDEPENDENT_ACCOUNT',dict(cash=result['cash'],paid_cash=result['dividend_ledger']['paid_cash'],receivable=result['dividend_receivable'],total_return=result['total_return']))

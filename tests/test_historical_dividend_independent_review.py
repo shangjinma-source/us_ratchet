@@ -40,3 +40,40 @@ class AuditTests(unittest.TestCase):
     def test_missing_selection(self):
         a=self.fixture();a['verify_selections']=True;a['assembled']['monthly_inputs']=[{'decision_date':'2020-03-02'}]
         with self.assertRaisesRegex(ValueError,'MISSING_SELECTION_PROOF'):review(**a)
+
+
+class SplitDividendAuditTests(unittest.TestCase):
+    def fixture(self):
+        from backtest.historical_dividend_next_open_book_research import run_next_open_book
+        days=['2020-03-02','2020-03-03','2020-03-04']
+        split=dict(date=days[1],security_id='A',type='split',new_shares=2,old_shares=1,source_references=['synthetic-split'])
+        dividend=dict(event_id='d',security_id='A',ex_date=days[2],payment_date=days[2],amount_per_share='1',withholding_rate='0',assumption='fixture',currency='USD')
+        bars={'A':{d:dict(open='5',high='5',low='5',close='5') for d in days[1:]}}
+        orders=[dict(id='s',security_id='A',side='SELL',quantity=1,decision_mark='10',decision_date=days[0],active_date=days[1]),dict(id='b',security_id='A',side='BUY',quantity=2,decision_mark='5',decision_date=days[1],active_date=days[2])]
+        audits=[]
+        def provider(**kw):
+            r=dict(status='READY',orders=[o for o in orders if o['active_date']==kw['active_date']]);audits.append(deepcopy(r));return r
+        book=run_next_open_book(session_dates=days,order_provider=provider,ohlc=bars,initial_cash='10',initial_shares={'A':10},events=[split],fee_bps='0',slippage_bps='0',dividend_events=[dividend])
+        book.update(provider_audit=audits,total_return='9/55',drawdown={'maximum_close_drawdown':'0'})
+        return dict(book=book,assembled=dict(session_dates=days,close_prices={'A':{days[0]:'10'}},actions=[split],provider_actions=[deepcopy(split)]),bars=bars,initial_cash='10',initial_shares={'A':10},dividend_events=[dividend],verify_selections=False,expected_fee_bps='0',expected_slippage_bps='0')
+    def test_nonempty_split_sell_dividend_buy(self):
+        args=self.fixture();result=review(**args)
+        self.assertEqual(result['final_equity'],'128')
+        self.assertEqual(result['ordinary_splits_checked'],1)
+        self.assertEqual(args['book']['cash'],'28')
+        self.assertEqual(args['book']['dividend_ledger']['paid_cash'],'18')
+    def test_wrong_split_ratio_or_missing_source_rejected(self):
+        for field,value in [('new_shares',3),('source_references',[])]:
+            args=self.fixture();args['assembled']['actions'][0][field]=value
+            args['assembled']['provider_actions']=deepcopy(args['assembled']['actions'])
+            with self.assertRaises(ValueError):review(**args)
+    def test_same_day_dividend_rejected(self):
+        args=self.fixture();args['dividend_events'][0]['ex_date']='2020-03-03'
+        with self.assertRaisesRegex(ValueError,'SAME_DAY'):review(**args)
+    def test_fractional_split_cash_never_invented(self):
+        args=self.fixture();args['assembled']['actions'][0]['old_shares']=3
+        args['assembled']['provider_actions']=deepcopy(args['assembled']['actions'])
+        with self.assertRaisesRegex(ValueError,'FRACTIONAL_SPLIT_HOLDING'):review(**args)
+    def test_unadjusted_order_tamper_rejected(self):
+        args=self.fixture();args['book']['provider_audit'][0]['orders'][0]['quantity']=2
+        with self.assertRaises(ValueError):review(**args)
