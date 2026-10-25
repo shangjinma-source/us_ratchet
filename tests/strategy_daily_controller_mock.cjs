@@ -79,10 +79,47 @@ function fixture(month='2026-10'){
   const f=fixture();f.previewDaily=async b=>({status:'WAIT_SIGNAL',account_revision:b.expected_revision,target_id:b.target_id,reference_quotes:{S:quote}});
   await assert.rejects(createController(f).refresh(),/WAIT_MUST_NOT/);count++;
  }
+ // Raw selector quantities must not masquerade as monthly capped targets.
+ {
+  const f=fixture();let unavailable=false;
+  f.previewDaily=async b=>{
+   if(unavailable)throw Error('QUOTE_UNAVAILABLE');
+   return {status:'HOLD',account_revision:b.expected_revision,target_id:b.target_id,
+    policy_id:'MONTHLY_CAP50_EXIT20',risk_monthly_targets:{S:13},new_orders:[],daily_gate:{rows:[]}};
+  };
+  const c=createController(f);await c.load();
+  assert.equal(presentation(c.getState(),now).rows[0].monthly_target,null,'initial load has no cap authority');count++;
+  await c.refresh();
+  assert.equal(presentation(c.getState(),now).rows[0].monthly_target,13);
+  assert.equal(c.getState().target.targets[0].quantity,21,'presentation must not mutate the signed selector target');count++;
+  for(const key of ['account_revision','target_id']){
+   const stale=c.getState();stale.daily[key]='stale';
+   assert.equal(presentation(stale,now).rows[0].monthly_target,null,'lost '+key+' binding hides the quantity');count++;
+  }
+  unavailable=true;
+  await assert.rejects(c.refresh(),/QUOTE_UNAVAILABLE/);
+  assert.equal(presentation(c.getState(),now).rows[0].monthly_target,null,'failed advice must not restore raw quantities');count++;
+  const zero={...c.getState(),error:null,daily:{status:'HOLD',account_revision:'revision-one',target_id:'target-one',
+   policy_id:'MONTHLY_CAP50_EXIT20',risk_monthly_targets:{S:0},daily_gate:{rows:[]},new_orders:[]}};
+  assert.equal(presentation(zero,now).rows[0].monthly_target,0,'verified zero remains distinct from unknown');count++;
+ }
+ // Only a complete policy map proves zero for holdings outside the target.
+ {
+  const model={account:{revision:'r',holdings:[{security_id:'OLD',quantity:4}]},
+   target:{target_id:'t',targets:[{security_id:'S',quantity:21}]},daily:{status:'HOLD',account_revision:'r',target_id:'t',
+    policy_id:'MONTHLY_CAP50_EXIT20',risk_monthly_targets:{S:13},daily_gate:{rows:[]},new_orders:[]}};
+  const old=()=>presentation(model,now).rows.find(row=>row.security_id==='OLD');
+  assert.equal(old().monthly_target,0,'complete cap domain establishes a legacy holding target of zero');count++;
+  model.daily.risk_monthly_targets={};assert.equal(old().monthly_target,null,'partial map is not proof of zero');count++;
+  delete model.daily.risk_monthly_targets;assert.equal(old().monthly_target,null,'missing map is not proof of zero');count++;
+  model.target.targets=[];model.daily.risk_monthly_targets={};
+  assert.equal(old().monthly_target,0,'explicit complete cash-only target proves zero');count++;
+  delete model.target.targets;assert.equal(old().monthly_target,null,'missing monthly domain is not an explicit cash-only target');count++;
+ }
  // Mixed sell + WAIT never turns the blocked buy into a visible executable price.
  {
   const model={account:{revision:'r',holdings:[{security_id:'S',quantity:14}]},target:{target_id:'t',targets:[{security_id:'S',quantity:21}]},historicalQuotes:{S:quote},
-   daily:{status:'CONDITIONAL_PREVIEW_READY',account_revision:'r',target_id:'t',effective_target_quantities:{S:10,B:3},
+   daily:{status:'CONDITIONAL_PREVIEW_READY',account_revision:'r',target_id:'t',policy_id:'MONTHLY_CAP50_EXIT20',risk_monthly_targets:{S:21},effective_target_quantities:{S:10,B:3},
    daily_gate:{rows:[{security_id:'S',action:'SELL'},{security_id:'B',action:'WAIT'}]},
    reference_quotes:{S:quote,B:quote},new_orders:[{security_id:'S',side:'SELL',quantity:4,reference_valid_until:quote.reference_valid_until},{security_id:'B',side:'BUY',quantity:3,reference_valid_until:quote.reference_valid_until}]}};
   let p=presentation(model,now),s=p.rows.find(x=>x.security_id==='S'),b=p.rows.find(x=>x.security_id==='B');

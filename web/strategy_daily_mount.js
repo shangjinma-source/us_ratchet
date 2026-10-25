@@ -55,7 +55,7 @@ function mount(container,dependencies){
   const chartTarget=state.target?structuredClone(state.target):null;
   if(chartTarget){
    const quantities=new Map(displayed.rows.map(row=>[row.security_id,row.monthly_target]));
-   chartTarget.targets=chartTarget.targets.map(row=>({...row,quantity:quantities.get(row.security_id)??row.quantity}));
+   chartTarget.targets=chartTarget.targets.map(row=>({...row,quantity:quantities.get(row.security_id)??null}));
   }
   const nextChartKey=JSON.stringify([chartTarget?.target_id,chartTarget?.targets,state.account?.holdings]);
   if(nextChartKey!==chartKey){

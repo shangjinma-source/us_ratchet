@@ -668,16 +668,16 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/strategy_monthly_target_charts.js?v=20261024-held-target-v7"></script>
-<script src="/static/selected_stock_charts.js?v=20261024-fill-loading-v12"></script>
+<script src="/static/strategy_monthly_target_charts.js?v=20261025-cap-target-v8"></script>
+<script src="/static/selected_stock_charts.js?v=20261025-cap-target-v13"></script>
 <script src="/static/current_research_intraday.js?v=20261015-source-freshness-v2"></script>
 <script src="/static/current_research_paper_performance.js?v=20261015-v1"></script>
 <script src="/static/current_research_intraday_paper.js?v=20261015-stale-proposal-v4"></script>
 <script src="/static/current_research_paper.js?v=v2-legacy-navigation-20261015"></script>
 <script src="/static/current_quantity_v2_paper.js?v=20261016-buy-sell-retained-v5"></script>
 <script src="/static/strategy_account.js?v=20261024-account-inflight-v5"></script>
-<script src="/static/strategy_daily_controller.js?v=20261024-source-expiry-v17"></script>
-<script src="/static/strategy_daily_mount.js?v=20261025-single-cash-v3"></script>
+<script src="/static/strategy_daily_controller.js?v=20261025-cap-target-v19"></script>
+<script src="/static/strategy_daily_mount.js?v=20261025-cap-target-v4"></script>
 <script src="/static/strategy_advice_review.js?v=20261020-v8"></script>
 <script src="/static/strategy_followup_summary.js?v=20261023-v1"></script>
 <script src="/static/strategy_capital_controller.js?v=20261022-arrived-capital-2"></script>
@@ -5089,7 +5089,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (chartState?.target) {
     const chartTarget = structuredClone(chartState.target);
     const chartRows = window.StrategyDailyController.presentation(chartState).rows;
-    chartTarget.targets = chartTarget.targets.map(row => ({...row, quantity: chartRows.find(item => item.security_id === row.security_id)?.monthly_target ?? row.quantity}));
+    chartTarget.targets = chartTarget.targets.map(row => ({...row, quantity: chartRows.find(item => item.security_id === row.security_id)?.monthly_target ?? null}));
     window.RealStrategyMonthlyCharts?.setTarget?.(chartTarget);
   } else window.RealStrategyMonthlyCharts?.setTarget?.(null);
   startStateAutoRefresh();

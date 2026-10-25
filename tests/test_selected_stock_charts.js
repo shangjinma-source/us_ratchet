@@ -87,6 +87,10 @@ function data(ticker) {return {ticker,status:'AVAILABLE',bars,daily_as_of:'2026-
   assert.equal(fillCard.children[5].textContent,'');
   component.setFills([{security_id:'sid',ticker:'SNDK',side:'SELL',quantity:1,price:11,executed_at:'2026-10-14T15:00:00Z'}]);
   assert.match(fillChart.innerHTML,/actual-fill-reference/);assert.match(fillCard.children[5].textContent,/未核验/);
+  component.setSelection({monthly_target:true,stocks:[{ticker:'AAA',security_id:'A',quantity:null}]});
+  assert.equal(container.children[1].children[1].textContent,'本月目标待核验');
+  component.setSelection({monthly_target:true,stocks:[{ticker:'AAA',security_id:'A',quantity:5}]});
+  assert.match(container.children[1].children[1].textContent,/本月目标 5 股/);
   component.destroy();
   console.log('PASS: SVG OHLC, each-card lazy render, stale label and async selection cancellation');
 })().catch(error=>{console.error(error);process.exitCode=1;});

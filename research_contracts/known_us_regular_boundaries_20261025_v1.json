@@ -1,0 +1,49 @@
+{
+  "schema": "KNOWN_US_REGULAR_BOUNDARIES_V1",
+  "knowledge_basis": "RETROSPECTIVELY_REVIEWED_PRIMARY_SOURCES",
+  "reviewed_on": "2026-10-25",
+  "scope": "Only FER and GEHC US ordinary-trading starts; not historical constituent completeness or full PIT certification.",
+  "boundaries": [
+    {
+      "ticker": "FER",
+      "security_id": "security:0001468522:N3168P101",
+      "market": "US",
+      "channel": "ORDINARY_REGULAR_WAY",
+      "us_regular_start": "2024-05-09",
+      "prior_channel": "NON_US_HISTORY_NOT_ADMITTED_AS_US_ORDINARY",
+      "sources": [
+        {
+          "path": "data/cache/research/known_us_regular_boundaries_20261025_v1/fer_sec.html",
+          "sha256": "1772ec937689f9e2ac66d7e8623149be24de8084125b9e24f938a720855d9e80",
+          "url": "https://www.sec.gov/Archives/edgar/data/1468522/000110465924059121/tm2326351d24_ex99-1.htm",
+          "published_on": "2024-05-09",
+          "retrieved_on": "2026-10-25"
+        }
+      ]
+    },
+    {
+      "ticker": "GEHC",
+      "security_id": "security:0001932393:36266G107",
+      "market": "US",
+      "channel": "ORDINARY_REGULAR_WAY",
+      "us_regular_start": "2023-01-04",
+      "prior_channel": "WHEN_ISSUED_NOT_ORDINARY_REGULAR_WAY",
+      "sources": [
+        {
+          "path": "data/cache/research/known_us_regular_boundaries_20261025_v1/gehc_nasdaq.html",
+          "sha256": "ac4119dfbb7f38edab14c962bf34f2e3c414902c3cdc6e935229831606dbb980",
+          "url": "https://classic.nasdaqtrader.com/TraderNews.aspx?id=eca2022-405",
+          "published_on": "2022-12-06",
+          "retrieved_on": "2026-10-25"
+        },
+        {
+          "path": "data/cache/research/known_us_regular_boundaries_20261025_v1/gehc_issuer.html",
+          "sha256": "bd84c10536c70e8f57789d3b8ad75be355d9e77232f13c3b86df729e0fb0e9ee",
+          "url": "https://www.gehealthcare.com/en/about/newsroom/press-releases/ge-healthcare-completes-spin-off-and-begins-trading-on-nasdaq",
+          "published_on": "2023-01-04",
+          "retrieved_on": "2026-10-25"
+        }
+      ]
+    }
+  ]
+}

@@ -246,10 +246,17 @@ function presentation(model,now=Date.now()){
  const rows=new Map();
  const add=sid=>{if(!rows.has(sid))rows.set(sid,{security_id:sid,held:0,monthly_target:null,daily_effective_target:null,action:'WAIT',orders:[],historical_orders:[],quotes:null,historical_quote:null});return rows.get(sid);};
  for(const row of model.account?.holdings||[])Object.assign(add(row.security_id),{held:row.quantity,ticker:row.ticker});
- for(const row of model.target?.targets||[])Object.assign(add(row.security_id),{monthly_target:row.quantity,ticker:row.ticker});
- if(bound&&daily.policy_id==='MONTHLY_CAP50_EXIT20'){
-  for(const [sid,quantity] of Object.entries(daily.risk_monthly_targets||{})){
-   if(Number.isInteger(quantity)&&quantity>=0)add(sid).monthly_target=quantity;
+ // The saved selector target precedes the cap. Only the bound policy response
+ // supplies displayable monthly quantities; missing evidence is not zero.
+ for(const row of model.target?.targets||[])Object.assign(add(row.security_id),{ticker:row.ticker});
+ const capTargets=bound&&model.account?.revision&&model.target?.target_id&&!model.error&&daily.policy_id==='MONTHLY_CAP50_EXIT20'&&
+  daily.risk_monthly_targets&&typeof daily.risk_monthly_targets==='object'&&!Array.isArray(daily.risk_monthly_targets)?daily.risk_monthly_targets:null;
+ const monthlyRows=model.target?.targets||[],monthlyIds=new Set(monthlyRows.map(row=>row.security_id));
+ const completeMonthly=capTargets&&Array.isArray(model.target?.targets)&&monthlyIds.size===monthlyRows.length&&Object.keys(capTargets).length===monthlyIds.size&&
+  Object.entries(capTargets).every(([sid,quantity])=>monthlyIds.has(sid)&&Number.isSafeInteger(quantity)&&quantity>=0);
+ if(capTargets){
+  for(const [sid,quantity] of Object.entries(capTargets)){
+   if(Number.isSafeInteger(quantity)&&quantity>=0)add(sid).monthly_target=quantity;
   }
  }
  for(const row of bound?daily.daily_gate?.rows||[]:[]){
@@ -279,6 +286,8 @@ function presentation(model,now=Date.now()){
   else row.historical_orders.push({...copy(order),executable:false,label:'上一条建议 · 已失效，待刷新'});
  }
  for(const row of rows.values()){
+  // A complete policy map establishes zero for old holdings outside its domain.
+  if(completeMonthly&&!monthlyIds.has(row.security_id))row.monthly_target=0;
   if(!row.ticker){
    const fill=[...(model.account?.fills||[])].reverse().find(item=>item.security_id===row.security_id&&item.ticker);
    if(fill)row.ticker=fill.ticker;
@@ -357,7 +366,7 @@ function render(container,model,now=Date.now()){
   ].filter(([,value])=>value!==undefined&&value!==null).map(([side,value])=>side+' '+dollars(value)).join('；'):'';
   const waitingData=(model.daily?.waiting_data||[]).some(item=>item.security_id===row.security_id);
   const historical=waitingData?'暂无有效买入限价':savedOrders||savedQuotes?'上一条建议（已失效，待刷新）：'+(savedOrders||savedQuotes):'';
-  const cells=[row.ticker||row.security_id,row.held,row.monthly_target??'—',row.daily_effective_target??'—',
+  const cells=[row.ticker||row.security_id,row.held,row.monthly_target??'待核验',row.daily_effective_target??'—',
    action||({BUY:'条件买入',SELL:'条件卖出',HOLD:row.held===0?'空仓，无需操作':'持有，无需操作',WAIT:'等待'})[row.action]||'等待',prices||historical||'暂无有效建议',actionExplanation(row,result,model)];
   for(const [index,text] of cells.entries()){
    const td=doc.createElement('td');td.textContent=String(text);

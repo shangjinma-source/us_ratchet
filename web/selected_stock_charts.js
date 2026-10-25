@@ -116,7 +116,7 @@
         if (publication.research_only === true) {
           advice.textContent = `资金占比 ${(stock.target_weight * 100).toFixed(2)}% · 整股候选 ${stock.units} · 保存收盘 $${Number(stock.saved_close).toFixed(2)}`;
         }
-        if (publication.monthly_target === true) advice.textContent = `本月目标 ${stock.quantity} 股 · 不等于待买股数`;
+        if (publication.monthly_target === true) advice.textContent = stock.quantity === null ? '本月目标待核验' : `本月目标 ${stock.quantity} 股 · 不等于待买股数`;
         if (stock.recorded_holding === true) advice.textContent = `仍持有 ${stock.quantity} 股 · 已不在本月目标中`;
         if (publication.recorded_holding === true) advice.textContent = `已录真实持仓 ${stock.quantity} 股 · 历史图不代表策略目标或今日报价`;
         const header = document.createElement('div');

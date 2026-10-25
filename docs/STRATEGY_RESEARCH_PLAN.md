@@ -1,6 +1,6 @@
 # 策略优化研究计划
 
-更新：2026-10-25。状态：**A 已完成机制与独立复核前置检查，固定两窗口对照已登记并启动；B 只登记不运行，生产策略未修改。** 本轮执行合同是 `research_contracts/drift_cap_comparison_20261025.md`，登记 SHA256 为 `9f70d7dda0f3387b1a079418ad0d9b84978f8da818ee0fc8b1042b5e18efdb1a`；开始运行不代表获得收益结果。
+更新：2026-10-25。状态：**A 原批次保留 `FAILED_INCONCLUSIVE`，早窗口保存账本已由新版独立复核器零搜索核验通过；B 只登记不运行，生产策略未修改。** 原执行合同是 `research_contracts/drift_cap_comparison_20261025.md`，登记 SHA256 为 `9f70d7dda0f3387b1a079418ad0d9b84978f8da818ee0fc8b1042b5e18efdb1a`。早窗口候选完成 19 次优化并保存账本，原批次未运行后窗口，不能称完整双窗口通过。复核器 v1 对 `WAIT_POST_ACTION_MARK` 错误要求原月度目标等于已减仓持股；v2 改为独立核验已登记且无暴露的盘后事件、禁止订单/成交、现金与持仓连续及下一正常日数量上限承接。旧源码和失败记录保留，未重跑早窗优化。
 
 目标是在保住年化收益的前提下改善回撤及实际执行。现行 `MONTHLY_CAP50_EXIT20` 为对照：50% 是配置时单股上限，20% 是相对本月收盘峰值的退出信号，两者都不是账户最大回撤保证。持有周期可以由机会和风险决定，不要求整月倍数；前端继续保持一个现金总额入口。
 
@@ -12,6 +12,21 @@
 - 仓库已有 `VOL20_TARGET20`（20 日收益、20% 年化波动目标、月度冻结）和 `SMA20_RECHECK`（20 日均线开关）研究实现。旧 `tmp/daily_risk_windows_20261016_v1/report.json` 的 22 个重叠窗口中，前者全部降低回撤但仅 3 个提高收益；这提示压仓可能牺牲用户重视的收益。该旧研究基线及成本不同，只作机制参考，不把旧候选换名重跑。
 
 旧证据：`tmp/delivery_resume_20261024/dynamic_reentry_repair_report.md`、`tmp/cash_balance_policy_20261025_v1/report.md`。这些是本地历史证据路径，发布文档不意味着运行数据一并上传。
+
+## 已确认的数据资格限制
+
+早窗口使用的 `tmp/conditional_calendar_year_inputs_20261016_v2/source_manifest.json` 明确标注 `FIXED_CURRENT_OBSERVED_101_SURVIVOR_BIASED`：从事后看到的 101 只股票回看历史，存在已知幸存者偏差；不能只写“PIT 未认证”淡化这一点。后窗口的成员来源是 `DATED_OFFICIAL_EVENT_CHAIN_CONDITIONAL`，完整性仍未认证，不等同于完整历史成分股及退市证券覆盖。两个窗口只能做各自同域机制对照，不能据此升级为可靠的未来收益证据。
+
+本次只读检查全部 19+12 个实际月度输入，未发现训练日、情景日或报价日晚于决策日；但日期不越界不代表交易资格正确。早窗口把行情源首日直接声明为普通交易起点，存在两个具体反例：
+
+- **FER**：实际到 2024-05-09 才在 Nasdaq 开始普通股交易；早窗口从 2023-12-29 起已纳入可选域，前五个月度锚点尚未美股上市，17 个锚点的训练还包含美国上市前数据。[发行人 SEC 公告](https://www.sec.gov/Archives/edgar/data/1468522/000110465924059121/tm2326351d24_ex99-1.htm)
+- **GEHC**：普通交易始于 2023-01-04；2023-12-29 锚点的 253 日训练把 2022-12-28、29、30 和 2023-01-03 的 when-issued 渠道混作普通交易日。[Nasdaq 公司行动公告](https://classic.nasdaqtrader.com/TraderNews.aspx?id=eca2022-405)、[发行人完成分拆公告](https://www.gehealthcare.com/en/about/newsroom/press-releases/ge-healthcare-completes-spin-off-and-begins-trading-on-nasdaq)
+
+旧基准没有 FER/GEHC 实际成交，仍不能推断这两个候选从未影响优化搜索。以上是上市/交易渠道资格及历史可选域缺陷，不是本次发现了未来日期价格偷看；不修改正在运行的冻结输入，不覆盖旧结果。修正后如需收益实验，必须作为新的、另行登记研究。资格复核证据保存在 `tmp/drift_cap_research_20261025/input_universe_independent_audit.json`。
+
+只应用这两个已证实边界的域差异为：早窗口 17 个月度输入受影响，排除 18 个股票×窗口记录（FER 17、GEHC 1）；后窗口 12 个输入均不受这两个边界影响。这是资格过滤对照，没有重新选股或重算收益。当前生产保存目标绑定的训练 manifest 哈希核对一致，训练为 2025-10-13—2026-10-14，FER/GEHC 各 253 个非缺失报价均在普通交易开始之后，故这两个历史边界不改变当前目标的候选资格；其余历史资格及完整 PIT 仍不据此获证。
+
+新增 `backtest/known_us_regular_boundary_guard.py` 与 `scripts/prepare_known_us_boundary_inputs.py`：先核 `research_contracts/known_us_regular_boundaries_20261025_v1.json` 的官方原文 SHA256，再检查已覆盖证券的身份、253 个训练日期及正价、美国普通交易边界，并将实际 12 个情景日期与收益绑定回所审训练窗口。生成带明确排除原因的新输入副本，未覆盖成员保留 `NOT_COVERED_BY_KNOWN_BOUNDARIES`，旧输入及现行生产目标不写入。7 组针对性测试覆盖上市前候选、when-issued 混入、未来日期、缺价、身份错误、来源篡改、情景偷换及副本过滤。完整零优化资格报告位于 `tmp/known_us_boundary_review_20261025_v2/`。
 
 ## 参考成熟研究，保留适用边界
 

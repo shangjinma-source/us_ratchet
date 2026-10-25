@@ -40,7 +40,7 @@ function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.Sele
   if(nextKey!==null&&nextKey===selectionKey)return;
   clear();if(!target){showHoldings();return;}
   targetId=target.target_id;selectionKey=nextKey;const current=generation;
-  const stocks=target.targets.filter(row=>row.quantity>0).map(row=>({...row}));
+  const stocks=target.targets.filter(row=>row.quantity===null||row.quantity>0).map(row=>({...row}));
   for(const holding of account?.holdings||[]){
    if(holding.quantity>0&&!stocks.some(row=>row.security_id===holding.security_id))stocks.push({...holding,recorded_holding:true});
   }

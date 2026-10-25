@@ -31,6 +31,7 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
   if(previewFailure)throw Error('DAILY_RESPONSE_UNAVAILABLE');
   if(gate)await gate;
   return {status:'READY',account_revision:account.revision,target_id:target.target_id,
+   policy_id:'MONTHLY_CAP50_EXIT20',risk_monthly_targets:{S:21},
    effective_target_quantities:{S:10},daily_gate:{rows:[{security_id:'S',action:'SELL'}]},
    reference_quotes:{S:{sell:'10025/100',reference_valid_until:'2026-10-20T16:00:00Z'}},
    new_orders:[{security_id:'S',side:'SELL',quantity:4,limit_price:'10025/100',reference_valid_until:'2026-10-20T16:00:00Z'}]};
@@ -83,6 +84,9 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  while(!instance.getState().busy)await new Promise(r=>setImmediate(r));
  instance.accountInvalidated();resolve();await pendingRefresh.catch(()=>{});
  assert.equal(instance.getState().daily,null);assert.match(text(container),/上一条建议/);
+ assert.match(text(instance.elements.summary),/待核验/);
+ assert.equal(chartChanges.at(-1).v.targets[0].quantity,null,'chart handoff must preserve an unknown cap target');
+ assert.equal(instance.getState().target.targets[0].quantity,21,'saved raw target remains unchanged');
  gate=null;await instance.refresh();assert.equal(timers.size,1);
  instance.setCapitalBusy(true);assert(instance.elements.save.disabled);assert(instance.elements.input.disabled);
  account={...account,revision:'after-capital',available_cash:'1258023/100'};
@@ -94,10 +98,12 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  instance.elements.save.click();await instance.whenIdle();
  assert.equal(cashWrites,2);assert.equal(instance.getState().cashSaved,true);
  assert.equal(instance.getState().error,'DAILY_RESPONSE_UNAVAILABLE');
+ assert.equal(chartChanges.at(-1).v.targets[0].quantity,null,'failed preview cannot restore uncapped chart quantity');
  assert.equal(instance.elements.save.disabled,false);
  previewFailure=false;
  instance.elements.save.click();await instance.whenIdle();
  assert.equal(cashWrites,2);assert.equal(instance.getState().error,null);
+ assert.equal(chartChanges.at(-1).v.targets[0].quantity,21,'bound policy target restores the chart quantity');
  assert.match(text(instance.elements.summary),/卖出 4/);
  // Editing the balance after failure must still save the new amount.
  previewFailure=true;instance.elements.save.click();await instance.whenIdle();
