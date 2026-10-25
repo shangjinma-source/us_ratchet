@@ -36,4 +36,6 @@ archive_saved_frontier_policy(
 
 私有归档、原目标和详细收据仅保存在本地 `tmp/saved_frontier_archive_native_20261025/`，不随公开源码上传。公开说明不包含真实目标ID、账户金额、股数或来源原文。
 
-本轮到此层结束。完整生产接入仍需新证券完整数据域、风险状态继承、月度准入及建议展示联动，见[生产接入边界](capped_frontier_production_integration_plan.md)。
+本组件到此层结束。完整生产接入仍需新证券完整数据域、风险状态继承、月度准入及建议展示联动，见[生产接入边界](capped_frontier_production_integration_plan.md)。
+
+后续已完成的独立研究接线见[隔离预览链](saved_frontier_isolated_pipeline_20261025.md)，仍未生产采用。
