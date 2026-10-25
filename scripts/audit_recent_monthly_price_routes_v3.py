@@ -3,6 +3,7 @@ import csv
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -46,6 +47,16 @@ def audit():
                           'tmp/candlestick_gap_probe_20261025/ALXN_price_candidate_audit.json'):
         raw(ROOT / evidence_path)
     exclusions = {(r['ticker'],r['decision_cutoff']):r for r in eligibility['records'] if r['status']=='EXCLUDED_TRAINING_RULE'}
+    for evidence_path in (
+        'tmp/chartexchange_gap_20261025/MXIM_audit.json',
+        'tmp/chartexchange_gap_20261025/XLNX_audit.json',
+        'tmp/xlnx_cern_gap_20261025/manifest.json',
+        'tmp/splk_sgen_bridge_20261025/overlap_audit.json',
+        'tmp/zenodo_wba_20261026/independent_wba_price_review.json',
+    ):
+        path = ROOT / evidence_path
+        if path.exists():
+            raw(path)
     domain_by_day = {row['decision_cutoff']:row for row in domain['decisions']}
     # Reuse the same saved reference calendar as V2, without loading extra sources.
     reference = json.loads(raw(ROOT / 'tmp/free_history_price_probe_20261025_v1/AAPL.response'))
@@ -58,7 +69,14 @@ def audit():
                     ROOT / f'tmp/modern_archive_inventory_20261025/{ticker}.csv',
                     ROOT / f'tmp/andrewmvd_inventory_20261025/{ticker}_stocks.csv',
                     ROOT / f'tmp/candlestick_gap_probe_20261025/{ticker}_price_candidate_2020_2021.csv') if path.exists())
-        # ATVI has the only previously reviewed explicit multi-source priority.
+        paths.update(path for path in (
+            ROOT / f'tmp/chartexchange_gap_20261025/{ticker}_price_candidate.csv',
+            ROOT / f'tmp/xlnx_cern_gap_20261025/{ticker}_archive.csv',
+            ROOT / f'tmp/xlnx_cern_gap_20261025/{ticker}_chart.csv',
+            ROOT / f'tmp/splk_sgen_bridge_20261025/{ticker}.csv',
+            ROOT / f'tmp/zenodo_wba_20261026/{ticker}_stock_data.csv',
+        ) if path.exists())
+        # Explicit candidates retain fixed source priority; date coverage alone is not admission.
         routes = {}
         for path in sorted(paths):
             content = raw(path)
@@ -83,13 +101,21 @@ def audit():
                 if path.parent.name == 'modern_archive_inventory_20261025' and not path.name.startswith('ATVI_price_candidate'):
                     suspect = ['2022-12-12']
             valid = {day:quote for day,quote in rows.items() if valid_ohlc(quote) and day not in suspect}
-            if not valid:
+            def positive_fields(quote, fields):
+                try:
+                    return all(not isinstance(quote.get(key),bool) and math.isfinite(float(quote[key])) and float(quote[key])>0 for key in fields)
+                except (ValueError, TypeError, KeyError):
+                    return False
+            close_dates = {day for day,quote in rows.items() if day not in suspect and positive_fields(quote,('close',))}
+            open_close_dates = {day for day,quote in rows.items() if day not in suspect and positive_fields(quote,('open','close'))}
+            if not valid and not close_dates:
                 empty_routes.setdefault(ticker, []).append(dict(path=path.relative_to(ROOT).as_posix(),
                     reason='NO_FINITE_VALID_OHLC_NOT_A_SUCCESSFUL_PRICE_ROUTE'))
                 continue
             routes[path.relative_to(ROOT).as_posix()] = dict(rows=valid, suspect_dates=suspect,
+                close_dates=close_dates, open_close_dates=open_close_dates,
                 first=min(valid) if valid else None, last=max(valid) if valid else None,
-                explicit_priority_reviewed=path.name in ('ATVI_price_candidate_2020_2023.csv','ALXN_price_candidate_2020_2021.csv'))
+                explicit_priority_reviewed=path.name in ('ATVI_price_candidate_2020_2023.csv','ALXN_price_candidate_2020_2021.csv','MXIM_price_candidate.csv','XLNX_price_candidate.csv'))
         candidates[ticker] = routes
     matrix = []
     for old in previous['matrix']:
@@ -106,6 +132,8 @@ def audit():
         training_coverage = classify_route_dates(train, route_dates)
         execution_coverage = classify_route_dates(old_security_execution, route_dates)
         qualification = exclusions.get((ticker,cutoff))
+        close_coverage = classify_route_dates(train, {name:route['close_dates'] for name,route in routes.items()})
+        open_close_coverage = classify_route_dates(old_security_execution, {name:route['open_close_dates'] for name,route in routes.items()})
         coverage = classify_route_dates(required, {name:list(route['rows']) for name,route in routes.items()})
         union = set().union(*(set(route['rows']) for route in routes.values())) if routes else set()
         earliest = min(union) if union else None
@@ -132,7 +160,12 @@ def audit():
             overlapping_price_disagreement_dates=conflicts, qualification_exclusion_authorized=False,
             units_identity_actions_admitted=False))
         matrix[-1].update(training_coverage=training_coverage,
-            training_ready_at_date_level=bool(training_coverage['single_source_complete']) or qualification is not None,
+            training_close_coverage=close_coverage,
+            training_close_missing=[] if qualification else close_coverage['missing_union_dates'],
+            execution_open_close_coverage=open_close_coverage,
+            execution_open_close_missing=open_close_coverage['missing_union_dates'],
+            execution_full_ohlc_schema_still_required=True,
+            training_ready_at_date_level=bool(close_coverage['single_source_complete']) or qualification is not None,
             training_rule_exclusion=qualification,
             execution_old_security_coverage=execution_coverage,
             execution_requires_action=bool(action_dates), action_required_dates=action_dates,
@@ -168,18 +201,31 @@ def audit():
                 else:
                     segments[-1].append(day)
             gap_segments.extend(dict(ticker=ticker,kind=kind,start=part[0],end=part[-1],sessions=len(part)) for part in segments)
-    return dict(revision='V4_CANDIDATES_SHORT_HISTORY_AND_ACTION_BOUNDARIES', source_hashes=hashes, windows=windows, matrix=matrix,
+    field_gap_segments = []
+    for ticker in sorted(candidates):
+        train_missing = {day for row in matrix if row['ticker']==ticker for day in row['training_close_missing']}
+        execution_missing = {day for row in matrix if row['ticker']==ticker for day in row['execution_open_close_missing']}
+        for kind, missing_days in [('TRAINING_ONLY_CLOSE_SUFFICIENT',train_missing-execution_missing),('EXECUTION_OPEN_CLOSE_AND_CURRENT_OHLC_SCHEMA_REQUIRED',execution_missing)]:
+            parts = []
+            for day in sorted(missing_days):
+                if not parts or positions[day] != positions[parts[-1][-1]]+1:
+                    parts.append([day])
+                else:
+                    parts[-1].append(day)
+            field_gap_segments.extend(dict(ticker=ticker, requirement=kind,start=part[0],end=part[-1],sessions=len(part)) for part in parts)
+    return dict(revision='V5_FIELD_REQUIREMENTS_DIAGNOSTIC_NO_SCHEMA_RELAXATION', source_hashes=hashes, windows=windows, matrix=matrix,
+                field_gap_segments=field_gap_segments,
                 remaining_quote_gap_segments=gap_segments,
                 limitations=['Date unions are diagnostics only, never admitted training/execution quotes.',
                              'Price disagreements can be rounding, units or real source errors; no source is selected by performance.',
-                             'ATVI and ALXN price candidates have explicit priority reviews; other route splicing needs review.',
+                             'ATVI, ALXN, MXIM and partial XLNX candidates have explicit priority reviews; other route splicing needs review.',
                              'Training ready here is date-level only, not identity/unit/action admission.',
                              'Known post-last-trade dates require conversion/receivable handling, never manufactured old-stock quotes.'])
 
 
 if __name__ == '__main__':
     result = audit()
-    (OUT / 'monthly_price_routes_v4.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+    (OUT / 'monthly_price_routes_v5_fields.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps({'windows':len(result['windows']), 'security_windows':len(result['matrix']),
                       'training_date_ready':[w['execution_month'] for w in result['windows'] if w['training_ready_at_date_level']],
-                      'gap_segments':result['remaining_quote_gap_segments']}))
+                      'field_gap_segments':result['field_gap_segments']}))
