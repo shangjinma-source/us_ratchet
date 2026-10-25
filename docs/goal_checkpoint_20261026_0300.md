@@ -26,6 +26,7 @@
 - `tmp/old_window_execution_prices_20261026/continuous_schema_precheck_v2.json`：SHA256 `c1463e92169d9c32482fb86573cfe96f7d0f659405ff579a8038e56e45411f77`。
 - `tmp/old_window_readiness_independent_20261026/`：v4 编译、OHLC、结构 v1/v2 的独立复核，最终状态 `PASS_SIRI_SUCCESSOR_INCREMENT_ONLY_ACTION_ASSEMBLY_STILL_BLOCKED`。
 - [资料概览](old_window_data_preparation_20261026.md)、[独立复核](old_window_readiness_independent_review_20261026.md)、[归档与恢复](old_window_evidence_archive_20261026.md)。恢复最新资料使用 `old_window_execution_v4.zip` 加 `continuous_schema_delta_v2.zip`；已完成基准另见 [基准归档](research_archive_20261026.md)。
+- [恢复审计与操作顺序](archive_resume_audit_20261026.md)：最新三项产物的直接 pinned 来源均已入包。分别保存两个同名清单；旧 binding 构建脚本硬编码原工作区，新目录不要重跑它，直接读取已保存 binding.json。尚未认证完整运行环境或跨平台执行。
 
 ## 用户恢复后的最短推进顺序
 
