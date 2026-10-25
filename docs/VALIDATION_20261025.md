@@ -2,7 +2,9 @@
 
 首批已发布至 GitHub `main`：[`c242d9a0f963fb8745b385896831281042570863`](https://github.com/shangjinma-source/us_ratchet/commit/c242d9a0f963fb8745b385896831281042570863)。该提交包含本轮源码交付及与原远端 main 的合并，不重写历史。
 
-第二批已发布并远端核实：[`e45df993fc76e422bc2c2ea6cb772e2caad40583`](https://github.com/shangjinma-source/us_ratchet/commit/e45df993fc76e422bc2c2ea6cb772e2caad40583)，包含A拒绝结果、上市资格守门、执行与保存候选审计，以及目标待核验展示修复。旧远端checkpoint分支仍不存在。后续窄重排、ETF参照及相应文档列为第三批交付范围，发布前不称其已到远端。
+第二批已发布并远端核实：[`e45df993fc76e422bc2c2ea6cb772e2caad40583`](https://github.com/shangjinma-source/us_ratchet/commit/e45df993fc76e422bc2c2ea6cb772e2caad40583)，包含A拒绝结果、上市资格守门、执行与保存候选审计，以及目标待核验展示修复。
+
+第三批已发布并远端核实：[`1751b7a137593392d1b939c4a94d6dfdee04f6f6`](https://github.com/shangjinma-source/us_ratchet/commit/1751b7a137593392d1b939c4a94d6dfdee04f6f6)，包含窄重排、ETF参照、原生提案接口及文献和结果文档；25个发布文件的Git规范化内容与本地一致。旧远端checkpoint分支仍不存在。
 
 ## 实际通过的检查
 
@@ -35,9 +37,12 @@
 | 两次重排训练解释 | 24项财富因子、完整评分SHA、逐项省略乘积和平均对数差独立核对一致；另用70位Decimal对数校验，未调用被审脚本或kernel。3组定向测试通过；10/12、12/12只表示固定篮子的省略算术，不是胜率或交叉验证，见[解释](capped_frontier_training_gain_20261025.md) |
 | 当前已保存月目标影响 | 使用当时账户、估值及训练输入只读复算98个保存篮子，裁剪后目标不变；1,274项输入源SHA匹配，账户库、目标库和活动配置前后未变。没有用今天余额重选、没有重算退出或今日建议，见[范围](capped_frontier_current_target_review_20261025.md) |
 | 原生月目标到独立重排提案 | 纯函数与8组独立合成测试完成，覆盖新证券/旧持仓域、旧仓离开候选池、同分及零键、原0/1bp费率、身份和财务篡改、缺域/时间/单位、纽约估值日期及确定性；真实98篮子的独立公式复核一致。0搜索、0订单、0写账户，保留原始选择；尚未接入生产发布、归档准入或风险域 |
+| 默认关闭的隔离提案归档 | 11组功能测试通过，覆盖完整输入/运行源码域、快照、三层身份、提案篡改、路径/别名、原子发布失败、并发占用、幂等及累计字节预算。实际目标的1,274输入源与55运行源码去重为1,309份，58,839,297字节；127.35秒完成隔离原子归档、严格重读与重复写入一致性。原账户库、目标库和活动配置前后SHA相同；内容一致不等于来源真实性或生产准入 |
 | 月度目标展示 | 45个控制器场景和4套相关展示测试通过，覆盖初载、失败、失效绑定、成功绑定、20%退出说明及已核验零目标；完整权威月目标域之外的旧仓显示目标0，部分或缺失映射保留待核验；表格与两条K线传递路径均不再回退到未限仓数量 |
 | 静态上线内容 | 首页与4个修改的JavaScript模块只读GET返回200，逐字节等于工作区；4个模块和首页内联脚本语法通过。没有重启服务或调用账户写接口 |
 | v26现金与等待状态调用链 | 只读核对17份源码及单现金、目标待核验、真实成交承接路径；纯函数反例确认WAIT不生成订单并隐藏旧退出日期，未证明旧projection造成用户可见或交易缺陷。0账户/目标写入、0重启、0生产preview POST；这不代替周一实盘验收 |
+| 盘中UI验收器兼容 | V2修复缺限仓映射时回退原数量、完整映射之外旧仓目标0被误拒，以及HOLD状态额外可见买单漏检；22项定向检查通过（10项V2、12项原V1）。98项月度任务源码pin仍匹配，V1、生产服务与任务配置未修改 |
+| 月底与新月时点 | 现有本地日历指向北京时间10月31日04:00收盘准备、11月2日22:30开盘，23:00后允许采用资料；现有15分钟任务的名义首轮为23:14。自动任务采用资料不生成目标，新月目标另由用户正常现金按钮触发；只读采集仍拦截目标生成，未把静态审查算作换月验收 |
 
 ## 尚未完成或不能据此宣称的事项
 
@@ -63,6 +68,8 @@
 - `tmp/source_release_20261025/remote_release_readback.json`
 - `tmp/source_release_20261025/monthly_cap_display_readback.json`
 - `tmp/source_release_20261025/v26_cash_wait_readonly_review.json`：当前调用链、源码SHA与WAIT反例。
+- `tmp/source_release_20261025/upcoming_acceptance_compatibility_review_v2.json`：最终22项UI验收器检查、98项任务pin与月底/新月时点核验；原21项记录保留。
+- `tmp/source_release_20261025/third_release_remote_receipt.json`：第三批远端提交及25文件内容回读。
 - `tmp/drift_cap_research_20261025/later_completion_v2/terminal.json`
 - `tmp/strategy_mechanism_review_20261025/drift_complete_results.json`
 - `tmp/strategy_execution_audit_20261025/report_v2.json`
@@ -71,6 +78,8 @@
 - `tmp/capped_frontier_rerank_20261025_v2/training_gain_independent_review.json`：两次实际重排的24项训练解释独立核对。
 - `tmp/capped_frontier_current_target_20261025/`：当前目标的私有原始快照、98篮子及1,274项源绑定复核；不发布账户金额、股数或身份。
 - `tmp/capped_frontier_current_target_20261025/native_proposal_independent_review_v2.json`：最终8组桥接边界及98篮子独立公式复核；原v1记录保留，不代替生产准入或行情真实性认证。
+- `tmp/saved_frontier_archive_native_20261025/validation.json`：实际目标1,309来源的隔离归档、重读、幂等与生产文件前后SHA；归档原文均留本机。
+- `tmp/saved_frontier_archive_native_20261025/independent_content_review.json`：不导入归档模块的独立内容复核，1,317文件及完整身份链匹配；当前受保护文件与执行方操作后记录一致。
 - `tmp/market_reference_20261025_v1/`：四本固定ETF价格收益账、登记、独立公式复核和零联网记录。
 - `tmp/known_us_boundary_review_20261025_v2/`
 - `tmp/later_new_listing_scope_20261025_v1/`：审查脚本与完整逐项结果仅保留本机，公开文档不等于GitHub已包含完整复现包。
