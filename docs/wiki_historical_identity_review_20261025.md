@@ -17,3 +17,9 @@
 本地统计依据：`tmp/github_history_routes_20261025/wiki_coverage.json`，原归档来源与SHA见同目录下载manifest。首末日期和行数不认证交易日完整性。上述查询路线尚未写入正式security_id映射，未产生经济成绩。
 
 其他未认证线索：WIKI有SYMC、WFM、UAL、LINTA相应历史，候选成员却包含NLOK、WFMI、UAUA、QRTEA；必须分别区分单纯改名、合并和追踪股重组，不能统一字符串替换。ERIC、FLEX、INFY、LOGI、RYAAY、TEVA等缺失也可能源于数据集收录范围，继续其他免费来源查询。
+
+## MNST代码复用：两家公司必须分开
+
+[Monster Worldwide于2008年10月30日提交SEC的发行人公告](https://www.sec.gov/Archives/edgar/data/1020416/000136231008006380/c76473exv99w1.htm)明确其当时Nasdaq代码为MNST，并计划11月10日转NYSE使用MWW。[其2006年10-K](https://www.sec.gov/Archives/edgar/data/1020416/000104746907001534/a2176380z10-k.htm)亦明确MNST身份。此公司与Hansen饮料公司不是同一发行人。
+
+因此2008名单同时出现HANS和MNST不构成重复发行人的证据；HANS历史可沿饮料公司路线核查，2008年的MNST则需Monster Worldwide历史。将HANS→MNST跨所有日期折叠，可能把两家公司错误合并。任何别名规则必须同时带历史有效日期及独立证券身份，不能只建立字符串字典。
