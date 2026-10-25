@@ -3,6 +3,8 @@
 // UI orchestration only; server configuration owns strategy enablement.
 const copy=x=>structuredClone(x);
 const fail=message=>{throw new Error(message);};
+const sameProposal=(a,b)=>a?.proposal_id===undefined&&b?.proposal_id===undefined||
+ typeof a?.proposal_id==='string'&&/^[a-f0-9]{64}$/.test(a.proposal_id)&&a.proposal_id===b?.proposal_id;
 const allowed=new Set(['READY','WAIT','DAILY_PREVIEW_DISABLED','WAIT_POLICY_RELEASE','WAIT_SIGNAL',
  'WAIT_FRESH_SIGNAL','WAIT_MONTHLY_TARGET','WAIT_PENDING_RECONCILIATION',
  'WAIT_EXECUTION_ELIGIBILITY','HOLD','CONDITIONAL_PREVIEW_READY']);
@@ -21,6 +23,12 @@ function waitingExplanation(reason){
  if(reason==='DAILY_RESPONSE_UNAVAILABLE')return '行情服务暂时返回异常，本次建议未更新；旧价格不可用于挂单。';
  if(['RSS_PUBLICATION_TIME_INVALID','ACTION_RSS_TIME_INVALID'].includes(reason))return '公告源时间核验失败，当前没有新的买卖建议；旧价格不可用于挂单。';
  return ({WAIT_NEW_SESSION_EVIDENCE:"等待当日数据核验，暂不生成买卖建议",DOMAIN_POLICY_AUTHORIZATION_TIME:"等待策略有效时段，暂不生成买卖建议",DAILY_TARGET_SELECTOR_PROFILE_MISMATCH:"等待本月目标完成策略升级，暂不生成买卖建议"})[reason]||null;
+}
+function targetRows(target){
+ if(target?.proposal_id===undefined)return target?.targets||[];
+ const rows=target.proposal_targets;
+ if(!sameProposal(target,target)||!Array.isArray(rows)||rows.some(row=>!row||typeof row.security_id!=='string'||!row.security_id||typeof row.ticker!=='string'||!row.ticker||!Number.isSafeInteger(row.quantity)||row.quantity<0)||new Set(rows.map(row=>row.security_id)).size!==rows.length)fail('DAILY_RESPONSE_BINDING_MISMATCH');
+ return rows;
 }
 function createController({loadAccount,loadTarget,saveCash,generateTarget,previewDaily,onChange=()=>{},now=()=>Date.now()}){
  let epoch=0,ownCashStart=false,pendingTargetRequest=null,invalidationGeneration=0;
@@ -61,7 +69,11 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
  }
  const guard=token=>{if(token!==epoch)fail('DAILY_UI_SNAPSHOT_CHANGED');};
  function acceptDaily(value){
-  if(!value||value.account_revision!==model.account?.revision||value.target_id!==model.target?.target_id)fail('DAILY_RESPONSE_BINDING_MISMATCH');
+  if(!value||value.account_revision!==model.account?.revision||value.target_id!==model.target?.target_id||!sameProposal(value,model.target))fail('DAILY_RESPONSE_BINDING_MISMATCH');
+  if(model.target?.proposal_id!==undefined&&['READY','HOLD','CONDITIONAL_PREVIEW_READY'].includes(value.status)){
+   const rows=targetRows(model.target),risk=value.risk_monthly_targets;
+   if(!risk||Array.isArray(risk)||Object.keys(risk).length!==rows.length||rows.some(row=>risk[row.security_id]!==row.quantity))fail('DAILY_RESPONSE_BINDING_MISMATCH');
+  }
   if(!allowed.has(value.status))fail('DAILY_STATUS_NOT_ADMITTED');
   if(!['READY','CONDITIONAL_PREVIEW_READY'].includes(value.status)&&((value.new_orders||[]).length||Object.keys(value.reference_quotes||{}).length))fail('WAIT_MUST_NOT_CONTAIN_EXECUTABLE_QUOTES');
   value=copy(value);
@@ -89,9 +101,13 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
   guard(token);
   if(!model.target?.target_id)fail('MONTHLY_TARGET_REQUIRED');
   const binding={expected_revision:model.account.revision,target_id:model.target.target_id};
+  if(model.target.proposal_id!==undefined){
+   if(!sameProposal(model.target,model.target))fail('DAILY_RESPONSE_BINDING_MISMATCH');
+   binding.expected_proposal_id=model.target.proposal_id;
+  }
   const response=await previewDaily(binding);guard(token);
   await read(token);
-  if(model.account.revision!==binding.expected_revision||model.target?.target_id!==binding.target_id)fail('SNAPSHOT_CHANGED_DURING_PREVIEW');
+  if(model.account.revision!==binding.expected_revision||model.target?.target_id!==binding.target_id||!sameProposal(model.target,{proposal_id:binding.expected_proposal_id}))fail('SNAPSHOT_CHANGED_DURING_PREVIEW');
   acceptDaily(response);
   return copy(model);
  }
@@ -100,6 +116,7 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
   guard(token);
   if(!account?.revision)fail('ACCOUNT_REQUIRED');
   if(!target?.server_month)fail('SERVER_MONTH_REQUIRED');
+  targetRows(target);
   model.account=copy(account);model.target=target.target_id?copy(target):null;
   return target.server_month;
  }
@@ -117,7 +134,7 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
   if(!generated?.target_id)fail('TARGET_GENERATION_REQUIRED');
   pendingTargetRequest=null;
   await read(token);
-  if(model.account.revision!==request.expected_revision||model.target?.target_id!==generated.target_id)fail('TARGET_CHANGED_AFTER_GENERATION');
+  if(model.account.revision!==request.expected_revision||model.target?.target_id!==generated.target_id||!sameProposal(model.target,generated))fail('TARGET_CHANGED_AFTER_GENERATION');
  }
  return {
   getState:()=>copy(model),
@@ -239,7 +256,7 @@ function httpDependencies(request,eventId,accountController){
 }
 function presentation(model,now=Date.now()){
  const daily=model.daily;
- const bound=daily&&daily.account_revision===model.account?.revision&&daily.target_id===model.target?.target_id;
+ const bound=daily&&daily.account_revision===model.account?.revision&&daily.target_id===model.target?.target_id&&sameProposal(daily,model.target);
  const ready=bound&&['READY','CONDITIONAL_PREVIEW_READY'].includes(daily.status)&&!model.busy&&!model.error;
  const orders=ready?(daily.new_orders||[]):[];
  const quotes=ready?(daily.reference_quotes||{}):{};
@@ -248,11 +265,12 @@ function presentation(model,now=Date.now()){
  for(const row of model.account?.holdings||[])Object.assign(add(row.security_id),{held:row.quantity,ticker:row.ticker});
  // The saved selector target precedes the cap. Only the bound policy response
  // supplies displayable monthly quantities; missing evidence is not zero.
- for(const row of model.target?.targets||[])Object.assign(add(row.security_id),{ticker:row.ticker});
- const capTargets=bound&&model.account?.revision&&model.target?.target_id&&!model.error&&daily.policy_id==='MONTHLY_CAP50_EXIT20'&&
+ for(const row of targetRows(model.target))Object.assign(add(row.security_id),{ticker:row.ticker});
+ const policyMatches=model.target?.proposal_id===undefined?daily?.policy_id==='MONTHLY_CAP50_EXIT20':daily?.policy_id==='SAVED_FRONTIER_CAP50_EXIT20_V1';
+ const capTargets=bound&&model.account?.revision&&model.target?.target_id&&!model.error&&policyMatches&&
   daily.risk_monthly_targets&&typeof daily.risk_monthly_targets==='object'&&!Array.isArray(daily.risk_monthly_targets)?daily.risk_monthly_targets:null;
- const monthlyRows=model.target?.targets||[],monthlyIds=new Set(monthlyRows.map(row=>row.security_id));
- const completeMonthly=capTargets&&Array.isArray(model.target?.targets)&&monthlyIds.size===monthlyRows.length&&Object.keys(capTargets).length===monthlyIds.size&&
+ const monthlyRows=targetRows(model.target),monthlyIds=new Set(monthlyRows.map(row=>row.security_id));
+ const completeMonthly=capTargets&&Array.isArray(model.target?.proposal_id===undefined?model.target?.targets:model.target?.proposal_targets)&&monthlyIds.size===monthlyRows.length&&Object.keys(capTargets).length===monthlyIds.size&&
   Object.entries(capTargets).every(([sid,quantity])=>monthlyIds.has(sid)&&Number.isSafeInteger(quantity)&&quantity>=0);
  if(capTargets){
   for(const [sid,quantity] of Object.entries(capTargets)){
@@ -393,7 +411,7 @@ function render(container,model,now=Date.now()){
   explanations[result.reason]||explanations[result.detail_status]||explanations[result.status]||'等待执行条件满足');
  container.replaceChildren(status,table);return result;
 }
-const api={waitingExplanation,createController,httpDependencies,fetchTransport,presentation,render,dollars,actionExplanation};
+const api={targetRows,waitingExplanation,createController,httpDependencies,fetchTransport,presentation,render,dollars,actionExplanation};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.StrategyDailyController=api;
 })(typeof window!=='undefined'?window:globalThis);

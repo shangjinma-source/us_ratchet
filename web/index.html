@@ -5089,7 +5089,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (chartState?.target) {
     const chartTarget = structuredClone(chartState.target);
     const chartRows = window.StrategyDailyController.presentation(chartState).rows;
-    chartTarget.targets = chartTarget.targets.map(row => ({...row, quantity: chartRows.find(item => item.security_id === row.security_id)?.monthly_target ?? null}));
+    chartTarget.targets = (chartTarget.proposal_id === undefined ? chartTarget.targets : chartTarget.proposal_targets || []).map(row => ({...row, quantity: chartRows.find(item => item.security_id === row.security_id)?.monthly_target ?? null}));
     window.RealStrategyMonthlyCharts?.setTarget?.(chartTarget);
   } else window.RealStrategyMonthlyCharts?.setTarget?.(null);
   startStateAutoRefresh();

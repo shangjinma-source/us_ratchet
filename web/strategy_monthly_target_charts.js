@@ -25,18 +25,19 @@ function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.Sele
   charts.setSelection({recorded_holding:true,label:latestDisplayEnabled?'已录真实持仓 · 展示行情 · 账户月度目标尚未配置':'已录真实持仓 · 历史 K 线（非今日报价） · 账户月度目标尚未配置',stocks:stocks.map(row=>({...row}))});
   charts.setFills?.(fills);
  }
- async function latest(ticker,stock,interval,signal,revision,boundTarget,current){
+ async function latest(ticker,stock,interval,signal,revision,boundTarget,current,proposalId){
   const query=new URLSearchParams({security_id:stock.security_id,interval,bars:'260'});
+  if(proposalId!==undefined)query.set('expected_proposal_id',proposalId);
   const response=await fetchImpl('/api/strategy-display/latest-bars?'+query,{signal,cache:'no-store'});
   if(!response.ok)return null;
   const data=await response.json();
-  if(current!==generation||account?.revision!==revision||data.account_revision!==revision||data.target_id!==boundTarget||data.security_id!==stock.security_id||data.ticker!==ticker)throw Error('LATEST_CHART_CHANGED');
+  if(current!==generation||account?.revision!==revision||data.account_revision!==revision||data.target_id!==boundTarget||(proposalId!==undefined&&data.proposal_id!==proposalId)||data.security_id!==stock.security_id||data.ticker!==ticker)throw Error('LATEST_CHART_CHANGED');
   if(data.status!=='DISPLAY_ONLY'||data.executable!==false||!Array.isArray(data.bars)||!data.bars.length||data.bars.length>260||!data.bars.every(bar=>typeof bar.complete==='boolean'))throw Error('LATEST_CHART_INVALID');
   return {...data,status:'AVAILABLE',display_only:true,daily_as_of:data.as_of,latest_quote:{price:Number(data.price),as_of:Number.isFinite(data.price_time)?new Date(data.price_time*1000).toISOString():null,session:data.price_session==='REGULAR'?'REGULAR_LAST':'DAILY_BAR'},last_period_may_be_partial:data.bars.at(-1).complete===false};
  }
  function setTarget(target){
   savedTarget=target?structuredClone(target):null;
-  const nextKey=target?JSON.stringify([target.target_id,target.targets,account?.holdings||[]]):null;
+  const nextKey=target?JSON.stringify([target.target_id,target.proposal_id,target.targets,account?.holdings||[]]):null;
   if(nextKey!==null&&nextKey===selectionKey)return;
   clear();if(!target){showHoldings();return;}
   targetId=target.target_id;selectionKey=nextKey;const current=generation;
@@ -48,7 +49,7 @@ function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.Sele
   charts=createCharts(container,async(ticker,interval,signal)=>{
    const stock=stocks.find(row=>row.ticker===ticker);if(!stock)throw Error('TARGET_STOCK_REQUIRED');
    const revision=account?.revision;
-   if(latestDisplayEnabled&&revision){const value=await latest(ticker,stock,interval,signal,revision,target.target_id,current);if(value)return value;}
+   if(latestDisplayEnabled&&revision){const value=await latest(ticker,stock,interval,signal,revision,target.target_id,current,target.proposal_id);if(value)return value;}
    if(stock.recorded_holding){
     const query=new URLSearchParams({account_revision:revision,security_id:stock.security_id,interval});
     const response=await fetchImpl('/api/strategy-account/holding-bars?'+query,{signal,cache:'no-store'});
@@ -58,10 +59,11 @@ function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.Sele
     return {...data,latest_display_fallback:latestDisplayEnabled};
    }
    const query=new URLSearchParams({target_id:target.target_id,security_id:stock.security_id,interval});
+   if(target.proposal_id!==undefined)query.set('expected_proposal_id',target.proposal_id);
    const response=await fetchImpl('/api/strategy-account/target/bars?'+query,{signal,cache:'no-store'});
    if(!response.ok)throw Error('TARGET_CHART_UNAVAILABLE');
    const data=await response.json();
-   if(current!==generation||data.target_id!==target.target_id||data.security_id!==stock.security_id||data.ticker!==ticker)throw Error('TARGET_CHART_CHANGED');
+   if(current!==generation||data.target_id!==target.target_id||(target.proposal_id!==undefined&&data.proposal_id!==target.proposal_id)||data.security_id!==stock.security_id||data.ticker!==ticker)throw Error('TARGET_CHART_CHANGED');
    return {...data,latest_display_fallback:latestDisplayEnabled};
   });
   charts.setSelection({monthly_target:true,label:latestDisplayEnabled?'本月股票 · 展示行情 · 绿涨红跌':`本月目标 · 历史日线截至 ${target.historical_training_cutoff} · 非今日报价 · 绿涨红跌`,stocks:stocks.map(row=>({ticker:row.ticker,security_id:row.security_id,quantity:row.quantity,recorded_holding:row.recorded_holding===true}))});

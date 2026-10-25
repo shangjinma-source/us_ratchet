@@ -138,6 +138,9 @@ def mount_strategy_routes(*, app, root, environment):
         elif schema == "DAILY_SOURCE_ERROR_UNIFIED_PREPARATION_V17":
             from data.strategy_unified_server_preparation_v17 import build_unified_server_preparation_v17
             builder = build_unified_server_preparation_v17
+        elif schema == "SAVED_FRONTIER_UNIFIED_PREPARATION_V27":
+            from data.strategy_unified_server_preparation_v27 import build_unified_server_preparation_v27
+            builder = build_unified_server_preparation_v27
         elif schema == "FOLLOWUP_COMPATIBLE_EPOCH_PREPARATION_V26":
             from data.strategy_unified_server_preparation_v26 import build_unified_server_preparation_v26
             builder = build_unified_server_preparation_v26
@@ -202,6 +205,7 @@ def mount_strategy_routes(*, app, root, environment):
             "RISK_HISTORY_CONTINUATION_PREPARATION_V24": "UNIFIED_V24",
             "COMPLETED_SELECTION_CLOSE_PREPARATION_V25": "UNIFIED_V25",
             "FOLLOWUP_COMPATIBLE_EPOCH_PREPARATION_V26": "UNIFIED_V26",
+            "SAVED_FRONTIER_UNIFIED_PREPARATION_V27": "UNIFIED_V27",
         }[schema]
     elif _legacy_configuration_absent(root):
         router = _unconfigured_router()

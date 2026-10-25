@@ -55,12 +55,12 @@ function mount(container,dependencies){
   const chartTarget=state.target?structuredClone(state.target):null;
   if(chartTarget){
    const quantities=new Map(displayed.rows.map(row=>[row.security_id,row.monthly_target]));
-   chartTarget.targets=chartTarget.targets.map(row=>({...row,quantity:quantities.get(row.security_id)??null}));
+   chartTarget.targets=ui.targetRows(chartTarget).map(row=>({...row,quantity:quantities.get(row.security_id)??null}));
   }
-  const nextChartKey=JSON.stringify([chartTarget?.target_id,chartTarget?.targets,state.account?.holdings]);
+  const nextChartKey=JSON.stringify([chartTarget?.target_id,chartTarget?.proposal_id,chartTarget?.targets,state.account?.holdings]);
   if(nextChartKey!==chartKey){
    chartKey=nextChartKey;
-   const tickers=[...new Set([...(state.target?.targets||[]),...(state.account?.holdings||[])].map(x=>x.ticker).filter(Boolean))];
+   const tickers=[...new Set([...ui.targetRows(state.target),...(state.account?.holdings||[])].map(x=>x.ticker).filter(Boolean))];
    safe(()=>onRecommendedTickers(tickers));
    // Caller retains the existing K-line renderer and its own async race guard.
    safe(()=>onTargetChanged(chartTarget,{container:charts,holdings:structuredClone(state.account?.holdings||[])}));
