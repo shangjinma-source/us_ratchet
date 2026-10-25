@@ -39,16 +39,25 @@ def audit():
         return value
     previous = json.loads(raw(OUT / 'monthly_price_coverage_v2.json'))
     domain = json.loads(raw(OUT / 'monthly_member_domain_v1.json'))
+    eligibility = json.loads(raw(OUT / 'regular_way_eligibility_v1.json'))
+    for evidence_path in ('tmp/andrewmvd_inventory_20261025/stocks_download_manifest.json',
+                          'tmp/andrewmvd_inventory_20261025/stocks_extraction_audit.json',
+                          'tmp/modern_archive_inventory_20261025/ATVI_price_candidate_audit.json',
+                          'tmp/candlestick_gap_probe_20261025/ALXN_price_candidate_audit.json'):
+        raw(ROOT / evidence_path)
+    exclusions = {(r['ticker'],r['decision_cutoff']):r for r in eligibility['records'] if r['status']=='EXCLUDED_TRAINING_RULE'}
     domain_by_day = {row['decision_cutoff']:row for row in domain['decisions']}
     # Reuse the same saved reference calendar as V2, without loading extra sources.
     reference = json.loads(raw(ROOT / 'tmp/free_history_price_probe_20261025_v1/AAPL.response'))
     sessions = [datetime.fromtimestamp(stamp, timezone.utc).date().isoformat() for stamp in reference['chart']['result'][0]['timestamp']]
     selected = {row['ticker']:row['source'] for row in previous['matrix']}
-    candidates = {}
+    candidates, empty_routes = {}, {}
     for ticker, selected_path in selected.items():
         paths = {ROOT / selected_path} if selected_path else set()
         paths.update(path for path in (ROOT / f'tmp/modern_missing_probe_20261025/{ticker}_quiver.csv',
-                    ROOT / f'tmp/modern_archive_inventory_20261025/{ticker}.csv') if path.exists())
+                    ROOT / f'tmp/modern_archive_inventory_20261025/{ticker}.csv',
+                    ROOT / f'tmp/andrewmvd_inventory_20261025/{ticker}_stocks.csv',
+                    ROOT / f'tmp/candlestick_gap_probe_20261025/{ticker}_price_candidate_2020_2021.csv') if path.exists())
         # ATVI has the only previously reviewed explicit multi-source priority.
         routes = {}
         for path in sorted(paths):
@@ -64,7 +73,7 @@ def audit():
                 rows = {}
                 for row in csv.DictReader(content.decode('utf-8-sig').splitlines()):
                     if 'Date' in row:
-                        day = datetime.strptime(row['Date'], '%d-%m-%Y').date().isoformat()
+                        day = datetime.strptime(row['Date'], '%Y-%m-%d' if row['Date'][4:5]=='-' else '%d-%m-%Y').date().isoformat()
                         quote = {key.lower():row[key] for key in ('Open','High','Low','Close')}
                     else:
                         day, quote = row['date'], row
@@ -74,17 +83,29 @@ def audit():
                 if path.parent.name == 'modern_archive_inventory_20261025' and not path.name.startswith('ATVI_price_candidate'):
                     suspect = ['2022-12-12']
             valid = {day:quote for day,quote in rows.items() if valid_ohlc(quote) and day not in suspect}
+            if not valid:
+                empty_routes.setdefault(ticker, []).append(dict(path=path.relative_to(ROOT).as_posix(),
+                    reason='NO_FINITE_VALID_OHLC_NOT_A_SUCCESSFUL_PRICE_ROUTE'))
+                continue
             routes[path.relative_to(ROOT).as_posix()] = dict(rows=valid, suspect_dates=suspect,
                 first=min(valid) if valid else None, last=max(valid) if valid else None,
-                explicit_priority_reviewed=path.name=='ATVI_price_candidate_2020_2023.csv')
+                explicit_priority_reviewed=path.name in ('ATVI_price_candidate_2020_2023.csv','ALXN_price_candidate_2020_2021.csv'))
         candidates[ticker] = routes
     matrix = []
     for old in previous['matrix']:
         cutoff, ticker = old['decision_cutoff'], old['ticker']
         train = domain_by_day[cutoff]['training_dates']
         execution = [day for day in sessions if day.startswith(old['execution_month'])]
+        # These boundaries are action obligations, never fictitious old-stock bars.
+        last_trade = {'ALXN':'2021-07-20','MXIM':'2021-08-25','XLNX':'2022-02-11','SGEN':'2023-12-13'}.get(ticker)
+        action_dates = [day for day in execution if last_trade and day > last_trade]
+        old_security_execution = [day for day in execution if day not in action_dates]
         required = sorted(set(train + execution))
         routes = candidates[ticker]
+        route_dates = {name:list(route['rows']) for name,route in routes.items()}
+        training_coverage = classify_route_dates(train, route_dates)
+        execution_coverage = classify_route_dates(old_security_execution, route_dates)
+        qualification = exclusions.get((ticker,cutoff))
         coverage = classify_route_dates(required, {name:list(route['rows']) for name,route in routes.items()})
         union = set().union(*(set(route['rows']) for route in routes.values())) if routes else set()
         earliest = min(union) if union else None
@@ -99,6 +120,7 @@ def audit():
                 conflicts.append(day)
         matrix.append(dict(decision_cutoff=cutoff, execution_month=old['execution_month'], ticker=ticker,
             **coverage, source_count=len(routes), no_saved_source=not routes,
+            rejected_empty_sources=empty_routes.get(ticker, []),
             sources=[dict(path=name, first=route['first'], last=route['last'],
                       outside_requested_period=not bool(set(route['rows']) & set(required)),
                       training_available=sum(day in route['rows'] for day in train),
@@ -109,6 +131,18 @@ def audit():
             missing_execution_union=[day for day in execution if day not in union],
             overlapping_price_disagreement_dates=conflicts, qualification_exclusion_authorized=False,
             units_identity_actions_admitted=False))
+        matrix[-1].update(training_coverage=training_coverage,
+            training_ready_at_date_level=bool(training_coverage['single_source_complete']) or qualification is not None,
+            training_rule_exclusion=qualification,
+            execution_old_security_coverage=execution_coverage,
+            execution_requires_action=bool(action_dates), action_required_dates=action_dates,
+            last_trade_boundary=last_trade,
+            action_boundary_evidence=('docs/candlestick_modern_gap_probe_20261025.md + parent supplied ALXN last-trade boundary; conversion terms still require admission' if ticker=='ALXN' else
+                'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2021-172' if ticker=='MXIM' else
+                'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2022-23' if ticker=='XLNX' else
+                'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2023-721' if ticker=='SGEN' else None),
+            real_training_quote_gaps=[] if qualification else training_coverage['missing_union_dates'],
+            real_execution_quote_gaps=execution_coverage['missing_union_dates'])
     windows = []
     for cutoff in domain_by_day:
         group = [row for row in matrix if row['decision_cutoff']==cutoff]
@@ -117,15 +151,35 @@ def audit():
         windows.append(dict(decision_cutoff=cutoff, execution_month=group[0]['execution_month'],
              by_status={status:[row['ticker'] for row in group if row['status']==status] for status in sorted({row['status'] for row in group})},
              source_overlap_disagreements=[row['ticker'] for row in group if row['overlapping_price_disagreement_dates']],
+             training_ready_at_date_level=all(row['training_ready_at_date_level'] for row in group),
+             training_missing=[row['ticker'] for row in group if not row['training_ready_at_date_level']],
+             lawful_short_history_exclusions=[row['ticker'] for row in group if row['training_rule_exclusion']],
+             execution_requires_action=[row['ticker'] for row in group if row['execution_requires_action']],
              all_members_single_source_dates_complete=all(row['single_source_complete'] for row in group), compiler_ready=False))
-    return dict(revision='V3_ALL_SAVED_ROUTES_NO_IMPLICIT_SPLICE', source_hashes=hashes, windows=windows, matrix=matrix,
+    gap_segments = []
+    positions = {day:i for i,day in enumerate(sessions)}
+    for ticker in sorted(candidates):
+        for kind in ('training','execution'):
+            days = sorted({day for row in matrix if row['ticker']==ticker for day in row['real_'+kind+'_quote_gaps']})
+            segments = []
+            for day in days:
+                if not segments or positions[day] != positions[segments[-1][-1]]+1:
+                    segments.append([day])
+                else:
+                    segments[-1].append(day)
+            gap_segments.extend(dict(ticker=ticker,kind=kind,start=part[0],end=part[-1],sessions=len(part)) for part in segments)
+    return dict(revision='V4_CANDIDATES_SHORT_HISTORY_AND_ACTION_BOUNDARIES', source_hashes=hashes, windows=windows, matrix=matrix,
+                remaining_quote_gap_segments=gap_segments,
                 limitations=['Date unions are diagnostics only, never admitted training/execution quotes.',
                              'Price disagreements can be rounding, units or real source errors; no source is selected by performance.',
-                             'Only ATVI price candidate has an existing explicit priority review; other route splicing needs review.'])
+                             'ATVI and ALXN price candidates have explicit priority reviews; other route splicing needs review.',
+                             'Training ready here is date-level only, not identity/unit/action admission.',
+                             'Known post-last-trade dates require conversion/receivable handling, never manufactured old-stock quotes.'])
 
 
 if __name__ == '__main__':
     result = audit()
-    (OUT / 'monthly_price_routes_v3.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+    (OUT / 'monthly_price_routes_v4.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps({'windows':len(result['windows']), 'security_windows':len(result['matrix']),
-                      'truly_no_saved_source':sorted({row['ticker'] for row in result['matrix'] if row['no_saved_source']})}))
+                      'training_date_ready':[w['execution_month'] for w in result['windows'] if w['training_ready_at_date_level']],
+                      'gap_segments':result['remaining_quote_gap_segments']}))
