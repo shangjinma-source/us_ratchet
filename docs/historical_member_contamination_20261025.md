@@ -24,3 +24,11 @@
 这些是字面差异，不是已修正身份。MNST代码复用已获官方证据：[Nasdaq 2008-11-03公告](https://ir.nasdaq.com/static-files/368db5ec-c029-4078-994a-4895db68889f)说明STX自2008-11-10替换Monster Worldwide（MNST）；[Monster Worldwide 2007年报SEC](https://www.sec.gov/Archives/edgar/data/1020416/000104746908001550/a2182830z10-k.htm)确认该发行人。故2008 HANS与MNST不能合并为同一发行人。社区代码全时间`HANS→MNST` canonical折叠会混淆两条历史身份，属于明确机制缺陷。第二来源保留二者并非这项重复错误，但它仍包含早年LMCK及NLOK/QRTEA，不具备直接替换主分母的资格。
 
 下一步需取得当年完整成员快照作锚点，再以官方增删与公司行动正向重建；优先解决LMCK/NDOI/HSIC及代码复用，而非继续盲目下载错误标签。必须保留原分母和差异审计，不将缺失股静默排除。这项数据纠错不依赖开盘。
+
+## 官方年度事件逐项对照与身份校验实现
+
+使用`tmp/nasdaq_official_membership_20261025/verified_events.json`对照实际CSV相邻快照增删及第二YAML事件：2007-12-24双方都精确匹配官方；2008-12-22 CSV精确匹配，YAML删除项用WFM替代官方WFMI，其余一致。详见`official_annual_event_comparison.json`。两次事件正确不抵消初始快照和身份污染，更不能认证全部历史。
+
+新增纯函数`backtest/historical_security_identity.py`：记录格式为ticker、issuer_id、security_id、start/end（闭区间）、source_references；证券ID与发行人绑定不允许冲突，同ticker时间区间不得重叠，解析必须按交易日期，主张的issuer/security须与该日匹配。公司行动不是简单别名，来源参考仍需外层真实性审核。
+
+`tests/test_historical_security_identity.py`三项测试通过：HANS与2008旧MNST保持不同issuer、错误跨issuer映射拒绝；LMCK不得回填至2008；重叠或证券发行人冲突拒绝。测试边界是示例夹具，不是完整历史身份数据库，未生成假完整100股名单。
