@@ -430,4 +430,3 @@ def run_next_open_book(*, session_dates, orders=None, ohlc, initial_cash,
         result['dividend_ledger'] = dividend_state
         result['limitations'][0] = 'Explicit research dividend net accrual; supplied payment dates post at close; unknown dates remain nonspendable.'
     return result
-
