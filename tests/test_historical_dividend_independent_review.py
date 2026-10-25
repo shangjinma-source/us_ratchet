@@ -77,3 +77,44 @@ class SplitDividendAuditTests(unittest.TestCase):
     def test_unadjusted_order_tamper_rejected(self):
         args=self.fixture();args['book']['provider_audit'][0]['orders'][0]['quantity']=2
         with self.assertRaises(ValueError):review(**args)
+
+
+class RiskSourceTests(unittest.TestCase):
+    def audit(self, day, close, peak, exited, target, shares, month='2020-01-02'):
+        expected=0 if exited else target
+        delta=expected-shares
+        return dict(action='NO_ACTION',monthly_ceiling={'A':target},target_shares={'A':expected},risk_overlay=dict(state=dict(decision_date=month,session_date=day,peaks={'A':str(peak)},exited=['A'] if exited else []),effective_target_quantities={'A':expected}),orders=[] if not delta else [dict(security_id='A',side='BUY' if delta>0 else 'SELL',quantity=abs(delta),decision_date=day,active_date='next',decision_mark=str(close))])
+    def test_threshold_latch_reset_and_split(self):
+        from backtest.historical_dividend_independent_review import _review_risk_orders as check
+        state=dict(baseline=None,peaks={},exited=set(),month=None)
+        def step(day,close,peak,exited,target,held,selected=None,splits=(),month='2020-01-02'):
+            audit=self.audit(day,close,peak,exited,target,held,month)
+            check(audit,day,'next',{'A':held},{'A':{day:str(close)}},splits,selected,state)
+            return audit
+        step('2020-01-02',100,100,False,10,0,{'A':10})
+        step('2020-01-03',80,100,True,10,10)
+        step('2020-01-06',110,110,True,10,0)
+        step('2020-02-03',110,110,False,10,0,{'A':10},month='2020-02-03')
+        step('2020-02-04',55,55,False,20,20,splits=[dict(date='2020-02-04',security_id='A',old_shares=1,new_shares=2)],month='2020-02-03')
+    def test_risk_target_and_order_tampering(self):
+        from backtest.historical_dividend_independent_review import _review_risk_orders as check
+        for mutation in ['target','order','clock']:
+            state=dict(baseline=None,peaks={},exited=set(),month=None)
+            a=self.audit('2020-01-02',100,100,False,10,0)
+            if mutation=='target':a['target_shares']['A']=11
+            elif mutation=='order':a['orders'][0]['quantity']=9
+            else:a['orders'][0]['decision_date']='2020-01-01'
+            with self.assertRaises(ValueError):check(a,'2020-01-02','next',{}, {'A':{'2020-01-02':'100'}},[],{'A':10},state)
+
+
+class NoDividendCompatibility(unittest.TestCase):
+    def fixture(self):
+        a=AuditTests().fixture();a['dividend_events']=[];b=a['book'];b.pop('dividend_ledger');b.pop('dividend_receivable');b.pop('total_receivable');b['cash']='0';b['total_return']='0'
+        for r in b['daily_ledger']:r.pop('dividend_receivable');r['cash']='0';r['equity']='100'
+        return a
+    def test_absent_fields(self):
+        self.assertEqual(review(**self.fixture())['final_equity'],'100')
+    def test_nonzero_or_unknown_ledger(self):
+        for ledger in [dict(events={},payments={},paid_cash='1',receivable='0'),dict(events={},payments={},paid_cash='0',receivable='0',unknown=True)]:
+            a=self.fixture();a['book']['dividend_ledger']=ledger
+            with self.assertRaises(ValueError):review(**a)

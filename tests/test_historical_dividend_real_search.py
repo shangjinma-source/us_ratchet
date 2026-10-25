@@ -39,7 +39,8 @@ class RealSearchWiring(unittest.TestCase):
         self.assertEqual(result['new_searches'],1)
         self.assertTrue(any(r.get('event')=='ASSUMED_NEXT_OPEN_FILLED' for r in result['order_log']))
 
-        proof=review(result,a,bars,initial_cash='1000',dividend_events=[event],expected_fee_bps='0',expected_slippage_bps='5',verify_selections=True)
+        proof=review(result,a,bars,initial_cash='1000',dividend_events=[event],expected_fee_bps='0',expected_slippage_bps='5',verify_selections=True,verify_risk_provider=True)
+        self.assertTrue(proof['risk_provider_certified'])
         self.assertEqual(proof['selection_proofs_checked'],2)
         for field,reason in [('source_hashes','SELECTION_SOURCE_BINDING'),('search_arguments','SELECTION_SEARCH_BINDING'),('valuation_quotes','SELECTION_QUOTES_BINDING')]:
             tampered=deepcopy(a)
@@ -48,7 +49,7 @@ class RealSearchWiring(unittest.TestCase):
             else:tampered['monthly_inputs'][0][field][0]['source_references']=['other-source']
             if field=='search_arguments':tampered['monthly_inputs'][0][field]['fee_bps']='2'
             with self.assertRaisesRegex(ValueError,reason):
-                review(result,tampered,bars,initial_cash='1000',dividend_events=[event],expected_fee_bps='0',expected_slippage_bps='5',verify_selections=True)
+                review(result,tampered,bars,initial_cash='1000',dividend_events=[event],expected_fee_bps='0',expected_slippage_bps='5',verify_selections=True,verify_risk_provider=True)
 
         self.assertEqual(proof['status'],'REVIEWED_ORDINARY_DIVIDEND_ACCOUNT')
         print('REAL_SELECTION_INDEPENDENT_REVIEW',proof)

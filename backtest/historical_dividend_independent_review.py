@@ -1,7 +1,7 @@
 """Independent ordinary-dividend cash audit; no production ledger calls.
 
-Execution is reconstructed from declared provider orders. Selection proof can be
-checked separately; this is not certification of the risk/provider algorithm.
+Execution is reconstructed independently. Optional selection and monthly peak
+exit checks certify only the explicitly supported dividend and split paths.
 """
 from copy import deepcopy
 from datetime import date
@@ -22,8 +22,21 @@ def amount(value):
 
 
 def review(book, assembled, bars, *, initial_cash, dividend_events,
-           initial_shares=None, verify_selections=True, expected_fee_bps, expected_slippage_bps):
+           initial_shares=None, verify_selections=True, verify_risk_provider=False, expected_fee_bps, expected_slippage_bps):
     require(book['status'] == 'COMPLETE', 'COMPLETE_REQUIRED')
+    if not dividend_events:
+        book = deepcopy(book)
+        for key in ('dividend_receivable', 'total_receivable'):
+            require(amount(book.get(key, '0')) == 0, 'UNEXPECTED_DIVIDEND_TOTAL')
+            book.setdefault(key, '0')
+        if 'dividend_ledger' in book:
+            dl = book['dividend_ledger']
+            require(set(dl) <= {'schema','events','payments','paid_cash','receivable','integrated'}
+                and {'events','payments','paid_cash','receivable'} <= set(dl), 'EMPTY_DIVIDEND_SCHEMA')
+            require(dl['events'] == {} and dl['payments'] == {} and amount(dl['paid_cash']) == 0
+                and amount(dl['receivable']) == 0, 'UNEXPECTED_DIVIDEND_LEDGER')
+        else:
+            book['dividend_ledger'] = dict(events={}, payments={}, paid_cash='0', receivable='0')
     require(not any(assembled.get(k) for k in ('distribution_events', 'cash_stock_merger_events')), 'CORPORATE_ACTION_UNSUPPORTED')
     sessions = assembled['session_dates']
     require(sessions == sorted(set(sessions)), 'SESSION_ORDER')
@@ -39,6 +52,9 @@ def review(book, assembled, bars, *, initial_cash, dividend_events,
         require(isinstance(action.get('source_references'), list) and action['source_references']
                 and all(isinstance(r, str) and r for r in action['source_references']), 'SPLIT_EVIDENCE_REQUIRED')
         require(amount(action['new_shares']) > 0 and amount(action['old_shares']) > 0, 'SPLIT_RATIO')
+    require(not verify_risk_provider or verify_selections, 'RISK_REQUIRES_SELECTION_PROOF')
+    risk_state = dict(baseline=None, peaks={}, exited=set(), month=None)
+    risk_checked = 0
     events = {}
     for e in dividend_events:
         require(set(e) == {'event_id','security_id','ex_date','payment_date',
@@ -81,7 +97,7 @@ def review(book, assembled, bars, *, initial_cash, dividend_events,
             require(decision in expected_selection_dates and decision not in observed_selection_dates, 'SELECTION_SCHEDULE')
             observed_selection_dates.add(decision)
             checked_selections += 1
-            review_selection(selected,rerank_enabled=True)
+            rebuilt_selection = review_selection(selected,rerank_enabled=True)
             binding = selected['raw_selection']['binding']
             require(amount(binding['available_cash']) == cash and binding['shares'] == shares, 'SELECTION_ACCOUNT')
             plan = next(p for p in assembled['monthly_inputs'] if p['decision_date'] == decision)
@@ -95,6 +111,11 @@ def review(book, assembled, bars, *, initial_cash, dividend_events,
             expected_quotes = {q['security_id']: dict(price=str(F(q['price'])), as_of=q['as_of'],
                 price_basis=q['price_basis'], source_references=q['source_references']) for q in plan['valuation_quotes']}
             require(binding['valuation_quotes'] == expected_quotes and all(q['price_basis'] == basis for q in expected_quotes.values()), 'SELECTION_QUOTES_BINDING')
+        if verify_risk_provider:
+            decision = sessions[sessions.index(day)-1]
+            selected_targets = rebuilt_selection['target_quantities'] if selected is not None else None
+            _review_risk_orders(audit, decision, day, shares, assembled['close_prices'], splits, selected_targets, risk_state)
+            risk_checked += 1
         orders = deepcopy(audit['orders'])
         require(len({o['security_id'] for o in orders}) == len(orders), 'DUPLICATE_ORDER_SECURITY')
         for o in orders:
@@ -151,4 +172,39 @@ def review(book, assembled, bars, *, initial_cash, dividend_events,
     require(amount(dl['receivable'])==pending and amount(dl['paid_cash'])==sum((accrued[k] for k in paid),F(0)),'DIVIDEND_TOTALS')
     return dict(status='REVIEWED_ORDINARY_DIVIDEND_ACCOUNT',final_equity=str(equity),maximum_drawdown=str(dd),
         selection_proof_checked=bool(verify_selections and checked_selections), selection_proofs_checked=checked_selections,
-        expected_selection_proofs=len(expected_selection_dates), costs_checked=True, ordinary_splits_checked=len(splits), fractional_split_cash_supported=False, risk_provider_certified=False)
+        expected_selection_proofs=len(expected_selection_dates), costs_checked=True, ordinary_splits_checked=len(splits), fractional_split_cash_supported=False, risk_provider_certified=bool(verify_risk_provider and risk_checked == len(rows) and risk_checked), risk_sessions_checked=risk_checked)
+
+
+def _review_risk_orders(audit, decision, active, shares, prices, splits, selected_targets, state):
+    """Independent monthly peak/latched exit arithmetic, not the risk kernel."""
+    require('drift_overlay' not in audit and audit.get('action') != 'WAIT_POST_ACTION_MARK', 'UNSUPPORTED_RISK_PATH')
+    if selected_targets is not None:
+        state.update(baseline=dict(selected_targets), peaks={}, exited=set(), month=decision)
+    else:
+        require(state['baseline'] is not None, 'INITIAL_SELECTION_REQUIRED')
+        for e in splits:
+            if e['date'] == decision and e['security_id'] in state['baseline']:
+                sid=e['security_id'];ratio=amount(e['new_shares'])/amount(e['old_shares'])
+                target=state['baseline'][sid]*ratio
+                require(target.denominator==1,'FRACTIONAL_RISK_TARGET')
+                state['baseline'][sid]=int(target)
+                if sid in state['peaks']:state['peaks'][sid]/=ratio
+    baseline=state['baseline']
+    require(audit['monthly_ceiling']==baseline,'RISK_CEILING')
+    for sid in baseline:
+        close=amount(prices[sid][decision]);require(close>0,'RISK_PRICE')
+        state['peaks'][sid]=max(state['peaks'].get(sid,close),close)
+        if close*5 <= state['peaks'][sid]*4:state['exited'].add(sid)
+    expected={sid:0 if sid in state['exited'] else q for sid,q in baseline.items()}
+    require(audit['target_shares']==expected,'RISK_EFFECTIVE_TARGET')
+    risk=audit['risk_overlay']
+    if baseline:
+        rs=risk['state']
+        require(rs['decision_date']==state['month'] and rs['session_date']==decision,'RISK_CLOCK')
+        require({s:F(v) for s,v in rs['peaks'].items()}==state['peaks'] and set(rs['exited'])==state['exited'],'RISK_STATE')
+        require(risk['effective_target_quantities']==expected,'RISK_OVERLAY_TARGET')
+    else:require(risk=={'empty_target':True},'EMPTY_RISK')
+    wanted=sorted((sid,'BUY' if expected.get(sid,0)>shares.get(sid,0) else 'SELL',abs(expected.get(sid,0)-shares.get(sid,0))) for sid in set(expected)|set(shares) if expected.get(sid,0)!=shares.get(sid,0))
+    require(sorted((o['security_id'],o['side'],o['quantity']) for o in audit['orders'])==wanted,'RISK_ORDER_SOURCE')
+    for o in audit['orders']:
+        require(o['decision_date']==decision and o['active_date']==active and amount(o['decision_mark'])==amount(prices[o['security_id']][decision]),'RISK_ORDER_TIME_PRICE')
