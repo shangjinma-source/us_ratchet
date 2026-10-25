@@ -44,3 +44,9 @@
 全文件流式扫描完成：15,389,314行，3199 ticker，1962-01-02—2018-03-27；字段含原始OHLCV、ex-dividend、split_ratio及adj_*。14个已下载GitHub样本全部在WIKI中有2007—2009各756行。XLNX历史始于1990-06-18；ALXN始于1996-02-28。全量按ticker范围和2007—2009行数见 `wiki_coverage.json`。
 
 这解决了“真实取得长期退市证券行情归档”的缺口，尚未证明所有历史Nasdaq100成员完整、公司身份无误、交易日完整或价格单位正确。Kaggle metadata明确licenseName=Unknown；不发布原数据。下一步按历史成员分母核验2007—2009覆盖与2006训练预热，查缺失证券及企业事件后接入隔离研究账本，不能直接称牛熊回测完成。
+
+## 外企/ADR候选补充实测
+
+8条Yahoo公开请求各一次、无重试，ERIC/FLEX/INFY/LOGI/RYAAY/TEVA/TCOM/BB全部HTTP200，每个1034条非空OHLC，2006-12-01—2011-01-10。证据 `tmp/github_history_routes_20261025/yahoo_foreign_probe/manifest.json` 与各原始响应。ERIC返回4股息1拆股，INFY 8股息，RYAAY 1股息1拆股，TEVA 16股息，TCOM 2股息2拆股，BB 1拆股；FLEX/LOGI本区间事件为空。
+
+这里只解决可下载候选覆盖：TCOM与BB仍须绑定历史ticker身份；所有Yahoo OHLC均标记调整单位未认证，不能直接合并原始名义价账本。查询区间之后的拆股/ADR比率也可能影响回填历史价格，因此本区间事件为空不等于历史OHLC已是名义单位。WIKI缺失不能一概视为退市股票缺失，外企/ADR来源覆盖差异是另一类原因。
