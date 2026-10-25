@@ -5,7 +5,7 @@ that month's execution; the expensive selection survives for exact-input reuse.
 """
 import argparse
 from copy import deepcopy
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from hashlib import sha256
 from fractions import Fraction
 import json
@@ -38,7 +38,44 @@ def save(path, value):
     temporary.replace(path)
 
 
-def exposed_action_blockers(arguments, selected, end_date, prices, action_review=None, active_date=None):
+def canonical_day(value):
+    if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
+        raise ValueError('CANONICAL_ISO_DATE_REQUIRED')
+    return value
+
+
+def gross_dividend_events(action_review, prices, sessions):
+    """Map reviewed historical nominal amounts; never rescale provider amounts."""
+    if not action_review:
+        raise ValueError('GROSS_DIVIDENDS_REQUIRE_PINNED_ACTION_REVIEW')
+    events, seen = [], set()
+    for row in action_review['rows']:
+        if row['status'] != 'REVIEWED_ORDINARY_CASH_DIVIDEND':
+            continue
+        ex = canonical_day(row['ex_date'])
+        pay = row['payment_date']
+        if pay is not None:
+            canonical_day(pay)
+            if pay < ex:raise ValueError('PAYMENT_BEFORE_EX_DATE')
+        if row.get('record_date') is not None:canonical_day(row['record_date'])
+        key = (row['security_id'],ex)
+        if key in seen:raise ValueError('DUPLICATE_REVIEWED_DIVIDEND')
+        seen.add(key)
+        if ex not in sessions[1:]:raise ValueError('DIVIDEND_OUTSIDE_EXECUTION_SESSIONS')
+        if isinstance(row['amount_per_share'],bool) or Fraction(row['amount_per_share'])<=0 or row['currency']!='USD':
+            raise ValueError('ORDINARY_NOMINAL_AMOUNT_REQUIRED')
+        matches=[e for e in prices['provider_event_inventory'] if e['security_id']==key[0] and e['date']==ex and e.get('kind')=='dividends']
+        if len(matches)!=1:raise ValueError('EXACT_PROVIDER_DIVIDEND_REQUIRED')
+        provider=matches[0]
+        if action_review['source_hashes'].get(provider['source'])!=provider['source_sha256']:
+            raise ValueError('DIVIDEND_PROVIDER_SOURCE_NOT_BOUND')
+        events.append(dict(event_id='ordinary-gross:'+key[0]+':'+ex,security_id=key[0],ex_date=ex,
+            payment_date=pay,amount_per_share=str(Fraction(row['amount_per_share'])),withholding_rate='0',
+            assumption='EXPLICIT_GROSS_RESEARCH_NO_WITHHOLDING_MODELED_NOT_USER_TAX_RATE; PAYMENT_AT_SESSION_CLOSE',currency='USD'))
+    return events
+
+
+def exposed_action_blockers(arguments, selected, end_date, prices, action_review=None, active_date=None, dividend_events=()):
     start = arguments['decision_date']
     exposed = {sid for sid, quantity in arguments['account_state']['shares'].items() if quantity}
     exposed.update(sid for sid, quantity in selected['target_quantities'].items() if quantity)
@@ -48,12 +85,12 @@ def exposed_action_blockers(arguments, selected, end_date, prices, action_review
     accepted_reviews = []
     for row in (action_review or {}).get('rows',[]):
         if (row['status']=='REVIEWED_NO_ACTION_FOR_PERIOD' and row['start_exclusive']==start
-                and row['security_id'] in unknown and row['end_inclusive']==exposure_ends[row['security_id']]):
+                and row['security_id'] in unknown and row['end_inclusive']>=exposure_ends[row['security_id']]):
             accepted_reviews.append(row)
             unknown.remove(row['security_id'])
     events = [event for event in prices['provider_event_inventory']
               if event['security_id'] in exposed and start < event['date'] <= exposure_ends[event['security_id']]]
-    zero_entitlement = []
+    zero_entitlement, mapped_dividends = [], []
     for event in list(events):
         reviews = [row for row in (action_review or {}).get('rows',[])
                    if row['status']=='REVIEWED_ORDINARY_CASH_DIVIDEND'
@@ -63,6 +100,11 @@ def exposed_action_blockers(arguments, selected, end_date, prices, action_review
             zero_entitlement.append(dict(provider_event=event,review=reviews[0],opening_quantity=0,
                 reason='ZERO_OPENING_HOLDING_ORDINARY_CASH_DIVIDEND_ONLY'))
             events.remove(event)
+        elif event.get('kind')=='dividends':
+            mapped=[e for e in dividend_events if e['security_id']==event['security_id'] and e['ex_date']==event['date']]
+            if len(reviews)==1 and len(mapped)==1 and Fraction(mapped[0]['amount_per_share'])==Fraction(reviews[0]['amount_per_share']):
+                mapped_dividends.append(dict(provider_event=event,review=reviews[0],execution_event=mapped[0]))
+                events.remove(event)
     events += [dict(security_id='research:security:'+ticker,date=day,kind=kind,
                     origin='KNOWN_ACTION_REVIEW_BARRIER_NOT_EXECUTION_INSTRUCTION')
                for ticker,day,kind in KNOWN_ACTION_BARRIERS
@@ -72,6 +114,7 @@ def exposed_action_blockers(arguments, selected, end_date, prices, action_review
                 admitted=not unknown and not events,accepted_period_reviews=accepted_reviews,
                 exposure_end_by_security=exposure_ends,
                 ignored_zero_entitlement=zero_entitlement,
+                mapped_ordinary_dividends=mapped_dividends,
                 evidence_scope='CONDITIONAL_PROVIDER_ABSENCE_ONLY_NOT_OFFICIAL_EXHAUSTIVE_PROOF')
 
 
@@ -106,6 +149,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--reuse', type=Path, help='Prior run checkpoints; exact arguments must match')
     parser.add_argument('--action-review', type=Path, help='Pinned no-action evidence for an exact missing-stream period')
+    parser.add_argument('--gross-dividends', action='store_true', help='Explicit tax-before-withholding research; not user tax treatment')
     parser.add_argument('--seconds', type=int, default=1800)
     parser.add_argument('--run', action='store_true')
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
@@ -128,6 +172,8 @@ def main():
         if not pins or not action_review['rows']:
             raise ValueError('EMPTY_PERIOD_ACTION_REVIEW')
         for filename,expected in pins.items():
+            if filename in assembled['source_hashes'] and assembled['source_hashes'][filename]!=expected:
+                raise ValueError('CONFLICTING_ACTION_SOURCE_PIN:'+filename)
             if digest(ROOT/filename)!=expected:
                 raise ValueError('ACTION_REVIEW_SOURCE_CHANGED:'+filename)
         for row in action_review['rows']:
@@ -135,8 +181,14 @@ def main():
                     or any(reference not in pins for reference in row['source_references'])):
                 raise ValueError('UNPINNED_PERIOD_ACTION_REVIEW')
             if row['status']=='REVIEWED_ORDINARY_CASH_DIVIDEND':
+                canonical_day(row['ex_date'])
+                for field in ('record_date','payment_date'):
+                    if row.get(field) is not None:canonical_day(row[field])
                 if not row['ex_date'] or row['currency']!='USD' or Fraction(row['amount_per_share'])<=0:
                     raise ValueError('ORDINARY_CASH_DIVIDEND_REVIEW_REQUIRED')
+            else:
+                canonical_day(row['start_exclusive']);canonical_day(row['end_inclusive'])
+                if row['end_inclusive']<=row['start_exclusive']:raise ValueError('INVALID_REVIEW_PERIOD')
             sources = [source for source in prices['source_reviews'] if source['security_id']==row['security_id']]
             if not sources or any(pins.get(source['source'])!=source['sha256'] for source in sources):
                 raise ValueError('ACTION_REVIEW_PRICE_SOURCE_NOT_BOUND')
@@ -157,10 +209,12 @@ def main():
             raise ValueError('SOURCE_CHANGED:'+filename)
     if any(assembled.get(key) for key in ('actions','provider_actions','cash_stock_merger_events','distribution_events')):
         raise ValueError('THIS_INITIAL_PROBE_REQUIRES_EVENT_FREE_EXPOSURE_GATE')
+    dividend_events = gross_dividend_events(action_review,prices,assembled['session_dates']) if options.gross_dividends else []
     if not options.worker:
         if not options.run:
             print(json.dumps(dict(status='PREFLIGHT_ONLY', months=36, initial_cash='20000',
-                fee_bps='0', slippage_bps='5', searches_per_month=1, max_original_evaluations=8192)))
+                fee_bps='0', slippage_bps='5', searches_per_month=1, max_original_evaluations=8192,
+                gross_dividends_research=options.gross_dividends, mapped_dividend_events=len(dividend_events))))
             return
         remaining = (DEADLINE-datetime.now(timezone.utc)).total_seconds()-15
         if options.seconds <= 0 or remaining <= 0:
@@ -174,6 +228,7 @@ def main():
         if options.action_review:
             arguments += ['--action-review',str(options.action_review.resolve()),
                           '--action-review-sha256',digest(options.action_review)]
+        if options.gross_dividends:arguments.append('--gross-dividends')
         print(json.dumps(run_worker(script=__file__, expected_sha256=digest(__file__), arguments=arguments,
             output_directory=options.output, timeout_seconds=min(options.seconds,remaining,3600))))
         return
@@ -181,6 +236,13 @@ def main():
         raise ValueError('BOUNDED_PARENT_REQUIRED')
     with (options.output/'attempt.lock').open('x') as attempt:
         attempt.write('One worker; no automatic retries.\n')
+    execution_inputs=deepcopy(document)
+    execution_inputs.update(dividend_events=dividend_events,gross_dividends_research=options.gross_dividends,
+        action_source_hashes=deepcopy((action_review or {}).get('source_hashes',{})),
+        action_review_sha256=digest(options.action_review) if options.action_review else None,
+        original_assembled_sha256=digest(options.assembled),execution_assumption=(
+            'GROSS_RESEARCH_NOT_ACTUAL_ACCOUNT_NET_RETURN' if options.gross_dividends else 'NO_NONZERO_DIVIDEND_ADMISSION'))
+    save(options.output/'execution_inputs.json',execution_inputs)
     import backtest.historical_dividend_frontier_research as frontier
     from backtest.capped_frontier_rerank_research import rerank
     from backtest.capped_frontier_independent_review import review_selection
@@ -212,7 +274,7 @@ def main():
         proof = review_selection(selected, rerank_enabled=True)
         sessions = assembled['session_dates']
         active_date = sessions[sessions.index(day)+1]
-        gate = exposed_action_blockers(arguments, selected, dates[dates.index(day)+1], prices,action_review,active_date)
+        gate = exposed_action_blockers(arguments, selected, dates[dates.index(day)+1], prices,action_review,active_date,dividend_events)
         gate.update(target_quantities=selected['target_quantities'], selection_review=proof)
         save(options.output/f'{day}.exposure.json',gate)
         if not gate['admitted']:
@@ -229,7 +291,7 @@ def main():
     try:
         book = frontier.run_frontier_capped_next_open(assembled=assembled,ohlc=document['ohlc'],
             initial_cash='20000',fee_bps='0',slippage_bps='5',risk=MonthlyExitCoreResearchAdapter(assembled['actions']),
-            max_new_searches=36,dividend_events=[])
+            max_new_searches=36,dividend_events=dividend_events)
     finally:
         frontier.decide_continuous_guided_for_account = original_decide
     book.update(new_searches=new_count,reused_searches=reused_count)
@@ -265,6 +327,7 @@ def main():
         completed_sessions=len(book.get('daily_ledger',[])),new_searches=new_count,reused_searches=reused_count,
         input_sha256=digest(options.assembled),prices_sha256=digest(options.prices),
         action_review_sha256=digest(options.action_review) if options.action_review else None,
+        gross_dividends_research=options.gross_dividends,execution_inputs_sha256=digest(options.output/'execution_inputs.json'),
         script_sha256=digest(__file__),performance_validated=False,full_bull_bear_validation=False))
     print(json.dumps(dict(status=book['status'],new_searches=new_count,reused_searches=reused_count)),flush=True)
 
