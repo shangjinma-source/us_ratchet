@@ -1,0 +1,4 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {createController,render}=require('../web/strategy_account.js');
+(async()=>{for(const status of ['EMPTY_HOLDINGS','WAIT_SAVED_TARGET','WAIT_REGULAR_SESSION']){const c=createController({fetchImpl:async url=>({ok:true,json:async()=>url.endsWith('/valuation')?{status,account_revision:'r1',holdings:[]}:{status:'READY',account:{revision:'r1',cash_confirmation_valid:true,cash:'100',holdings:[],orders:[]}}})});await c.load();await c.valuation();assert.equal(c.getState().busy,false);assert.equal(c.getState().valuationLoading,false);assert(!c.getState().valuation);assert(!c.getState().message.includes('记录已变化'));assert(render(c.getState()).includes('成本口径'));}console.log('PASS EMPTY and WAIT valuation responses remain explicit non-error cost fallback');})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -7,7 +7,46 @@ data/cache/*.csv
 data/cache/*.tmp
 data/cache/**/*.csv
 data/cache/**/*.tmp
+data/cache/**/*.json
+data/cache/**/*.xlsx
 data/*.tmp
 data/state.json
 data/state.json.bak
 data/audit.jsonl
+data/advice_snapshots.jsonl
+data/advice_snapshots.meta.json
+data/advice_snapshot_cron.jsonl
+data/advice_snapshot_cron_alert.json
+data/.cron_failure_count
+data/advice_snapshot_audit_latest.json
+
+# Local runtime state and research output are not source releases.
+# Python modules currently live directly under data/, so keep them visible.
+/data/*
+!/data/*.py
+/tmp/
+/outputs/
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.log
+*.pid
+
+# Deployment manifests can reference private accounts and local evidence.
+# Publish a reviewed, portable example explicitly rather than the live tree.
+/research_contracts/
+/config/strategy_server_active.json
+
+# Local credentials and editor/runtime environments.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.venv/
+.pytest_cache/
+node_modules/

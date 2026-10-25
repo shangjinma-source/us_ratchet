@@ -122,66 +122,71 @@ from datetime import date, datetime, timedelta, timezone
 
 setup_logging(logging.WARNING)
 app = FastAPI(title="us_ratchet")
+from api.strategy_error_boundary_v1 import StrategyErrorBoundary
+app.add_middleware(StrategyErrorBoundary)
 from api.verified_daily_comparison import router as verified_daily_comparison_router
 app.include_router(verified_daily_comparison_router)
-from api.strategy_rolling_composition import create_rolling_strategy_router
-# Reviewed composition: explicit initial migration, subsequent months require publication.
+from api.strategy_server_mount_v6 import mount_strategy_routes
 _strategy_runtime_root = Path(__file__).resolve().parents[1]
-_strategy_dynamic_bytes = (_strategy_runtime_root / 'config' / 'strategy_account_rolling_20261019.json').read_bytes()
-if hashlib.sha256(_strategy_dynamic_bytes).hexdigest() != 'b77880b641696380aa6c18edb0abcfd1dd700d2498b80b9b579a290cc2fd1061':
-    raise ValueError('STRATEGY_DYNAMIC_CONFIGURATION_CHANGED')
-app.include_router(create_rolling_strategy_router(
-    root=_strategy_runtime_root, **json.loads(_strategy_dynamic_bytes)))
-# Server-owned research configuration; HTTP clients supply only entered_cash.
-_current_quantity_research = create_quantity_research_service(
-    root=Path(__file__).resolve().parents[1],
-    descriptor_path="tmp/tri98_runtime_execution_admission_20261016_v10/descriptor.json",
-    descriptor_sha256="aef2c3680d0b2652cf9d141d829a5760193c21581cb948fee0f8e471543e6fce",
+from api.strategy_followup_summary_v1 import create_router as create_followup_summary_router
+app.include_router(create_followup_summary_router(_strategy_runtime_root))
+mount_strategy_routes(app=app, root=_strategy_runtime_root, environment=server_environment)
+from api.optional_quantity_research_mount import (
+    legacy_quantity_research_configured, unconfigured_quantity_research_router,
 )
-_current_quantity_research = VerifiedSnapshotBundleService(_current_quantity_research, source_withdrawals=SOURCE_WITHDRAWALS)
-app.include_router(create_quantity_research_router(service=_current_quantity_research))
-_current_quantity_intraday = create_reference_service(
-    root=Path(__file__).resolve().parents[1], snapshot_service=_current_quantity_research,
-)
-app.include_router(create_quantity_intraday_router(service=_current_quantity_intraday))
-# One server-owned paper pool. Construction does not fetch quotes or create a DB.
-_current_quantity_pullback_caps = LazyPullbackCapStore(
-    Path(__file__).resolve().parents[1] / 'data' / 'quantity_v2_pullback' / 'entry_caps.sqlite3',
-    clock=lambda: datetime.now(timezone.utc).isoformat(),
-    max_history_rows=512, max_history_bytes=128 * 1024 * 1024,
-)
-_current_quantity_cash = create_current_cash_services(
-    root=Path(__file__).resolve().parents[1], snapshot_service=_current_quantity_research,
-    identity_manifest_path="tmp/tri98_runtime_execution_admission_20261016_v10/identity_manifest.json",
-    server_account_id="current-quantity-v2-paper-pool",
-    database_path=Path(__file__).resolve().parents[1] / "data" / "quantity_v2_paper" / "paper.sqlite3",
-    observation_directory=Path(__file__).resolve().parents[1] / "data" / "quantity_v2_observations",
-    pullback_policy=EXPERIMENTAL_POLICY,
-    pullback_cap_store=_current_quantity_pullback_caps,
-    unit_review_reader=BoundedPublicUnitReview(),
-    execution_month_mandate={
-        "path": "tmp/tri98_runtime_execution_admission_20261016_v10/initial_execution_month.json",
-        "sha256": "e319d0b8e2035fc58ed9c71cef041cb20fb2ce6b5bdea5a5702fd6c80163689c",
-    },
-)
-# Monthly inputs are explicit server configuration, never inferred from October data.
-_current_quantity_monthly = create_quantity_monthly_services(
-    root=Path(__file__).resolve().parents[1], paper_service=_current_quantity_cash['paper'],
-    storage_root=Path(__file__).resolve().parents[1] / 'data' / 'quantity_v2_monthly',
-    config_path=server_environment.get('QUANTITY_V2_MONTHLY_CONFIG_PATH'),
-    config_sha256=server_environment.get('QUANTITY_V2_MONTHLY_CONFIG_SHA256'),
-    execution_review_mode=server_environment.get('QUANTITY_V2_EXECUTION_REVIEW_MODE','DERIVED_PAPER_BOUNDED'),
-    pullback_policy=EXPERIMENTAL_POLICY,
-    pullback_cap_store=_current_quantity_pullback_caps,
-)
-_current_quantity_cash['paper'] = _current_quantity_monthly['paper']
-app.include_router(create_quantity_monthly_research_router(service=_current_quantity_monthly['research']))
-app.include_router(create_quantity_difference_router(service=_current_quantity_cash['preview']))
-app.include_router(create_quantity_paper_router(service=_current_quantity_cash['paper']))
-from api.current_quantity_v2_simulation_status import create_router as create_automatic_simulation_router
-app.include_router(create_automatic_simulation_router(
-    database_path=Path(__file__).resolve().parents[1] / 'data' / 'quantity_v2_isolated_trial_20261016' / 'simulation.sqlite3',
-    simulation_id='tri98-pullback-conditional-trial-20261016',initial_cash='20000'))
+if legacy_quantity_research_configured(root=_strategy_runtime_root, environment=server_environment):
+    # Server-owned research configuration; HTTP clients supply only entered_cash.
+    _current_quantity_research = create_quantity_research_service(
+        root=Path(__file__).resolve().parents[1],
+        descriptor_path="tmp/tri98_runtime_execution_admission_20261016_v10/descriptor.json",
+        descriptor_sha256="aef2c3680d0b2652cf9d141d829a5760193c21581cb948fee0f8e471543e6fce",
+    )
+    _current_quantity_research = VerifiedSnapshotBundleService(_current_quantity_research, source_withdrawals=SOURCE_WITHDRAWALS)
+    app.include_router(create_quantity_research_router(service=_current_quantity_research))
+    _current_quantity_intraday = create_reference_service(
+        root=Path(__file__).resolve().parents[1], snapshot_service=_current_quantity_research,
+    )
+    app.include_router(create_quantity_intraday_router(service=_current_quantity_intraday))
+    # One server-owned paper pool. Construction does not fetch quotes or create a DB.
+    _current_quantity_pullback_caps = LazyPullbackCapStore(
+        Path(__file__).resolve().parents[1] / 'data' / 'quantity_v2_pullback' / 'entry_caps.sqlite3',
+        clock=lambda: datetime.now(timezone.utc).isoformat(),
+        max_history_rows=512, max_history_bytes=128 * 1024 * 1024,
+    )
+    _current_quantity_cash = create_current_cash_services(
+        root=Path(__file__).resolve().parents[1], snapshot_service=_current_quantity_research,
+        identity_manifest_path="tmp/tri98_runtime_execution_admission_20261016_v10/identity_manifest.json",
+        server_account_id="current-quantity-v2-paper-pool",
+        database_path=Path(__file__).resolve().parents[1] / "data" / "quantity_v2_paper" / "paper.sqlite3",
+        observation_directory=Path(__file__).resolve().parents[1] / "data" / "quantity_v2_observations",
+        pullback_policy=EXPERIMENTAL_POLICY,
+        pullback_cap_store=_current_quantity_pullback_caps,
+        unit_review_reader=BoundedPublicUnitReview(),
+        execution_month_mandate={
+            "path": "tmp/tri98_runtime_execution_admission_20261016_v10/initial_execution_month.json",
+            "sha256": "e319d0b8e2035fc58ed9c71cef041cb20fb2ce6b5bdea5a5702fd6c80163689c",
+        },
+    )
+    # Monthly inputs are explicit server configuration, never inferred from October data.
+    _current_quantity_monthly = create_quantity_monthly_services(
+        root=Path(__file__).resolve().parents[1], paper_service=_current_quantity_cash['paper'],
+        storage_root=Path(__file__).resolve().parents[1] / 'data' / 'quantity_v2_monthly',
+        config_path=server_environment.get('QUANTITY_V2_MONTHLY_CONFIG_PATH'),
+        config_sha256=server_environment.get('QUANTITY_V2_MONTHLY_CONFIG_SHA256'),
+        execution_review_mode=server_environment.get('QUANTITY_V2_EXECUTION_REVIEW_MODE','DERIVED_PAPER_BOUNDED'),
+        pullback_policy=EXPERIMENTAL_POLICY,
+        pullback_cap_store=_current_quantity_pullback_caps,
+    )
+    _current_quantity_cash['paper'] = _current_quantity_monthly['paper']
+    app.include_router(create_quantity_monthly_research_router(service=_current_quantity_monthly['research']))
+    app.include_router(create_quantity_difference_router(service=_current_quantity_cash['preview']))
+    app.include_router(create_quantity_paper_router(service=_current_quantity_cash['paper']))
+    from api.current_quantity_v2_simulation_status import create_router as create_automatic_simulation_router
+    app.include_router(create_automatic_simulation_router(
+        database_path=Path(__file__).resolve().parents[1] / 'data' / 'quantity_v2_isolated_trial_20261016' / 'simulation.sqlite3',
+        simulation_id='tri98-pullback-conditional-trial-20261016',initial_cash='20000'))
+else:
+    app.include_router(unconfigured_quantity_research_router())
 from api.current_research_paper import router as current_research_paper_router
 app.include_router(current_research_paper_router)
 from api.current_research_intraday_paper import router as current_research_intraday_paper_router
@@ -4547,6 +4552,22 @@ def strategy_monthly_target_charts_script():
 @app.get('/static/strategy_monthly_target.js')
 def strategy_monthly_target_script():
     return FileResponse(WEB.parent / 'strategy_monthly_target.js', media_type='application/javascript')
+
+@app.get('/static/strategy_daily_controller.js')
+def strategy_daily_controller_script():
+    return FileResponse(WEB.parent / 'strategy_daily_controller.js', media_type='application/javascript')
+
+@app.get('/static/strategy_daily_mount.js')
+def strategy_daily_mount_script():
+    return FileResponse(WEB.parent / 'strategy_daily_mount.js', media_type='application/javascript')
+
+@app.get('/static/strategy_capital_controller.js')
+def strategy_capital_controller_script():
+    return FileResponse(WEB.parent / 'strategy_capital_controller.js', media_type='application/javascript')
+
+@app.get('/static/strategy_capital_mount.js')
+def strategy_capital_mount_script():
+    return FileResponse(WEB.parent / 'strategy_capital_mount.js', media_type='application/javascript')
 
 
 @app.get("/static/current_quantity_v2_paper.js")

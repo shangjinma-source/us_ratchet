@@ -40,7 +40,7 @@ def preserve_progress(old,new):
    n=newrows.get(key)
    require(n is not None and n['status']=='CONDITIONAL_PRICE_CHANGE','COVERAGE_REGRESSION')
    require(all(n.get(k)==h.get(k) for k in ('target_session','closing_price','price_change_vs_reference')),'HISTORICAL_DATA_CONFLICT')
-def run(*,root,event_day,event_id,event_sha256,decision_id,research_version,available_cash_exact,execute=False,clock=now,fetch=default_fetch,action_fetch=fetch_daily_actions,rss_fetch=fetch_official_feed):
+def run(*,root,event_day,event_id,event_sha256,decision_id,research_version,available_cash_exact,execute=False,clock=now,fetch=default_fetch,action_fetch=fetch_daily_actions,rss_fetch=fetch_official_feed,recovery_path=None,recovery_sha256=None):
  root=Path(root).resolve();observed=clock();require(observed.tzinfo is not None,'AWARE_CLOCK_REQUIRED')
  require(re.fullmatch('[0-9]{4}-[0-9]{2}-[0-9]{2}',event_day) and re.fullmatch('[a-f0-9]{32}',event_id),'INVALID_EVENT_SELECTOR')
  binding=dict(decision_id=decision_id,research_version=research_version,available_cash_exact=available_cash_exact)
@@ -91,6 +91,12 @@ def run(*,root,event_day,event_id,event_sha256,decision_id,research_version,avai
  require(len({s['security_id'] for s in securities})==len(securities) and len({s['ticker'] for s in securities})==len(securities),'DUPLICATE_SECURITY')
  plan=dict(status='PREFLIGHT_ONLY',event_sha256=event_sha256,binding=binding,session=target,securities=securities,matured_horizons=matured,expected_manifest_sha256=expected,http_calls=0,account_writes=False)
  attempt=safe_path(storage,'attempts/'+event_sha256+'/'+target)
+ require((recovery_path is None)==(recovery_sha256 is None),'RECOVERY_REFERENCE_REQUIRED')
+ if recovery_path is not None:
+  from data.followup_capture_recovery_v1 import recovery_attempt
+  attempt,recovery=recovery_attempt(root=root,original=attempt,request_path=recovery_path,
+   request_sha256=recovery_sha256,event_sha256=event_sha256,session=target,expected_manifest_sha256=expected)
+  plan['recovery_reference']=dict(path=recovery_path,sha256=recovery_sha256)
  if any(p.exists() or p.is_symlink() for p in (index.with_suffix('.pending'),index.with_suffix('.lock'))):
   return dict(plan,status='NEEDS_RECOVERY',reason='INDEX_PUBLICATION_RECOVERY_REQUIRED')
  if attempt.exists():
@@ -158,6 +164,8 @@ def main(argv=None):
  parser=argparse.ArgumentParser(description=__doc__)
  for name in ('root','event-day','event-id','event-sha256','decision-id','research-version','available-cash-exact'):parser.add_argument('--'+name,required=True)
  parser.add_argument('--execute',action='store_true')
+ parser.add_argument('--recovery-path')
+ parser.add_argument('--recovery-sha256')
  try:answer=run(**vars(parser.parse_args(argv)))
  except Exception as error:answer=dict(status='BLOCKED',reason=reason(error),account_writes=False)
  print(json.dumps(answer));return 2 if answer['status']=='BLOCKED' else 0

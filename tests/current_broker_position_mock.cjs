@@ -1,0 +1,26 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');
+const code=html.slice(html.indexOf('async function doSetPosition()'),html.indexOf('async function doRebalance'));
+const nodes={btnBrokerPosition:{disabled:false},costTicker:{value:'sndk'},costShares:{value:'13'},costPrice:{value:'1482.33'}};
+let calls=[],pending=[],confirmed=false,reloaded=0,errors=[];
+const context=vm.createContext({$:id=>nodes[id],stateData:{broker_account:{account_fingerprint:'fp'}},apiPost:(url,body)=>{calls.push({url,body});return new Promise(r=>pending.push(r));},confirm:()=>confirmed,toast:()=>{},showError:e=>errors.push(e),loadState:async()=>reloaded++});
+vm.runInContext(code,context);
+const tick=()=>new Promise(r=>setImmediate(r));
+const response=()=>({preview:true,account_fingerprint:'fp',diff:[{ticker:'SNDK',old_shares:0,new_shares:Number(nodes.costShares.value),old_average_cost:null,new_average_cost:Number(nodes.costShares.value)?1482.33:null}]});
+(async()=>{
+let p=vm.runInContext('doSetPosition()',context);vm.runInContext('doSetPosition()',context);assert.equal(calls.length,1);pending.shift()(response());await p;assert.equal(calls.length,1);assert.equal(nodes.btnBrokerPosition.disabled,false);
+confirmed=true;p=vm.runInContext('doSetPosition()',context);pending.shift()(response());await tick();assert.equal(calls.length,3);assert.equal(calls[2].body.preview,false);assert.equal(calls[2].body.account_fingerprint,'fp');assert.equal(calls[2].body.ticker,'SNDK');pending.shift()({});await p;assert.equal(reloaded,1);
+nodes.costShares.value='0';p=vm.runInContext('doSetPosition()',context);assert.equal(calls[3].body.average_cost,null);pending.shift()({...response(),account_fingerprint:'changed'});await p;assert.equal(calls.length,4);assert.match(errors.pop(),/版本不一致/);
+nodes.costShares.value='13';p=vm.runInContext('doSetPosition()',context);nodes.costTicker.value='NVDA';pending.shift()(response());await p;assert.equal(calls.length,5);assert.match(errors.pop(),/输入已变化/);
+nodes.costTicker.value='SNDK';context.loadState=async()=>{throw new Error('refresh offline');};
+p=vm.runInContext('doSetPosition()',context);pending.shift()(response());await tick();pending.shift()({committed:true,account_fingerprint:'newfp',warnings:[]});await p;
+assert.match(errors.pop(),/已保存.*刷新/);assert.equal(calls.length,7);assert.equal(nodes.btnBrokerPosition.disabled,false);
+context.loadState=async()=>reloaded++;
+p=vm.runInContext('doSetPosition()',context);pending.shift()(response());await tick();pending.shift()({committed:true,account_fingerprint:'newfp',warnings:[{code:'BROKER_AUDIT_FAILED',message:'internal detail'}]});await p;
+assert.match(errors.pop(),/已保存.*审计/);assert.equal(calls.length,9);
+let failureCalls=0;context.apiPost=async()=>{if(++failureCalls===1)return response();throw new Error('CAS conflict');};
+p=vm.runInContext('doSetPosition()',context);await p;assert.equal(failureCalls,2);assert.doesNotMatch(errors.pop(),/已保存/);
+assert(calls.every(c=>c.url==='/api/update_broker_position'));
+assert.match(html,/<input id="costTicker" list="brokerTickerSuggestions"/);assert.doesNotMatch(html,/id="costSyncCap"/);
+console.log('PASS broker UI: free ticker, preview-only cancel, duplicate guard, exact fingerprint commit, zero shares, mismatched preview rejected; 0 real IO');
+})().catch(e=>{console.error(e);process.exitCode=1;});

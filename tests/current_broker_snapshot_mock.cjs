@@ -1,0 +1,23 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync('web/index.html','utf8'),nodes={tradeText:{value:'ticker,shares,avg_price\nSNDK,6,1400'},syncMode:{value:'snapshot'},syncPreview:{innerHTML:''}},calls=[],wait=[],errors=[];let confirmed=true,refresh=0;
+const c=vm.createContext({$:id=>nodes[id],apiPost:(url,body)=>{calls.push({url,body});return new Promise((r,j)=>wait.push({r,j}));},confirm:()=>confirmed,toast(){},showError:e=>errors.push(e),refreshAll:async()=>refresh++,esc:String,fmt:String,fmt0:String,cssBySign:()=>''});
+vm.runInContext(html.slice(html.indexOf('function syncPayload('),html.indexOf('async function doDailyUpdate()')),c);
+const result={preview:true,mode:'snapshot',account_fingerprint:'fp',rows:1,diff:[{ticker:'SNDK',new_shares:6,old_shares:0,new_avg_price:1400}]};const tick=()=>new Promise(r=>setImmediate(r));
+(async()=>{
+ assert.doesNotMatch(html,/<option value="trades">|id="replaceText"|id="tradeText"|onclick="doSyncTrades\(\)"|onclick="doPreviewSync\(\)"/);
+ let p=c.doPreviewSync();assert.equal(calls[0].url,'/api/sync_broker_snapshot');assert.deepEqual(JSON.parse(JSON.stringify(calls[0].body)),{mode:'snapshot',text:nodes.tradeText.value,preview:true});wait.shift().r(result);await p;
+ p=c.doSyncTrades();await c.doSyncTrades();assert.equal(calls.length,2);wait.shift().r(result);await tick();assert.equal(calls[2].body.expected_account_fingerprint,'fp');assert.equal(calls[2].body.preview,false);wait.shift().r({broker_snapshot_synced:[{ticker:'SNDK',shares:6,average_cost:1400}]});await p;assert.equal(refresh,1);
+ const before=calls.length;nodes.syncMode.value='trades';await c.doPreviewSync();await c.doSyncTrades();assert.equal(calls.length,before);assert.equal(errors.length,2);
+ nodes.syncMode.value='snapshot';p=c.doSyncTrades();nodes.tradeText.value+='\nNVDA,1,100';wait.shift().r(result);await p;assert.equal(calls.length,before+1);assert.match(errors.at(-1),/输入已变化/);
+ confirmed=false;p=c.doSyncTrades();wait.shift().r(result);await p;assert.equal(calls.length,before+2);
+ confirmed=true;c.refreshAll=async()=>{throw new Error('refresh offline');};
+ const start=calls.length;p=c.doSyncTrades();wait.shift().r(result);await tick();wait.shift().r({committed:true,account_fingerprint:'newfp',warnings:[]});await p;
+ assert.equal(calls.length,start+2);assert.match(errors.pop(),/已保存.*刷新/);
+ c.refreshAll=async()=>refresh++;
+ p=c.doSyncTrades();wait.shift().r(result);await tick();wait.shift().r({committed:true,warnings:[{code:'BROKER_STATE_REFRESH_FAILED',message:'internal detail'}]});await p;
+ assert.equal(calls.length,start+4);assert.match(errors.pop(),/已保存.*审计/);
+ let failureCalls=0;c.apiPost=async()=>{if(++failureCalls===1)return result;throw new Error('CAS conflict');};
+ await c.doSyncTrades();assert.equal(failureCalls,2);assert.doesNotMatch(errors.pop(),/已保存/);
+ delete nodes.tradeText;await c.doPreviewSync();await c.doSyncTrades();assert.equal(failureCalls,2,'removed legacy controls must not POST or throw');
+ assert.ok(calls.every(x=>x.url==='/api/sync_broker_snapshot'));console.log('PASS snapshot-only payload, preview-confirm fingerprint, duplicate/input-race guard, invalid legacy mode and cancel');
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -63,12 +63,38 @@ try {
             Write-Host "OWNER_PIDS=$($ownerPids -join ',')"
             exit 1
         }
-        Write-Ts "Port owned by known process but health check failed. Restarting..." Yellow
-        $ownerPids | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
-        Start-Sleep -Seconds 2
+        Write-Ts "Existing us_ratchet process is not healthy yet; leaving it running." Yellow
+        Write-Host "RESULT=starting"
+        Write-Host "TERMINAL=false"
+        Write-Host "OWNER_PIDS=$($ownerPids -join ',')"
+        Write-Host "URL=$ServiceUrl"
+        exit 0
     }
 } catch {
     Write-Ts "Port check error: $($_.Exception.Message)" Yellow
+    Write-Host "RESULT=port_check_failed"
+    Write-Host "TERMINAL=true"
+    exit 1
+}
+
+# An importing process may not own the port yet. Respect a matching PID receipt
+# from this workspace; never start a second copy just because health is pending.
+foreach ($receipt in (Get-ChildItem -LiteralPath $LogDir -Filter 'server_*.pid' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)) {
+    $recordedPid = 0
+    if (-not [int]::TryParse((Get-Content -LiteralPath $receipt.FullName -Raw).Trim(), [ref]$recordedPid)) { continue }
+    $recordedProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $recordedPid" -ErrorAction SilentlyContinue
+    if ($recordedProcess -and $recordedProcess.Name -match '^python(?:w)?\.exe$' -and
+        $recordedProcess.CommandLine -match 'api\.server' -and
+        $recordedProcess.CommandLine -match "--port\s+$Port(?:\s|$)" -and
+        $recordedProcess.CreationDate -and
+        [Math]::Abs(($receipt.LastWriteTime - [datetime]$recordedProcess.CreationDate).TotalSeconds) -lt 30) {
+        Write-Ts "Recorded us_ratchet process is still initializing (PID: $recordedPid)." Yellow
+        Write-Host "RESULT=starting"
+        Write-Host "TERMINAL=false"
+        Write-Host "PID=$recordedPid"
+        Write-Host "URL=$ServiceUrl"
+        exit 0
+    }
 }
 
 # Step 3: Start service
@@ -107,11 +133,24 @@ try {
         Write-Host "TIME=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
         exit 0
     } else {
-        Write-Ts "Health check failed after startup" Red
+        $process.Refresh()
+        if (-not $process.HasExited) {
+            Write-Ts "Process is alive; health is not ready yet." Yellow
+            Write-Host "RESULT=starting"
+            Write-Host "TERMINAL=false"
+            Write-Host "PID=$($process.Id)"
+            Write-Host "URL=$ServiceUrl"
+            Write-Host "STDOUT=$stdoutLog"
+            Write-Host "STDERR=$stderrLog"
+            exit 0
+        }
+        Write-Ts "Service process exited before becoming healthy (exit: $($process.ExitCode))." Red
         $tail = if (Test-Path -LiteralPath $stderrLog) {
             (Get-Content -Tail 30 -LiteralPath $stderrLog) -join "`n"
         } else { "(no stderr log)" }
         Write-Host "RESULT=start_failed"
+        Write-Host "TERMINAL=true"
+        Write-Host "EXIT_CODE=$($process.ExitCode)"
         Write-Host "STDERR_TAIL=$tail"
         exit 1
     }

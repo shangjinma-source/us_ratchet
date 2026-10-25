@@ -74,6 +74,35 @@ tactical_orders:
   market_gate_tickers: [QQQ, SPY]   # 大盘层门控：只下调/暂停浅层战术买入，不自动卖出、不改深跌棘轮
 
 # ---------------------------------------------------------------------------
+# 券商执行约束（只约束买入计划/复盘/实盘口径，不改变策略信号）
+# ---------------------------------------------------------------------------
+execution:
+  venue: 汇丰银行
+  currency: USD
+  lot_size: 1                  # 汇丰场景按整股执行，1 股为最小单位
+  allow_fractional: false      # 不生成碎股建议
+  cash_input_net_of_reserve: true  # 用户输入的购买力已扣除保留现金，不再二次扣减
+  fee_bps: 0.0                 # 用户于 2026-10-14 确认佣金比例为 0；其他费用未确认
+  min_fee: 0.0
+  buy_plan_compact_target: 4   # 买入计划默认最多优先处理 4 个精简标的
+
+# ---------------------------------------------------------------------------
+# 研究候选风险包络（只约束 research gate，不改变 /api/state 或今日建议）
+# 回撤成本均为百分点差：正值表示候选比对照回撤更深。
+# ---------------------------------------------------------------------------
+research_admission:
+  target_benchmark: "012922"
+  min_rolling_windows: 12
+  min_target_win_rate: 0.50
+  min_target_excess_p50: 0.0
+  max_target_dd_cost_p50: 0.03       # 相对 012922，滚动 DD 成本中位最多 3pct
+  max_target_dd_cost_bad_tail: 0.05  # dd_relief P10 对应坏尾部，成本最多 5pct
+  min_incumbent_xirr_margin_p50: -0.001
+  min_incumbent_xirr_margin_p10: -0.02
+  max_incumbent_dd_cost_p50: 0.005   # 相对当前配置，滚动 DD 中位最多深 0.5pct
+  max_incumbent_dd_cost_p90: 0.02    # 最大回撤 P90 坏尾部最多深 2pct
+
+# ---------------------------------------------------------------------------
 # 标的篮子（$50k 档：篮子和=$37,000 → 配合 safe_leg W=26% 自动播种 SGOV $13,000 → 总盘 $50,000）
 # 权重=逆波动率配权，与已验证 8 名最优解误差 ±0.2% 内。要回 $1M 档把下列 ×21.6216 即可。
 # 每只只需写 cap_total（你预期的金额上限）。系统自动推导：

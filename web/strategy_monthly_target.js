@@ -25,7 +25,7 @@ function persistentRows(m){
   else if(m.target.server_month&&m.target.server_month!==m.target.target_month)action='需要本月目标';
   else if(fresh){
    if(m.preview.difference?.cancel_before_recalculate?.length)action='先核实冲突挂单，撤单后重算';
-   else if(active.length)action=active.map(o=>(o.side==='BUY'?'买入 ':'卖出 ')+o.quantity+' 股').join('；');
+   else if(active.length)action=active.map(o=>(o.side==='BUY'?'等回落，限价买入最多 ':'按减仓目标，限价卖出 ')+o.quantity+' 股').join('；');
    else if(r.buy||r.sell)action='等待已记录挂单；不重复下单';
    else if(r.held===r.target)action='持有；本次无需新增订单';
    else action='本次未生成订单；检查现金或差额状态';
@@ -43,7 +43,7 @@ function render(m){
  let html='<section class="strategy-monthly-target"><h3>今日买卖建议</h3>';
  const disabled=(m.busy||m.cashBusy)?'disabled':'';
  const eligible=m.account?.cash_confirmation_valid===true&&!m.busy&&!m.cashBusy;
- if(m.account)html+='<form data-form="configure-cash"><label>本次可用现金 USD <input name="amount" inputmode="decimal" required autocomplete="off"></label> <input type="hidden" name="cash_basis" value="AVAILABLE_AFTER_RESERVATIONS"> <button '+disabled+'>按此金额配置并生成买卖限价</button><p>覆盖上次现金；新策略持仓及未成交挂单一并计算，不重复买入。</p></form>';
+ if(m.account)html+='<form data-form="configure-cash"><label>本次可用现金 USD <input name="amount" inputmode="decimal" required autocomplete="off"></label> <input type="hidden" name="cash_basis" value="AVAILABLE_AFTER_RESERVATIONS"> <button '+disabled+'>更新现金并查看建议</button></form>';
  html+='<div class="monthly-action-header"><h4>本月股票与今日动作</h4><div><button data-action="load" type="button" '+disabled+'>刷新状态</button>';
  if(m.target)html+='<button data-action="preview" type="button" '+(eligible?'':'disabled')+'>刷新买卖建议</button>';
  else if(eligible)html+='<button data-action="INITIAL" type="button">生成初始目标</button>';
@@ -61,13 +61,9 @@ function render(m){
  const routine=['尚无已保存目标。','账户已更新，请刷新建议。','已读取保存的目标，尚未刷新买卖建议。','已扣除新策略持仓及剩余挂单；请核对后自行操作。'];
  if(m.message&&!routine.includes(m.message))html+='<p role="status">'+esc(m.message)+'</p>';
  html+=persistentRows(m);
- if(m.target){
-  html+='<details class="monthly-options"><summary>配置选项</summary>';
-  for(const [reason,label] of [['EXPLICIT_RECONFIGURE','明确重新配置本月目标'],['MONTHLY_SELECTION','选择新月份目标']])html+='<button data-action="'+reason+'" type="button" '+(eligible?'':'disabled')+'>'+label+'</button>';
-  html+='</details>';
- }
+
  if(m.preview&&m.preview.target_id===m.target?.target_id&&m.preview.account_revision===m.account?.revision){
-  html+='<details class="monthly-options"><summary>买卖明细 · '+(m.fresh?'本次查询结果，操作前请刷新':'待刷新（保留旧显示）')+'</summary>';
+  html+='<section class="monthly-options"><h4>买卖明细 · '+(m.fresh?'本次查询结果，操作前请刷新':'待刷新（保留旧显示）')+'</h4>'; 
   const d=m.preview.difference,names=Object.fromEntries([...(m.target?.targets||[]),...(m.account?.holdings||[]),...(m.account?.orders||[])].map(x=>[x.security_id,x.ticker]));
   if(d.cancel_before_recalculate?.length)html+='<p>已有挂单与目标冲突，请先在券商核实撤单并更新账户，再重新计算。</p>';
   html+='<div class="monthly-table-scroll"><table><thead><tr><th>股票</th><th>方向</th><th>股数</th><th>建议限价 USD</th><th>报价时间</th><th>有效至</th><th>说明</th></tr></thead><tbody>';
@@ -75,7 +71,7 @@ function render(m){
   html+='</tbody></table></div>';
   if(!(d.new_orders||[]).length)html+='<p>本次结果没有新增订单；这不表示已有挂单成交。</p>';
   if(d.waiting_cash?.length)html+='<p>部分买入等待可用现金；未成交卖款不会提前用于买入。</p>';
-  html+='</details>';
+  html+='</section>'; 
  }
  return html+'</section>';
 }

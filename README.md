@@ -1,60 +1,42 @@
-﻿# us_ratchet
+# 美股策略工具 us_ratchet
 
-美股科技篮子棘轮策略工具：支持历史回测、NAV-DD 面板、实盘状态、今日执行建议、战术挂单研究、券商流水导入和前端仪表盘。
+管理策略内持仓、当前可用美元现金、今日买卖建议与月度换仓。工具提供建议和记录真实成交，不会向券商自动下单。
 
-## Quick Start
+## 日常怎么用
+
+1. 打开 http://127.0.0.1:8010/ 。
+2. 将汇丰显示的最新美元可用现金**总额**填入“当前可用现金 USD”，点击“更新现金并查看建议”。换汇、资金转入或取用后均如此；不填增减差额。
+3. 按建议自行决定是否在券商交易。策略内股票实际成交后，在“成交记录”保存股票、方向、股数、价格和时间，再确认最新可用现金。
+4. 策略外私人交易不录入本工具；其对可用现金的影响通过最新余额体现。
+
+更新现金会覆盖余额，不会把卖款重复加到账户，也不因现金变化自动重新选股。未成交的卖出款不能提前用于买入。等待交易时段、行情过期、余额未确认等状态，不等于可以执行的买卖指令。
+
+## 当前策略
+
+- 当前规则为 `MONTHLY_CAP50_EXIT20`：月度选股与配置，月内继续判断持仓、现金及风险退出。
+- 单股50%是**配置时上限**，持仓随价格上涨后可能超过50%，不是持续市值上限。
+- 20%为单股峰值退出信号；退出后本月不买回，下月重新判断。它不是组合最大回撤保证，实际成交价格也可能偏离信号价格。
+- 普通现金更新沿用本月目标。历史上测试过动态再买入和现金变化重选，尚无足够证据替代现行规则。
+- 较早历史窗口的股票池带有幸存者偏差；后窗成员链也未完整认证。回测另有下一开盘成交和卖款可用假设，不等于独立样本外收益或实盘预期收益。年化与区间收益须区分。
+
+## 启动与本地数据
+
+PowerShell / PyCharm 终端：
 
 ```powershell
-pip install -r requirements.txt
-uvicorn api.server:app --host 127.0.0.1 --port 8010
+python -m pip install -r requirements.txt
+python -m uvicorn api.server:app --host 127.0.0.1 --port 8010
 ```
 
-Then open `http://127.0.0.1:8010/`.
+已部署电脑可使用 `start_service.ps1`；若服务正在运行，不需要重复启动。
 
-## Research Commands
+**GitHub源码不包含私人账户数据库、行情缓存或完整研究证据包。** 新克隆可打开首页；没有本地资料的策略与历史研究接口会明确返回“尚未配置”，不会创建或恢复真实账户。已有配置但资料缺失或损坏仍会报错。真实策略启动依赖本机审核过的配置及其哈希引用，请保留原机数据和配置，不用空账本覆盖原账户。活动配置入口是本机 `config/strategy_server_active.json`。
 
-```powershell
-# 候选美股池诊断/推荐篮子，不改 config/state
-python scripts\universe_research.py --tickers "NVDA,AVGO,AMD,AMAT,KLAC,LRCX,ASML,TSM,MSFT,GOOG,AAPL,SNPS,CDNS" --monthly 3000
+## 文档与验证边界
 
-# 自选分组组合 A/B，对标 012922；默认同时验证 top4/top6/top8 精简篮子
-python scripts\target_basket_ab.py --groups "semis=NVDA,AVGO,AMD,AMAT,KLAC,LRCX,ASML,TSM;platform=MSFT,GOOG,AAPL;eda=SNPS,CDNS" --monthly 3000 --include-voltarget
+- [策略审查与后续有限研究计划](docs/STRATEGY_RESEARCH_PLAN.md)
+- [当前策略年化与回撤审计](docs/strategy_drawdown_audit_20261025.md)
+- [源码发布范围与清理边界](docs/RELEASE_SCOPE.md)
+- [旧研究说明存档](docs/archive/README_RESEARCH_LEGACY.md)：保留追溯，不作为当前日常操作指南。
 
-# 镜像 012922 最新披露 US 持仓子集，扫描 core/W；research only
-python scripts\fund_mirror_research.py --fund 012922 --monthly 3000 --top-n 10 --safe-weights "0,0.14,0.26,0.30,0.34,0.36" --core-ratios "0.90,0.95"
-
-# 按 012922 历史季度披露做点时 US 持仓镜像；避免 latest-holdings hindsight
-python scripts\fund_quarterly_mirror_research.py --fund 012922 --monthly 3000 --top-ns "4,6,8" --weight-modes "fund_weight,capped_fund_weight,score_risk"
-
-# 战术固定限价 A/B：同时输出 vs关闭战术单 与 vs当前实盘战术配置
-python scripts\tactical_overlay_ab.py --monthly 3000 --local-only
-
-# 点时动态篮子 walk-forward：每个起点只用起点前历史选篮子，默认含 top4/top6/top8
-python scripts\preference_walkforward.py --groups "semis=NVDA,AVGO,AMD,AMAT,KLAC,LRCX,ASML,TSM;platform=MSFT,GOOG,AAPL;eda=SNPS,CDNS" --monthly 3000 --safe-weights "0,0.26"
-
-# 低频主动重选/调仓成本回放：主动卖出重建仅用于研究，不接入今日建议
-python scripts\preference_rebalance.py --groups "semis=NVDA,AVGO,AMD,AMAT,KLAC,LRCX,ASML,TSM;platform=MSFT,GOOG,AAPL;eda=SNPS,CDNS" --monthly 3000 --safe-weights "0,0.26" --rebalance-months "6,12" --trade-cost-bps 10
-
-# 动态候选篮子实盘准入预检：同时对照 012922 与当前写死配置，不写 config/state
-python scripts\live_candidate_gate.py --groups "semis=NVDA,AVGO,AMD,AMAT,KLAC,LRCX,ASML,TSM;platform=MSFT,GOOG,AAPL;eda=SNPS,CDNS" --monthly 3000 --include-voltarget
-```
-
-Research scripts are read-only: they do not write `config.yaml`, `data/state.json`, or today's executable advice.
-
-## Dashboard / API Notes
-
-- `/api/state` includes `execution`, `explanation`, and `config_health`; research candidates do not feed this endpoint.
-- `/api/state.account_readiness` is read-only account/cash readiness context. It reminds the UI that broker holdings and broker available cash must be confirmed before producing share-count buy plans.
-- `/api/research_candidates?compute=false` returns the fast read-only candidate/watch summary. Use `compute=true` to recompute light sources, and add `include_heavy=true` only when you intentionally want heavier point-in-time and fund-mirror research.
-- `/api/tactical_quality` is read-only tactical-fill quality feedback: filled-price discounts, same-day open/low/close comparison, 20/60 trading-day follow-up, repeat-fill intervals, and current unfilled limit rough opportunity cost.
-- The dashboard is split into Today, Buy Plan, Account/Cash, Research Center, and Guide pages. Detailed A/B tables are behind the Research Center toggle.
-
-## Notes
-
-Runtime portfolio state and market cache files are intentionally ignored by Git:
-
-- `data/state.json`
-- `data/state.json.bak`
-- `data/audit.jsonl`
-- `data/cache/*.csv`
-- `data/cache/*.tmp`
+截至2026-10-25，单现金入口及隔离操作链路已验证。真实盘中、用户下一笔策略内真实成交、月底准备与新月采用，仍按实际时点验收；不把测试通过当作这些验收已完成。
