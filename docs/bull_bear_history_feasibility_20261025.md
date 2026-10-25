@@ -35,7 +35,15 @@
 
 ## 下一步边界
 
-先确认用户已有数据/订阅情况，同时有限核查免费来源；不购买、不登录无关账户，不索取密钥。新数据需要通过至少四类样本：普通连续交易、退出指数后仍交易、改名/换代码、退市或复杂公司行动。以当时可得信息和真实生效日期为准。
+用户已确认没有相关数据或订阅，优先核查免费来源。不购买、不登录无关账户，不索取密钥。新数据需要通过至少四类样本：普通连续交易、退出指数后仍交易、改名/换代码、退市或复杂公司行动。以当时可得信息和真实生效日期为准。
+
+本轮新增免费候选仅检查两个公开项目的说明与少量事件文件：[sp500nq100](https://github.com/thuningxu/sp500nq100)及[NQ100历史成员](https://github.com/shardul0701/NQ100-Survivorship-bias-data-2004-2026)。社区重建只能作为成员线索，仍需官方生效日抽查；名单存在不代表退市行情与公司行动齐备。不运行第三方代码。
+
+独立agent完成有界抽查：前者从当前Wikipedia名单逆推增删并处理部分改名；后者2015—2026数据取自另一社区项目，部分历史名称采用现代ticker。二者都包含历史变更，但相互一致不代表独立证明完整性。下载的前者历史CSV与后者2022 YAML已冻结在`tmp/free_history_sources_20261025_v1/manifest.json`，保存URL、字节数和SHA256，`admitted_for_backtest=false`。
+
+XLNX样本：两者记录2022-02-22退出，与[Nasdaq指数替换公告](https://ir.nasdaq.com/news-releases/news-release-details/astrazeneca-plc-adr-join-nasdaq-100-index-beginning-february-22)一致；但[交易公告](https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2022-23)说明最后交易日2月11日，2月14日并购完成、每股换1.7234股AMD。故成员表不能单独决定买入资格；2月14日至21日不能继续模拟买入XLNX。此抽查只认证一个事件日期的一致性，不认证全表或退市收益链。
+
+[Alpha Vantage官方文档](https://www.alphavantage.co/documentation/)列出2010年以来上市/退市状态查询，但日线完整历史的`outputsize=full`需要付费权限，免费compact仅最近100条。因此不能把“有免费API”当作已经获得2018—2023完整行情；此次未注册或调用个人密钥。
 
 缺少成员或退市数据时，明确列出缺口；可以保留“固定当前名单压力描述”，但不能把它作为用户要求的完整牛熊策略证明，也不能用ETF压力试验替代个股V27验证。
 

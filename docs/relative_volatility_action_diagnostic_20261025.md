@@ -32,6 +32,6 @@
 
 已查一手来源：[2017年度变更](https://ir.nasdaq.com/news-releases/news-release-details/annual-changes-nasdaq-100-index-6)、[2018年度变更](https://www.nasdaq.com/about/press-center/annual-changes-nasdaq-100-index-0)、[Nasdaq XLNX交易公告](https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2022-23)、[AMD并购完成8-K](https://ir.amd.com/financial-information/sec-filings/content/0000002488-22-000031/amd-20220214.htm)。
 
-免费来源可用于核验和补充，但本次没有取得2018—2023完整无偏数据。待用户说明已有数据/订阅后再确定完整路线，不启动无限逐股补历史。2017年作为预热仅是范围描述，首个决策仍须实际倒数253个交易日检查。
+免费来源可用于核验和补充，但本次没有取得2018—2023完整无偏数据。用户已确认没有相关数据或订阅，优先核查免费来源；接下来有限抽查两个社区成员档案及官方事件，不启动无限逐股补历史。2017年作为预热仅是范围描述，首个决策仍须实际倒数253个交易日检查。
 
 本地证据：`tmp/relative_volatility_inputs_20261025_v1/exposure_diagnostic.json`。2项针对性测试通过，覆盖平稳/短期高风险、禁止加杠杆及不完整窗口。代码与输入SHA已保存。生产账户、策略及任务均未修改。
