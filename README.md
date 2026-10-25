@@ -40,6 +40,8 @@ python -m uvicorn api.server:app --host 127.0.0.1 --port 8010
 ## 文档与验证边界
 
 - [2026-10-25交付与待验收概览](docs/DELIVERY_20261025.md)
+- [动态换仓、再买入与现金变化的决策表](docs/strategy_decisions_20261025.md)
+- [真实成交和月底换月验收清单](docs/real_event_acceptance_checklist.md)
 - [策略审查与后续有限研究计划](docs/STRATEGY_RESEARCH_PLAN.md)
 - [当前策略年化与回撤审计](docs/strategy_drawdown_audit_20261025.md)
 - [A双窗口最终结果：不采用](docs/drift_cap_result_20261025.md)

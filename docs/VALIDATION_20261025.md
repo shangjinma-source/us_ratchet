@@ -89,3 +89,10 @@
 来源核验6组、风险读取8组、全链预览9组通过；最终历史账户绑定修订定向复核2项通过。7个最终文件SHA与本地验证凭证一致，6个Python文件语法通过。实际解析、账本、风险存储与执行桥接运行；行情传输为合成字节，网络和新训练入口被禁用。覆盖非空买卖、已有退出、未完成订单、现金不足、并发变化、月切与过期报价。无真实账户或生产目标写入，无新经济搜索。
 
 实现与限制见[隔离链说明](saved_frontier_isolated_pipeline_20261025.md)。验证凭证仅本地保存：`tmp/source_release_20261025/saved_frontier_pipeline_validation.json`。23组测试不代表现有V7、前端或真实市场来源已经接通。
+
+## 后续定点修复与只读证据
+
+- 隔离链最终返回有效期修复：新增1组测试含报价到期、信号到期、时钟回退3个反例通过；正常买卖（0/1bp）和OPEN等待2组复核通过。未重新跑全23组或收益研究，不把定向复核数量累加成全量验收。凭证：`tmp/source_release_20261025/final_return_expiry_validation.json`。
+- 生产返回链静态核对：V26外层来源及账户复核后检查报价，写日志后再次检查；买卖报价期限不晚于会话收盘，前端按期限隐藏。凭证：`production_final_expiry_audit.json`，不代替盘中验收。
+- 真实来源局部核对：`frontier_real_domain_comparison.json`、`frontier_historical_account_reconstruction.json`、`frontier_identity_byte_closure.json`。覆盖价格、历史版本及已有持仓源字节，不宣称完整新提案审核。
+- 原Goal完成性仍未证明：`goal_requirements_completion_audit.json`分别列出隔离证据和缺失的真实事件。以上未写完整路径的凭证均位于本机`tmp/source_release_20261025/`，不随源码发布。
