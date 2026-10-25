@@ -38,20 +38,29 @@ def save(path, value):
     temporary.replace(path)
 
 
-def exposed_action_blockers(arguments, selected, end_date, prices):
+def exposed_action_blockers(arguments, selected, end_date, prices, action_review=None, active_date=None):
     start = arguments['decision_date']
     exposed = {sid for sid, quantity in arguments['account_state']['shares'].items() if quantity}
     exposed.update(sid for sid, quantity in selected['target_quantities'].items() if quantity)
+    exposure_ends = {sid:(active_date if active_date and not selected['target_quantities'].get(sid,0) else end_date)
+                     for sid in exposed}
     unknown = sorted(exposed & set(prices['action_stream_missing']))
+    accepted_reviews = []
+    for row in (action_review or {}).get('rows',[]):
+        if (row['status']=='REVIEWED_NO_ACTION_FOR_PERIOD' and row['start_exclusive']==start
+                and row['security_id'] in unknown and row['end_inclusive']==exposure_ends[row['security_id']]):
+            accepted_reviews.append(row)
+            unknown.remove(row['security_id'])
     events = [event for event in prices['provider_event_inventory']
-              if event['security_id'] in exposed and start < event['date'] <= end_date]
+              if event['security_id'] in exposed and start < event['date'] <= exposure_ends[event['security_id']]]
     events += [dict(security_id='research:security:'+ticker,date=day,kind=kind,
                     origin='KNOWN_ACTION_REVIEW_BARRIER_NOT_EXECUTION_INSTRUCTION')
                for ticker,day,kind in KNOWN_ACTION_BARRIERS
-               if 'research:security:'+ticker in exposed and start < day <= end_date]
+               if 'research:security:'+ticker in exposed and start < day <= exposure_ends['research:security:'+ticker]]
     return dict(decision_date=start, through=end_date, exposed=sorted(exposed),
                 missing_action_streams=unknown, unmapped_events=events,
-                admitted=not unknown and not events,
+                admitted=not unknown and not events,accepted_period_reviews=accepted_reviews,
+                exposure_end_by_security=exposure_ends,
                 evidence_scope='CONDITIONAL_PROVIDER_ABSENCE_ONLY_NOT_OFFICIAL_EXHAUSTIVE_PROOF')
 
 
@@ -85,11 +94,13 @@ def main():
     parser.add_argument('--prices', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--reuse', type=Path, help='Prior run checkpoints; exact arguments must match')
+    parser.add_argument('--action-review', type=Path, help='Pinned no-action evidence for an exact missing-stream period')
     parser.add_argument('--seconds', type=int, default=1800)
     parser.add_argument('--run', action='store_true')
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--input-sha256', help=argparse.SUPPRESS)
     parser.add_argument('--prices-sha256', help=argparse.SUPPRESS)
+    parser.add_argument('--action-review-sha256', help=argparse.SUPPRESS)
     options = parser.parse_args()
     for path, expected in ((options.assembled, options.input_sha256), (options.prices, options.prices_sha256)):
         if expected and digest(path) != expected:
@@ -97,6 +108,24 @@ def main():
     document = json.loads(options.assembled.read_text(encoding='utf-8'))
     assembled = document['assembled']
     prices = json.loads(options.prices.read_text(encoding='utf-8'))
+    action_review = None
+    if options.action_review:
+        if options.action_review_sha256 and digest(options.action_review)!=options.action_review_sha256:
+            raise ValueError('ACTION_REVIEW_CHANGED_AFTER_LAUNCH')
+        action_review = json.loads(options.action_review.read_text(encoding='utf-8'))
+        pins = action_review['source_hashes']
+        if not pins or not action_review['rows']:
+            raise ValueError('EMPTY_PERIOD_ACTION_REVIEW')
+        for filename,expected in pins.items():
+            if digest(ROOT/filename)!=expected:
+                raise ValueError('ACTION_REVIEW_SOURCE_CHANGED:'+filename)
+        for row in action_review['rows']:
+            if (row['status']!='REVIEWED_NO_ACTION_FOR_PERIOD' or not row['source_references']
+                    or any(reference not in pins for reference in row['source_references'])):
+                raise ValueError('UNPINNED_PERIOD_ACTION_REVIEW')
+            sources = [source for source in prices['source_reviews'] if source['security_id']==row['security_id']]
+            if not sources or any(pins.get(source['source'])!=source['sha256'] for source in sources):
+                raise ValueError('ACTION_REVIEW_PRICE_SOURCE_NOT_BOUND')
     if document['execution_prices_sha256'] != digest(options.prices):
         raise ValueError('ASSEMBLY_PRICE_SNAPSHOT_MISMATCH')
     if len(assembled['monthly_inputs']) != 36 or assembled['session_dates'][0] != '2020-12-31' or assembled['session_dates'][-1] != '2023-12-29':
@@ -128,6 +157,9 @@ def main():
                      '--prices-sha256',digest(options.prices)]
         if options.reuse:
             arguments += ['--reuse',str(options.reuse.resolve())]
+        if options.action_review:
+            arguments += ['--action-review',str(options.action_review.resolve()),
+                          '--action-review-sha256',digest(options.action_review)]
         print(json.dumps(run_worker(script=__file__, expected_sha256=digest(__file__), arguments=arguments,
             output_directory=options.output, timeout_seconds=min(options.seconds,remaining,3600))))
         return
@@ -142,6 +174,7 @@ def main():
     original_decide = frontier.decide_continuous_guided_for_account
     dates = [plan['decision_date'] for plan in assembled['monthly_inputs']] + [assembled['session_dates'][-1]]
     new_count, reused_count = 0, 0
+    liquidation_obligations = []
 
     def decide(**arguments):
         nonlocal new_count, reused_count
@@ -162,11 +195,16 @@ def main():
         validate_selection_binding(raw,arguments)
         selected = rerank(deepcopy(raw))
         proof = review_selection(selected, rerank_enabled=True)
-        gate = exposed_action_blockers(arguments, selected, dates[dates.index(day)+1], prices)
+        sessions = assembled['session_dates']
+        active_date = sessions[sessions.index(day)+1]
+        gate = exposed_action_blockers(arguments, selected, dates[dates.index(day)+1], prices,action_review,active_date)
         gate.update(target_quantities=selected['target_quantities'], selection_review=proof)
         save(options.output/f'{day}.exposure.json',gate)
         if not gate['admitted']:
             raise ValueError('EXPOSED_ACTION_REVIEW_REQUIRED:'+day)
+        liquidation_obligations.extend(dict(date=active_date,security_id=sid,quantity=quantity)
+            for sid,quantity in arguments['account_state']['shares'].items()
+            if quantity and not selected['target_quantities'].get(sid,0))
         return raw
 
     # Single bounded process only: instrument the selector without changing any
@@ -179,10 +217,23 @@ def main():
     finally:
         frontier.decide_continuous_guided_for_account = original_decide
     book.update(new_searches=new_count,reused_searches=reused_count)
+    save(options.output/'candidate_book.json',book)
+    by_date = {row['date']:row for row in book['daily_ledger']}
+    for obligation in liquidation_obligations:
+        if obligation['date'] not in by_date:
+            continue  # A blocked execution grants no completed-period proof.
+        filled = sum(log['quantity'] for log in book['order_log']
+            if log.get('event')=='ASSUMED_NEXT_OPEN_FILLED' and log.get('side')=='SELL'
+            and log['date']==obligation['date'] and log['security_id']==obligation['security_id'])
+        if by_date[obligation['date']]['shares'].get(obligation['security_id'],0) or filled!=obligation['quantity']:
+            raise ValueError('SHORT_EXPOSURE_LIQUIDATION_NOT_PROVEN')
+    save(options.output/'liquidation_review.json',dict(obligations=liquidation_obligations,
+        verified_executed=[row for row in liquidation_obligations if row['date'] in by_date]))
     save(options.output/'book.json',book)
     save(options.output/'summary.json',dict(status=book['status'],reason=book.get('reason'),
         completed_sessions=len(book.get('daily_ledger',[])),new_searches=new_count,reused_searches=reused_count,
         input_sha256=digest(options.assembled),prices_sha256=digest(options.prices),
+        action_review_sha256=digest(options.action_review) if options.action_review else None,
         script_sha256=digest(__file__),performance_validated=False,full_bull_bear_validation=False))
     print(json.dumps(dict(status=book['status'],new_searches=new_count,reused_searches=reused_count)),flush=True)
 
