@@ -27,7 +27,8 @@ SPLK报价止于2024-03-15，ANSS止于2025-07-16，WBA止于2025-08-27；终止
 - `tmp/old_window_execution_prices_20261026/execution_prices_v1.json`：实际OHLC候选、逐日来源、3127项成本对照、终止日期与旧仓连续覆盖；已独立复核。
 - `tmp/old_window_source_reuse_20261026/unified_raw_compilation_v4.json`：执行close精确绑定版，已独立逐窗重编译；SHA256 `32d7293282553d4c98daa161641663c0082da8f85b8b638974863f1ea8e951d3`。
 - `scripts/prepare_old_window_execution_prices.py` 与 `scripts/compile_old_windows_execution_costs_v4.py`：本轮可复现新脚本，未修改旧冻结输入或核心引擎。
+- `tmp/old_window_execution_prices_20261026/continuous_schema_precheck_v2.json`：31个月连续输入候选、129个有日期边界的SID、逐段来源及全部provider事件目录。SMCI/LRCX/HON/AZN/SIRI均按日期切片；SIRI旧82968B103止于2024-09-09，新829933100始于9月10日。记录新旧法律实体和真实1:10合并转换，同报告CIK不被当作同证券证明。实际重组权益、零股现金与到账仍待暴露后处理，未授权经济执行。此前v1完整保留。
 
 ## 尚未完成
 
-资料是条件历史研究输入，尚非完整PIT认证。名义OHLC候选与精确成本一致，也不代表企业行动或权益账已获准执行。下一步必须在独立复核后绑定身份迁移及实际暴露事件门槛，再由根任务决定是否启动固定基准复验；未获得经济执行许可前，不运行优化或账本。未到账权益仍只能计入财富与回撤，不能用于买入配置。
+资料是条件历史研究输入，尚非完整PIT认证。名义OHLC候选与精确成本一致，也不代表企业行动或权益账已获准执行。连续schema已通过行情、月份和来源预检查，但未映射行动族保留为`null`，没有用空事件列表冒充无行动。下一步按实际暴露填入审定企业行动后，可将`prepared_input_candidate`交给现有`assemble_monthly_execution_inputs_v4`入口；目前没有调用该入口来伪造完整组装成功。再由根任务决定是否启动固定基准复验；未获得经济执行许可前，不运行优化或账本。未到账权益仍只能计入财富与回撤，不能用于买入配置。

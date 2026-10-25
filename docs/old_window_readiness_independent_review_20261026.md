@@ -91,3 +91,19 @@ ANSS、SPLK、WBA 分别严格止于 2025-07-16、2024-03-15、2025-08-27；末�
 原 v3 的 3,127 个决策成本中 3,094 项与名义执行 close 精确相等，33 项最大差 0.0000072505035451 美元。v4 使用预先固定的执行 close 统一这 33 项表示精度，SHA256 `32d7293282553d4c98daa161641663c0082da8f85b8b638974863f1ea8e951d3`；独立再次实际编译全部 31 窗通过。所有训练向量、身份、成员、日期以及除 prices 外的 arguments 完全不变，33 条变更凭据逐项匹配，全部成本现与执行 close 精确一致。没有选股或参数搜索，不根据收益选择报价。
 
 独立机器产物：`execution_prices_v1_review.json` 与 `unified_raw_compile_v4_review.json`，位于 `tmp/old_window_readiness_independent_20261026/`。全部脚本和源字节 pin 复核一致。**这些结果不放行股票数量转换、现金股息、并购应收、分拆子股和付款可用性；经济回测仍为 0。**
+
+## 连续输入结构预检：通过，但没有调用经济 assembler
+
+`continuous_schema_precheck_v1.json` SHA256 `e0bce8039e30ee7d7abf65bdfe277f1611097661e6b5c9343bb85a7794231a7a` 已独立核验：31 月、647 会话、128 个按日期区分的 security ID；3,127 个选股价格与对应 SID 当日 close 精确一致。每根 SID 行情仍逐字段等于已审 ticker 行情，实际分段符合现 v4 assembler 的 `start/end/source_path` 接口，每个有报价日期只匹配一个已固定哈希的来源。
+
+SMCI 旧/新 ID 在 2024-09-30 / 10-01 分界；LRCX 在 2024-10-02 / 10-03 分界；HON 在 2026-06-26 / 06-29 分界；AZN ADS 与普通股在 2026-01-30 / 02-02 分界。没有重叠或把旧 ID 报价续接到新身份。SIRI 旧 SID 严格止于 2024-09-09，9/10 起保留后继身份与权益待映射的实际暴露阻塞，不以删除持仓代替结算。
+
+七类未知行动字段及 dividends 确实为 `null`，没有伪传空数组表示无行动。脚本未调用 `assemble_monthly_execution_inputs_v4`，runner 授权为 false；这是 **可复用的结构预检，不是已 assembled 的完整经济输入**。provider 事件清单可能包含多个来源对同一事件的观察，不能把清单条数当作独立经济付款次数。
+
+独立结论：`tmp/old_window_readiness_independent_20261026/continuous_schema_precheck_v1_review.json`，状态 `PASS_DATED_QUOTE_SCHEMA_ONLY_ACTION_ASSEMBLY_BLOCKED`。训练/价格哈希及所有源/脚本字节复核一致。下一步只需处理真实持仓暴露的行动、股息和权益映射，不重做已完成的价格与训练编译。
+
+最后定向增量 v2（SHA256 `c1463e92169d9c32482fb86573cfe96f7d0f659405ff579a8038e56e45411f77`）也独立通过：新增 SIRI 后继证券后为 **129 SID、5 个日期身份切换**。旧 CUSIP 82968B103 止于 2024-09-09；新 CUSIP 829933100 报价从 9/10 开始，实际价格和来源分段精确等于已审 ticker 行情的后继区间。原 128 个 SID 的价格、身份及来源全部不变，31 月选股参数不变；月末估值仅增添新 SIRI 对应报价。
+
+已重新核读保存的 SEC 8-K 工具提取：法律合并为 9/9 **纽约 18:00（当日 UTC−04:00，即 UTC 22:00）**，不是误按 September 的固定 EST−05:00。旧 SIRI 每 10 股换新 1 股；Liberty 持有人的 0.8375 比率没有混用。相同申报 CIK 不代表同一法律发行人或同一证券，产物明确列旧新发行人及独立研究 SID；不是普通同 SID 反拆。
+
+零股现金金额、付款日期及七类行动仍为 `null`，合并经济执行仍未授权，assembler 未调用。独立增量报告 `tmp/old_window_readiness_independent_20261026/continuous_schema_precheck_v2_review.json` 状态 `PASS_SIRI_SUCCESSOR_INCREMENT_ONLY_ACTION_ASSEMBLY_STILL_BLOCKED`。至此结束本轮新增检查，保留所有资料供归档与后续实际暴露核验。
