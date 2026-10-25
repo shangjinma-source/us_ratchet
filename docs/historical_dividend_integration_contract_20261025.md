@@ -59,3 +59,31 @@
 隔离入口 `run_next_open_book(..., dividend_events=())`：除息前持仓取权，支付日在交易执行后收盘入现金，权益包含未支付应收。缺支付日始终未支付。零股息返回格式保持原样。初始版本拒绝同日股息与公司行动冲突，不自动推断单位。
 
 整合测试 `test_historical_dividend_next_open_book_research.py` 四项通过：无股息非空卖买路径全输出一致、拆股路径全输出一致、除息当日卖出保留应收且未到账不扩大买入、支付后再投资、未知支付日不再投资。仍需独立复核、完整历史事件覆盖审计与候选/基线共同接入；不是生产部署或经济结果。
+
+
+## V27 月度提供器接线
+
+新增隔离包装 `backtest/historical_dividend_frontier_research.py`，头部记录原包装SHA，只替换内核导入并传入显式 `dividend_events`。原月度提供器、rerank、风险对象调用、20%退出语义及搜索预算保持原代码；不使用运行时全局猴补丁，不改生产pins。
+
+`tests/test_historical_dividend_frontier_research.py` 使用真实月度提供器、风险适配器和非空交易路径，只在测试中替换昂贵选择与rerank：验证空股息路径与原版全部输出一致，除息应收不改变配置现金，支付后下一配置获得现金，未知支付日配置状态与无股息基线一致。此为接线验证，非V27历史经济验证，真实选择/复核器及历史数据尚待整批接入。
+
+
+风险口径明确：本接线保留现有20%价格峰值退出规则，普通股息应收进入账户权益不意味着风险峰值已改成总回报口径。除息价格变化仍可能影响原价格止损；若研究总回报止损，应另列固定机制对照，不静默改变V27。
+
+
+## 极小真实搜索接线验证
+
+新增 `test_historical_dividend_real_search.py`：单证券、128目标评估上限的合成fixture；真实select及rerank运行，首次搜索后保存实际返回的原选择前缀，分别供原版与股息包装无搜索复用并逐字段比较。再新增一次真实支付后月度搜索，核验实际binding现金与权益均对应到账后的账户。风险适配器仍实际运行。
+
+修正后的单测试通过（0.015秒），该测试明确两个允许新搜索调用位置，另两次prefix复用max_new_searches=0；无经济长回测。合成fixture来源hash是测试占位值，仅测试接口绑定，不证明外部数据准入。
+
+初次测试错误直接导入外部TestCase造成额外发现4个既有测试，并在读取rerank顶层decision_date时失败；已保留原失败日志，改成模块导入，依据实际raw_selection.decision_date取值。主线程明确允许一次纠正重跑，未隐瞒超出原测试数。记录在 `tmp/historical_dividend_real_search_20261025/result.json` 和 `corrected_result.json`。这不构成历史收益或回撤结论。
+
+
+## 真实选择与独立账本组合复核
+
+真实fixture现在直接调用 `historical_dividend_independent_review.review(..., verify_selections=True, expected_fee_bps='0', expected_slippage_bps='5')`。单次运行通过，实际 `selection_proofs_checked=2/expected_selection_proofs=2`，既未跳过选择证明，也未mock选择或rerank。
+
+合成账户复算结果：最终权益2089483/2000=1044.7415，现金1055483/2000=527.7415，已支付股息45，应收0，总收益89483/2000000=4.47415%，最大收盘回撤99/400000=0.02475%。这些数仅为小fixture会计接线证明，不是V27历史收益；风险提供器本身未获该复核器认证（risk_provider_certified=false）。
+
+本次单测试0.017秒，执行两次允许的小搜索，证据 `tmp/historical_dividend_real_search_20261025/independent_combination_result.json`。生产文件未改变。
