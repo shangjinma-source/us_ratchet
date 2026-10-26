@@ -1,0 +1,20 @@
+--- a/web/strategy_daily_controller.js
++++ b/web/strategy_daily_controller.js
+@@ -121,7 +121,7 @@
+   return target.server_month;
+  }
+  async function finishTargetRequest(token){
+-  // Replay the exact server-idempotent operation after reading current state.
++  // Replay the exact server-idempotent operation before reading a partial target.
+   // Seeing any target is insufficient proof that our operation succeeded.
+   const request=copy(pendingTargetRequest);
+   let generated;
+@@ -146,7 +146,7 @@
+   // become unusable; stale orders are retained only as historical references.
+   invalidate(){++invalidationGeneration;++epoch;retire();model.busy=false;model.error='DAILY_UI_SNAPSHOT_CHANGED';notify();},
+   load(){return schedule('load',async token=>{await read(token);return copy(model);});},
+-  refresh(){return schedule('refresh',async token=>{await read(token);if(pendingTargetRequest)await finishTargetRequest(token);return requestDaily(token);});},
++  refresh(){return schedule('refresh',async token=>{if(pendingTargetRequest)await finishTargetRequest(token);else await read(token);return requestDaily(token);});},
+   saveBalance(input){input=copy(input);return schedule('save',async token=>{
+    if(pendingTargetRequest)fail('TARGET_WRITE_RECONCILIATION_REQUIRED');
+    await read(token);
