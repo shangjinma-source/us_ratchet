@@ -34,6 +34,17 @@ const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-pri
   assert(await page.evaluate(()=>Boolean(firstFailure)));
   const pending=await page.evaluate(()=>JSON.parse(localStorage.getItem('us-ratchet-pending-monthly-target-v1')));
   assert(pending.event_id);const revision=await page.evaluate(()=>daily.getState().account.revision);
+  if(process.argv[2]==='save'){
+   await page.evaluate(()=>daily.saveBalance({amount:'20000'}));
+   assert.equal(await page.evaluate(()=>daily.getState().account.revision),revision);
+  }
+  if(process.argv[2]==='changed-save'){
+   await page.evaluate(async()=>{
+    try{await daily.saveBalance({amount:'10000'});throw Error('EXPECTED_RESUBMIT');}
+    catch(error){if(error.message!=='TARGET_RECOVERY_COMPLETE_RESUBMIT_CASH')throw error;}
+   });
+   assert.equal(await page.evaluate(()=>daily.getState().account.revision),revision);
+  }
   await page.reload();await page.evaluate(()=>ready);await page.evaluate(()=>daily.refresh());
   const state=await page.evaluate(()=>daily.getState());
   assert.equal(state.account.revision,revision);assert.equal(state.account.available_cash,'20000');
@@ -47,6 +58,7 @@ const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-pri
 
 class RecoveryBrowserTests(unittest.TestCase):
     failure = 'partial'
+    recovery_action = 'reload'
 
     def test_reload_recovers_same_target_without_cash_or_selection_replay(self):
         if not NODE.is_file():
@@ -135,7 +147,7 @@ window.ready=(async()=>{
                 deadline=time.monotonic()+10
                 while not server.started and time.monotonic()<deadline:time.sleep(.02)
                 self.assertTrue(server.started)
-                result=subprocess.run([str(NODE),'-e',BROWSER,'http://127.0.0.1:'+str(listener.getsockname()[1])],capture_output=True,text=True,encoding='utf-8',timeout=60)
+                result=subprocess.run([str(NODE),'-e',BROWSER,'http://127.0.0.1:'+str(listener.getsockname()[1]),self.recovery_action],capture_output=True,text=True,encoding='utf-8',timeout=60)
                 self.assertEqual(result.returncode,0,result.stderr)
                 receipt=json.loads(result.stdout)
                 self.assertEqual(len(selections),1)
@@ -148,3 +160,11 @@ window.ready=(async()=>{
 
 class LostResponseRecoveryBrowserTests(RecoveryBrowserTests):
     failure = 'response'
+
+
+class SaveRecoveryBrowserTests(RecoveryBrowserTests):
+    recovery_action = 'save'
+
+
+class ChangedSaveRecoveryBrowserTests(RecoveryBrowserTests):
+    recovery_action = 'changed-save'
