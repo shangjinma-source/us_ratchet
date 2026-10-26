@@ -22,6 +22,7 @@ from api.strategy_frontier_latest_display_charts_v1 import create_router as disp
 POLICY_ID = 'SAVED_FRONTIER_CAP50_EXIT20_V1'
 SOURCES = {'data/saved_frontier_source_review_v1.py', 'data/strategy_unified_server_preparation_v27.py', 'data/saved_frontier_preview_service_v1.py', 'data/saved_frontier_monthly_view_v1.py', 'api/strategy_frontier_daily_preview_v1.py', 'data/strategy_frontier_latest_display_charts_v1.py', 'data/strategy_frontier_target_charts_v1.py', 'data/strategy_observed_frontier_daily_admission_v1.py', 'web/index.html', 'data/saved_frontier_supplement_request_v1.py', 'api/strategy_frontier_monthly_target_v1.py', 'data/saved_frontier_daily_composition_v1.py', 'data/saved_frontier_supplement_prepare_v1.py', 'data/saved_frontier_first_window_v1.py', 'web/strategy_daily_mount.js', 'data/saved_frontier_security_domain_v1.py', 'data/saved_frontier_zero_cash_preview_v1.py', 'core/saved_monthly_frontier_proposal.py', 'data/saved_frontier_capture_review_v1.py', 'data/saved_frontier_buy_data_wait_preview_v1.py', 'web/strategy_monthly_target_charts.js', 'api/strategy_frontier_latest_display_charts_v1.py', 'data/saved_frontier_source_reader_v1.py', 'data/saved_frontier_live_reader_v1.py', 'api/strategy_server_mount_v6.py', 'data/saved_frontier_exit_packet_v1.py', 'web/strategy_daily_controller.js'}
 
+SOURCES |= {'web/strategy_target_recovery_v1.js'}
 SOURCES |= FIRST_WINDOW_SOURCES | {'data/saved_frontier_rolling_admission_v1.py'}
 SOURCES |= {
     'data/saved_frontier_current_migration_v1.py',
@@ -140,6 +141,14 @@ def build_unified_server_preparation_v27(*, root, configuration_path, configurat
         else:
             router.routes.append(route)
     require(all(count == 1 for count in counts.values()), 'V27_REPLACEMENT_ROUTE_REQUIRED')
+    from fastapi.responses import FileResponse
+
+    @router.get('/static/strategy_target_recovery_v1.js')
+    def target_recovery_script():
+        validate()
+        return FileResponse(root/'web/strategy_target_recovery_v1.js', media_type='application/javascript',
+                            headers={'Cache-Control': 'no-store'})
+
     router.include_router(monthly_router(service=view, charts=charts))
     router.include_router(daily_router(service=observed))
     router.include_router(display_router(service=display))

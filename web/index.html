@@ -677,8 +677,9 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 <script src="/static/current_research_paper.js?v=v2-legacy-navigation-20261015"></script>
 <script src="/static/current_quantity_v2_paper.js?v=20261016-buy-sell-retained-v5"></script>
 <script src="/static/strategy_account.js?v=20261024-account-inflight-v5"></script>
-<script src="/static/strategy_daily_controller.js?v=20261025-cap-target-v19"></script>
+<script src="/static/strategy_daily_controller.js?v=20261026-target-recovery-v20"></script>
 <script src="/static/strategy_daily_mount.js?v=20261025-cap-target-v4"></script>
+<script src="/static/strategy_target_recovery_v1.js?v=20261026-r1"></script>
 <script src="/static/strategy_advice_review.js?v=20261020-v8"></script>
 <script src="/static/strategy_followup_summary.js?v=20261023-v1"></script>
 <script src="/static/strategy_capital_controller.js?v=20261022-arrived-capital-2"></script>
@@ -5026,9 +5027,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!window.StrategyDailyController || !window.StrategyDailyMount?.mount)
     throw new Error('DAILY_COMPONENT_UNAVAILABLE');
   window.RealStrategyDaily = window.StrategyDailyMount.mount($('strategyMonthlyTarget'), {
-    ...window.StrategyDailyController.httpDependencies(
-      window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),
-      () => window.crypto.randomUUID(), window.RealStrategyAccount),
+    ...window.StrategyTargetRecoveryV1.dependencies({
+      base: window.StrategyDailyController.httpDependencies(
+        window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),
+        () => window.crypto.randomUUID(), window.RealStrategyAccount),
+      request: window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),
+      recovery: window.StrategyTargetRecoveryV1.create({storage: window.localStorage,
+        locks: window.navigator.locks, makeId: () => window.crypto.randomUUID()})}),
     onTargetChanged: target => { if (!realStrategyInitializing) window.RealStrategyMonthlyCharts?.setTarget(target); },
     onRecommendedTickers: tickers => window.RealStrategyAccount.setRecommendedTickers(tickers),
     onRefreshCompleted: () => { if (!realStrategyInitializing) window.RealStrategyMonthlyCharts?.refresh(); },

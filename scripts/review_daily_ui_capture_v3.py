@@ -13,8 +13,14 @@ POLICY = 'SAVED_FRONTIER_CAP50_EXIT20_V1'
 
 def review(capture):
     state = capture['state']
-    target = state['target']
-    daily = state.get('daily') or {}
+    if not isinstance(state, dict):
+        raise ValueError('UI_CAPTURE_STATE_REQUIRED')
+    target = state.get('target')
+    daily = state.get('daily')
+    if not isinstance(target, dict) or not target:
+        raise ValueError('UI_CAPTURE_TARGET_REQUIRED')
+    if not isinstance(daily, dict) or not daily:
+        raise ValueError('UI_CAPTURE_DAILY_REQUIRED')
     if daily.get('policy_id') != POLICY:
         if target.get('proposal_id') or daily.get('proposal_id'):
             raise ValueError('FRONTIER_POLICY_MISMATCH')

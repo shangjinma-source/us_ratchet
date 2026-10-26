@@ -55,6 +55,22 @@ class FrontierReviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'EXPIRED_PRICE'):
             review(capture)
 
+    def test_missing_or_empty_target_and_daily_reject_stably(self):
+        for field in ('target', 'daily'):
+            for value in (None, {}, [], ''):
+                capture = self.capture()
+                capture['state'][field] = value
+                original = deepcopy(capture)
+                with self.subTest(field=field, value=value):
+                    with self.assertRaisesRegex(ValueError, '^UI_CAPTURE_' + field.upper() + '_REQUIRED$'):
+                        review(capture)
+                    self.assertEqual(capture, original)
+            capture = self.capture()
+            del capture['state'][field]
+            with self.subTest(field=field, missing=True):
+                with self.assertRaisesRegex(ValueError, '^UI_CAPTURE_' + field.upper() + '_REQUIRED$'):
+                    review(capture)
+
 
 if __name__ == '__main__':
     unittest.main()
