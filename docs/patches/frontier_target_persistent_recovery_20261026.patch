@@ -1,0 +1,86 @@
+--- a/web/strategy_daily_controller.js
++++ b/web/strategy_daily_controller.js
+@@ -30,7 +30,7 @@
+  if(!sameProposal(target,target)||!Array.isArray(rows)||rows.some(row=>!row||typeof row.security_id!=='string'||!row.security_id||typeof row.ticker!=='string'||!row.ticker||!Number.isSafeInteger(row.quantity)||row.quantity<0)||new Set(rows.map(row=>row.security_id)).size!==rows.length)fail('DAILY_RESPONSE_BINDING_MISMATCH');
+  return rows;
+ }
+-function createController({loadAccount,loadTarget,saveCash,generateTarget,previewDaily,onChange=()=>{},now=()=>Date.now()}){
++function createController({loadAccount,loadTarget,saveCash,generateTarget,previewDaily,recoverTarget=null,onChange=()=>{},now=()=>Date.now()}){
+  let epoch=0,ownCashStart=false,pendingTargetRequest=null,invalidationGeneration=0;
+  let workTail=Promise.resolve(),writeBarrier=0,lastWrite=null;
+  const pendingReads=new Map(),pendingSaves=new Map();
+@@ -120,8 +120,20 @@
+   model.account=copy(account);model.target=target.target_id?copy(target):null;
+   return target.server_month;
+  }
++ async function recoverPendingTarget(token){
++  if(!recoverTarget)return false;
++  let result;
++  try{result=await recoverTarget();}
++  catch(error){if(error.target_not_committed===true)pendingTargetRequest=null;throw error;}
++  guard(token);
++  if(!result)return false;
++  pendingTargetRequest=null;
++  await read(token);
++  if(result.matches!==true)fail('TARGET_CHANGED_AFTER_GENERATION');
++  return true;
++ }
+  async function finishTargetRequest(token){
+-  // Replay the exact server-idempotent operation after reading current state.
++  // Replay the exact server-idempotent operation before reading a partial target.
+   // Seeing any target is insufficient proof that our operation succeeded.
+   const request=copy(pendingTargetRequest);
+   let generated;
+@@ -145,9 +157,10 @@
+   // Called by account/holding events in the surrounding page. Pending responses
+   // become unusable; stale orders are retained only as historical references.
+   invalidate(){++invalidationGeneration;++epoch;retire();model.busy=false;model.error='DAILY_UI_SNAPSHOT_CHANGED';notify();},
+-  load(){return schedule('load',async token=>{await read(token);return copy(model);});},
+-  refresh(){return schedule('refresh',async token=>{await read(token);if(pendingTargetRequest)await finishTargetRequest(token);return requestDaily(token);});},
++  load(){return schedule('load',async token=>{if(!await recoverPendingTarget(token))await read(token);return copy(model);});},
++  refresh(){return schedule('refresh',async token=>{if(!await recoverPendingTarget(token)){if(pendingTargetRequest)await finishTargetRequest(token);else await read(token);}return requestDaily(token);});},
+   saveBalance(input){input=copy(input);return schedule('save',async token=>{
++   await recoverPendingTarget(token);
+    if(pendingTargetRequest)fail('TARGET_WRITE_RECONCILIATION_REQUIRED');
+    await read(token);
+    model.cashSaved=false;
+--- a/web/index.html
++++ b/web/index.html
+@@ -677,8 +677,9 @@
+ <script src="/static/current_research_paper.js?v=v2-legacy-navigation-20261015"></script>
+ <script src="/static/current_quantity_v2_paper.js?v=20261016-buy-sell-retained-v5"></script>
+ <script src="/static/strategy_account.js?v=20261024-account-inflight-v5"></script>
+-<script src="/static/strategy_daily_controller.js?v=20261025-cap-target-v19"></script>
++<script src="/static/strategy_daily_controller.js?v=20261026-target-recovery-v20"></script>
+ <script src="/static/strategy_daily_mount.js?v=20261025-cap-target-v4"></script>
++<script src="/static/strategy_target_recovery_v1.js?v=20261026-r1"></script>
+ <script src="/static/strategy_advice_review.js?v=20261020-v8"></script>
+ <script src="/static/strategy_followup_summary.js?v=20261023-v1"></script>
+ <script src="/static/strategy_capital_controller.js?v=20261022-arrived-capital-2"></script>
+@@ -5026,9 +5027,13 @@
+   if (!window.StrategyDailyController || !window.StrategyDailyMount?.mount)
+     throw new Error('DAILY_COMPONENT_UNAVAILABLE');
+   window.RealStrategyDaily = window.StrategyDailyMount.mount($('strategyMonthlyTarget'), {
+-    ...window.StrategyDailyController.httpDependencies(
+-      window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),
+-      () => window.crypto.randomUUID(), window.RealStrategyAccount),
++    ...window.StrategyTargetRecoveryV1.dependencies({
++      base: window.StrategyDailyController.httpDependencies(
++        window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),
++        () => window.crypto.randomUUID(), window.RealStrategyAccount),
++      request: window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),
++      recovery: window.StrategyTargetRecoveryV1.create({storage: window.localStorage,
++        locks: window.navigator.locks, makeId: () => window.crypto.randomUUID()})}),
+     onTargetChanged: target => { if (!realStrategyInitializing) window.RealStrategyMonthlyCharts?.setTarget(target); },
+     onRecommendedTickers: tickers => window.RealStrategyAccount.setRecommendedTickers(tickers),
+     onRefreshCompleted: () => { if (!realStrategyInitializing) window.RealStrategyMonthlyCharts?.refresh(); },
+--- a/data/strategy_unified_server_preparation_v27.py
++++ b/data/strategy_unified_server_preparation_v27.py
+@@ -22,6 +22,7 @@
+ POLICY_ID = 'SAVED_FRONTIER_CAP50_EXIT20_V1'
+ SOURCES = {'data/saved_frontier_source_review_v1.py', 'data/strategy_unified_server_preparation_v27.py', 'data/saved_frontier_preview_service_v1.py', 'data/saved_frontier_monthly_view_v1.py', 'api/strategy_frontier_daily_preview_v1.py', 'data/strategy_frontier_latest_display_charts_v1.py', 'data/strategy_frontier_target_charts_v1.py', 'data/strategy_observed_frontier_daily_admission_v1.py', 'web/index.html', 'data/saved_frontier_supplement_request_v1.py', 'api/strategy_frontier_monthly_target_v1.py', 'data/saved_frontier_daily_composition_v1.py', 'data/saved_frontier_supplement_prepare_v1.py', 'data/saved_frontier_first_window_v1.py', 'web/strategy_daily_mount.js', 'data/saved_frontier_security_domain_v1.py', 'data/saved_frontier_zero_cash_preview_v1.py', 'core/saved_monthly_frontier_proposal.py', 'data/saved_frontier_capture_review_v1.py', 'data/saved_frontier_buy_data_wait_preview_v1.py', 'web/strategy_monthly_target_charts.js', 'api/strategy_frontier_latest_display_charts_v1.py', 'data/saved_frontier_source_reader_v1.py', 'data/saved_frontier_live_reader_v1.py', 'api/strategy_server_mount_v6.py', 'data/saved_frontier_exit_packet_v1.py', 'web/strategy_daily_controller.js'}
+ 
++SOURCES |= {'web/strategy_target_recovery_v1.js'}
+ SOURCES |= FIRST_WINDOW_SOURCES | {'data/saved_frontier_rolling_admission_v1.py'}
+ SOURCES |= {
+     'data/saved_frontier_current_migration_v1.py',

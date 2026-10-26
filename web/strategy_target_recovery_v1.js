@@ -51,7 +51,7 @@ function create({storage,locks,makeId,key='us-ratchet-pending-monthly-target-v1'
      if(error.responseStatus===409&&body?.status==='BLOCKED'&&
       ['STALE_REVISION','STALE_TARGET','ACCOUNT_CHANGED_DURING_TARGET'].includes(body.reason)&&
       !error.write_may_have_occurred&&!error.reconcile_before_retry&&
-      !body.write_may_have_occurred&&!body.reconcile_before_retry)clear(record);
+      !body.write_may_have_occurred&&!body.reconcile_before_retry){clear(record);error.target_not_committed=true;}
      throw error;
     }
     if(!digest(response?.target_id)||!digest(response?.proposal_id)||
@@ -67,7 +67,22 @@ function create({storage,locks,makeId,key='us-ratchet-pending-monthly-target-v1'
   }
  };
 }
-const api={create};
+function dependencies({base,request,recovery}){
+ const callbacks={
+  submit:body=>request('/api/strategy-account/target/generate',body),
+  verify:async response=>{
+   const [account,target]=await Promise.all([request('/api/strategy-account'),request('/api/strategy-account/target')]);
+   if(!digest(account?.account?.revision)||!digest(target?.target_id)||!digest(target?.proposal_id))fail('TARGET_RECOVERY_STATE_INVALID');
+   return {matches:account.account.revision===response.account_revision&&
+    target.target_id===response.target_id&&target.proposal_id===response.proposal_id};
+  }
+ };
+ return {...base,
+  recoverTarget:async()=>{const value=await recovery.run(null,callbacks);return value?.verification||null;},
+  generateTarget:async body=>(await recovery.run(body,callbacks)).response
+ };
+}
+const api={create,dependencies};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 else root.StrategyTargetRecoveryV1=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
