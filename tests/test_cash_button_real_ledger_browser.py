@@ -50,10 +50,29 @@ const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-pri
   assert.equal(state.historicalOrders.S,undefined);
   assert(!(await page.locator('#daily').innerText()).includes('上一条建议'));
   assert((await page.locator('#daily').innerText()).includes('买入 1 股'));
+  if(process.argv[3]==='frontier')assert.equal(state.daily.proposal_id,state.target.proposal_id);
   // A later ordinary balance confirmation replaces cash, never adds it.
   await button.click();await page.evaluate(()=>daily.whenIdle());
   state=await page.evaluate(()=>daily.getState());assert.equal(state.account.available_cash,'120');
   assert.equal(state.daily.account_revision,state.account.revision);assert.equal(state.target.target_id,'a'.repeat(64));
+  // Withdrawn funds replace the balance too; zero cash must survive a reload.
+  await input.fill('50');await button.click();await page.evaluate(()=>daily.whenIdle());
+  state=await page.evaluate(()=>daily.getState());assert.equal(state.account.available_cash,'50');
+  assert.equal(state.daily.account_revision,state.account.revision);
+  await input.fill('0');await button.click();await page.evaluate(()=>daily.whenIdle());
+  state=await page.evaluate(()=>daily.getState());assert.equal(state.account.available_cash,'0');
+  assert.deepEqual(state.daily.new_orders,[]);const zeroRevision=state.account.revision;
+  await page.reload();
+  await page.evaluate(async()=>{
+   window.account=StrategyAccountUI.createController({automaticValuationEnabled:false,onInvalidate:()=>window.daily?.accountInvalidated?.()});
+   await account.load();window.daily=StrategyDailyMount.mount(document.getElementById('daily'),{
+    ...StrategyDailyController.httpDependencies(StrategyDailyController.fetchTransport(fetch.bind(window)),()=>crypto.randomUUID(),account)
+   });await daily.ready;await daily.refresh();
+  });
+  state=await page.evaluate(()=>daily.getState());assert.equal(state.account.available_cash,'0');
+  assert.equal(state.account.revision,zeroRevision);assert.deepEqual(state.daily.new_orders,[]);
+  assert.equal(state.daily.account_revision,zeroRevision);
+  if(process.argv[3]==='frontier')assert.equal(state.daily.proposal_id,state.target.proposal_id);
   console.log(JSON.stringify({status:'REAL_LEDGER_BROWSER_RETRY_PASS',retry_revision_unchanged:true,final_cash:state.account.available_cash}));
  } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
@@ -62,6 +81,7 @@ const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-pri
 
 class CashButtonLedgerBrowserTests(unittest.TestCase):
     failure_kind = "structured"
+    frontier = False
     def test_saved_cash_preview_failure_retry_and_repeat_confirmation(self):
         if not NODE.is_file():
             self.skipTest('Local browser runtime unavailable')
@@ -96,13 +116,16 @@ class CashButtonLedgerBrowserTests(unittest.TestCase):
             @app.get('/api/strategy-account/target')
             def target():
                 return dict(target_id=target_id, target_month=month, server_month=month,
+                            **(dict(proposal_id='b'*64, proposal_targets=[dict(
+                                security_id='S', ticker='TEST', quantity=1)]) if self.frontier else {}),
                             targets=[dict(security_id='S', ticker='TEST', quantity=1)])
 
             @app.post('/api/strategy-daily-v3/preview')
             async def preview(request: Request):
                 body = await request.json()
                 current = store.read()
-                self.assertEqual(body, dict(expected_revision=current['revision'], target_id=target_id))
+                self.assertEqual(body, dict(expected_revision=current['revision'], target_id=target_id,
+                    **(dict(expected_proposal_id='b'*64) if self.frontier else {})))
                 preview_revisions.append(current['revision'])
                 if len(preview_revisions) == 2:
                     if self.failure_kind == 'non_json':
@@ -114,7 +137,9 @@ class CashButtonLedgerBrowserTests(unittest.TestCase):
                 order = dict(security_id='S', ticker='TEST', side='BUY', quantity=1,
                              limit_price=price, estimated_cash_change='-' + price, reference_valid_until=expiry)
                 return dict(status='READY', account_revision=current['revision'], target_id=target_id,
-                    new_orders=[order], reference_quotes={'S': dict(buy=price, sell=price, reference_valid_until=expiry)},
+                    **(dict(proposal_id='b'*64, risk_monthly_targets={'S': 1}) if self.frontier else {}),
+                    new_orders=[order] if current['available_cash'] != '0' else [],
+                    reference_quotes={'S': dict(buy=price, sell=price, reference_valid_until=expiry)},
                     effective_target_quantities={'S': 1}, daily_gate=dict(status='DAILY_TARGET_READY',
                     rows=[dict(security_id='S', action='BUY', held=0, effective_target=1)]))
 
@@ -130,17 +155,18 @@ class CashButtonLedgerBrowserTests(unittest.TestCase):
                 self.assertTrue(server.started)
                 result = subprocess.run([str(NODE), '-e', BROWSER,
                     'http://127.0.0.1:' + str(listener.getsockname()[1]),
-                    'DAILY_RESPONSE_UNAVAILABLE' if self.failure_kind == 'non_json' else 'OFFICIAL_ACTION_SOURCE_UNAVAILABLE'],
+                    'DAILY_RESPONSE_UNAVAILABLE' if self.failure_kind == 'non_json' else 'OFFICIAL_ACTION_SOURCE_UNAVAILABLE',
+                    'frontier' if self.frontier else 'legacy'],
                     capture_output=True, text=True, encoding='utf-8', timeout=60)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(json.loads(result.stdout)['status'], 'REAL_LEDGER_BROWSER_RETRY_PASS')
                 final = store.read()
-                self.assertEqual(final['available_cash'], '120')
+                self.assertEqual(final['available_cash'], '0')
                 self.assertEqual(final['shares'], initial['shares'])
                 self.assertEqual(final['orders'], initial['orders'])
                 cash_events = [event for event in final['events'] if event['payload']['kind'] == 'CASH_CONFIRM']
-                self.assertEqual(len(cash_events), 3)  # setup + first save + later confirmation
-                self.assertEqual(len(preview_revisions), 4)
+                self.assertEqual(len(cash_events), 5)  # setup + two confirmations + reduction + zero
+                self.assertEqual(len(preview_revisions), 7)
                 self.assertNotEqual(preview_revisions[0], preview_revisions[1])
                 self.assertEqual(preview_revisions[1], preview_revisions[2])
                 self.assertNotEqual(preview_revisions[2], preview_revisions[3])
@@ -152,6 +178,14 @@ class CashButtonLedgerBrowserTests(unittest.TestCase):
 
 
 class NonJsonCashButtonLedgerBrowserTests(CashButtonLedgerBrowserTests):
+    failure_kind = 'non_json'
+
+
+class FrontierCashButtonLedgerBrowserTests(CashButtonLedgerBrowserTests):
+    frontier = True
+
+
+class FrontierNonJsonCashButtonLedgerBrowserTests(FrontierCashButtonLedgerBrowserTests):
     failure_kind = 'non_json'
 
 
