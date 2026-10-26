@@ -1,0 +1,14 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const news = require('../web/news.js');
+for (const unsafe of ['javascript:alert(1)', 'data:text/html,x', 'file:///C:/x', '//evil.example', 'https://user:secret@example.org/']) assert.equal(news.safeUrl(unsafe), null);
+assert.equal(news.safeUrl('https://example.org/news?q=a'), 'https://example.org/news?q=a');
+assert.equal(news.text({html: '<script>'}), '未提供');
+assert.equal(news.timeLabel(null), '未知');
+assert.equal(news.timeLabel('invalid'), '未知（时间格式无效）');
+assert.match(news.timeLabel('2026-10-26T18:00:00Z'), /2026\/10\/27.*02:00:00/);
+const script = fs.readFileSync(require.resolve('../web/news.js'), 'utf8');
+assert.ok(!script.includes('.innerHTML'));
+assert.ok(!script.includes('insertAdjacentHTML'));
+assert.match(script, /fetch\('\/api\/news\/latest'/);
+console.log('news frontend safety and timestamp checks PASS');

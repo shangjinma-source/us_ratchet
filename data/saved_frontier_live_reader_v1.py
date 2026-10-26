@@ -26,6 +26,26 @@ from data.strategy_daily_rebound_archive import archive_rebound_evidence
 POLICY_ID = 'SAVED_FRONTIER_CAP50_EXIT20_V1'
 
 
+def capture_namespace(root, *, started, session):
+    """Bound captures to one immutable slot per 15 minutes of this session.
+
+    The original request/binding and downstream capture ID remain unchanged.
+    No failed slot is deleted or automatically retried; the next slot is a new
+    observation with its own real transport timestamps, never a re-dated raw.
+    """
+    opened, closed = stamp(session['open']), stamp(session['close'])
+    current = stamp(started)
+    require(opened <= current < closed and
+            0 < (closed-opened).total_seconds() <= 8*3600,
+            'FRONTIER_CAPTURE_SLOT_SESSION')
+    require(current.astimezone(ZoneInfo('America/New_York')).date().isoformat()
+            == session['date'], 'FRONTIER_CAPTURE_SLOT_DATE')
+    slot = int((current-opened).total_seconds() // 900)
+    directory = Path(root)/'refresh-v1'/session['date']/f'{slot:02d}'
+    reject_links(directory)
+    return directory
+
+
 class SavedFrontierLiveReader:
     def __init__(self, *, root, monthly_view, risk_store, source_configuration,
                  source_pins, capture_root, archive_root, release_bytes, clock,
@@ -99,7 +119,9 @@ class SavedFrontierLiveReader:
             return deepcopy(prepared['binding'])
 
         reject_links(self.capture_root)
-        capture = capture_supplement(directory=self.capture_root, request=prepared['request'],
+        unchanged()
+        directory = capture_namespace(self.capture_root, started=self.clock(), session=session)
+        capture = capture_supplement(directory=directory, request=prepared['request'],
             binding=prepared['binding'], read_binding=read_binding, execute=True, clock=self.clock,
             fetch_daily=self.fetch_daily, fetch_official=self.fetch_official)
         unchanged()

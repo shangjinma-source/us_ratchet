@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ratchet · 新闻分析</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#1a1a2e;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.container{max-width:1100px;margin:auto;padding:24px 16px}header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}h1{font-size:22px;margin:0}h1 small{font-size:13px;font-weight:400;color:#64748b;margin-left:12px}nav{display:flex;gap:10px;align-items:center}a{color:#176b63;text-underline-offset:3px}button{font:inherit;padding:8px 16px;border:1px solid #cbd5e1;border-radius:7px;background:white;color:#243547;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.scope{padding:14px 18px;background:#eaf3f1;border-left:3px solid #287b70;border-radius:6px;margin:22px 0 16px}.muted{color:#64748b}.status{margin:12px 0;overflow-wrap:anywhere}.empty{padding:48px 24px;text-align:center;background:white;border:1px solid #e2e8f0;border-radius:10px}.empty h2{font-size:17px}.events{display:grid;gap:16px}.event{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:22px;min-width:0}.event h2{font-size:18px;margin:8px 0 12px;overflow-wrap:anywhere}.tags{display:flex;gap:8px;flex-wrap:wrap}.tag{font-size:12px;border-radius:4px;background:#f1f5f9;color:#475569;padding:3px 8px}.tag.accent{background:#e8f3ef;color:#176b63}.event p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}.metadata{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:12px;color:#64748b}.section-title{font-weight:600;font-size:13px;margin-top:17px}ul{padding-left:20px;margin:6px 0}li{overflow-wrap:anywhere;white-space:pre-wrap}details{margin-top:16px;border-top:1px solid #edf0f3;padding-top:12px}summary{cursor:pointer;color:#47675f}.error{color:#9c3838}footer{margin:24px 0;color:#64748b;font-size:12px}[hidden]{display:none!important}@media(max-width:600px){.container{padding:16px 12px}.event{padding:16px}h1 small{display:block;margin:2px 0}.metadata{display:grid;gap:4px}}
+</style>
+<script src="/news.js" defer></script>
+</head>
+<body><main class="container">
+<header><h1>新闻分析<small>Ratchet · 可追溯的事件观察</small></h1><nav><a href="/">返回策略工具</a><button id="refresh" type="button">读取最新结果</button><button id="analyze" type="button">采集并分析一次</button></nav></header>
+<div class="scope"><strong>新闻辅助分析</strong> · 当前未影响策略买卖。“读取最新结果”仅读取缓存；“采集并分析一次”使用固定预算调用模型。</div>
+<p id="job-status" class="status muted" role="status" aria-live="polite"></p>
+<p id="status" class="status muted" role="status" aria-live="polite">正在读取新闻结果…</p>
+<div id="overview" class="metadata"></div>
+<div id="warnings" class="muted"></div>
+<section id="empty" class="empty" hidden><h2 id="empty-title">暂无新闻结果</h2><p id="empty-message" class="muted">尚未采集或分析，等待后端生成可核验的结果。</p></section>
+<section id="events" class="events" aria-label="新闻事件"></section>
+<footer>发布时间与采集时间分别展示；未分析、来源缺失和不确定判断均保留原状态。</footer>
+</main></body>
+</html>

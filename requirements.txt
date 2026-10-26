@@ -9,3 +9,5 @@ lxml>=5.0
 fastapi>=0.110
 uvicorn>=0.27
 yfinance>=0.2.40
+jsonschema>=4
+psutil>=5.9
