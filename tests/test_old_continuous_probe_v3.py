@@ -11,6 +11,11 @@ class PeriodAdmissionTests(unittest.TestCase):
     def test_exact_period_clears_only_missing(self):
         self.assertTrue(admit_period_absence(self.gate,self.review)['admitted'])
 
+    def test_wider_review_period_is_reusable(self):
+        self.row['start_exclusive']='2023-12-29'
+        self.row['end_inclusive']='2026-07-30'
+        self.assertTrue(admit_period_absence(self.gate,self.review)['admitted'])
+
     def test_short_coverage_rejected(self):
         self.row['end_inclusive']='2024-06-27'
         self.assertFalse(admit_period_absence(self.gate,self.review)['admitted'])
