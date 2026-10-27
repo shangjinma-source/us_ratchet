@@ -17,6 +17,24 @@ def event(identity='cut', kind='CUT', available='2026-01-30T21:00:01Z', key='sam
 
 
 class GuidanceOverlayTests(unittest.TestCase):
+    def test_buy_block_preserves_positions_and_original_sells(self):
+        for held, original, expected in [(10, 15, 10), (10, 5, 5), (10, 0, 0), (0, 5, 0)]:
+            adapter = GuidanceNewsRiskAdapter(BaseRisk(), events=[event(available='2026-01-29T21:00:00Z')],
+                session_closes={'2026-01-30': '2026-01-30T21:00:00Z'}, action_policy='BLOCK_NEW_BUYS')
+            result, audit = adapter.apply(day='2026-01-30', month='2026-01',
+                target={'A': original, 'B': 2}, closes={'A': '100', 'B': '50'}, shares={'A': held})
+            self.assertEqual(result, {'A': expected, 'B': 2})
+            self.assertEqual(audit['guidance_news']['action_policy'], 'BLOCK_NEW_BUYS')
+
+    def test_buy_block_rejects_missing_holdings_before_consuming_event(self):
+        adapter = GuidanceNewsRiskAdapter(BaseRisk(), events=[event(available='2026-01-29T21:00:00Z')],
+            session_closes={'2026-01-30': '2026-01-30T21:00:00Z'}, action_policy='BLOCK_NEW_BUYS')
+        for shares in (None, {'A': -1}, {'A': True}, {'A': 1.5}):
+            with self.assertRaisesRegex(ValueError, 'CURRENT_NONNEGATIVE_INTEGER_SHARES_REQUIRED'):
+                adapter.apply(day='2026-01-30', month='2026-01', target={'A': 3}, closes={'A': '100'}, shares=shares)
+            self.assertEqual(adapter.position, 0)
+            self.assertIsNone(adapter.last_day)
+
     def adapter(self, events):
         return GuidanceNewsRiskAdapter(BaseRisk(), events=events, session_closes={
             '2026-01-30': '2026-01-30T21:00:00Z',

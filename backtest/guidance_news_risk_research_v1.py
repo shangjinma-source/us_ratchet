@@ -19,7 +19,10 @@ def timestamp(value):
 
 
 class GuidanceNewsRiskAdapter:
-    def __init__(self, base, *, events, session_closes):
+    def __init__(self, base, *, events, session_closes, action_policy='EXIT'):
+        if action_policy not in {'EXIT', 'BLOCK_NEW_BUYS'}:
+            raise ValueError('UNSUPPORTED_NEWS_ACTION_POLICY')
+        self.action_policy = action_policy
         self.base = base
         self.closes = {day: timestamp(value) for day, value in session_closes.items()}
         days = sorted(self.closes)
@@ -61,9 +64,15 @@ class GuidanceNewsRiskAdapter:
     def state(self):
         return self.base.state
 
-    def apply(self, *, day, month, target, closes, adjustments=()):
+    def apply(self, *, day, month, target, closes, adjustments=(), shares=None):
         if day not in self.closes or (self.last_day is not None and day <= self.last_day):
             raise ValueError('ADVANCING_REVIEWED_SESSION_REQUIRED')
+        # Validate before advancing either the original risk state or news cursor.
+        if self.action_policy == 'BLOCK_NEW_BUYS' and (
+                not isinstance(shares, dict) or any(
+                    not isinstance(sid, str) or type(quantity) is not int or quantity < 0
+                    for sid, quantity in shares.items())):
+            raise ValueError('CURRENT_NONNEGATIVE_INTEGER_SHARES_REQUIRED')
         # Preserve original risk coordinates and exit state before applying news.
         effective, diagnostics = self.base.apply(day=day, month=month, target=target,
                                                 closes=closes, adjustments=adjustments)
@@ -83,9 +92,14 @@ class GuidanceNewsRiskAdapter:
         for key in expired:
             del self.locks[key]
         blocked = {key[0] for key in self.locks}
-        result = {sid: 0 if sid in blocked else quantity for sid, quantity in effective.items()}
+        result = {
+            sid: (min(quantity, shares.get(sid, 0))
+                  if self.action_policy == 'BLOCK_NEW_BUYS' else 0)
+            if sid in blocked else quantity
+            for sid, quantity in effective.items()}
         diagnostics = deepcopy(diagnostics)
         diagnostics['guidance_news'] = dict(policy='GUIDANCE_TRADE_EXPERIMENT_V1',
+            action_policy=self.action_policy,
             consumed_event_ids=consumed, blocked_security_ids=sorted(blocked),
             active_event_ids=sorted(event['id'] for event in self.locks.values()),
             expired_comparison_keys=[list(key) for key in sorted(expired)],

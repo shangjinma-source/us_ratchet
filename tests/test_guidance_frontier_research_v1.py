@@ -11,10 +11,10 @@ from backtest.guidance_cash_independent_review_v1 import review_news_cash
 
 
 class GuidanceFrontierTests(unittest.TestCase):
-    def run_book(self, module, news_events=()):
+    def run_book(self, module, news_events=(), action_policy='EXIT'):
         assembled, bars, dividend = fixtures.FrontierWiringTests().fixture()
         base = MonthlyExitCoreResearchAdapter()
-        risk = GuidanceNewsRiskAdapter(base, events=news_events, session_closes={day: day+'T21:00:00Z' for day in assembled['session_dates']}) if module is candidate else base
+        risk = GuidanceNewsRiskAdapter(base, events=news_events, session_closes={day: day+'T21:00:00Z' for day in assembled['session_dates']}, action_policy=action_policy) if module is candidate else base
         def select(**kwargs):
             account = kwargs['account_state']
             equity = Fraction(account['cash']) + account['shares'].get('A', 0)*10
@@ -33,6 +33,24 @@ class GuidanceFrontierTests(unittest.TestCase):
         rows = [{key: value for key, value in row.items() if not key.startswith('news_')} for row in new['daily_ledger']]
         self.assertEqual(rows, old['daily_ledger'])
         self.assertEqual(review_news_cash(new)['status'], 'CASH_ATTRIBUTION_REVIEW_PASS')
+
+    def test_buy_block_no_news_matches_original_financial_path(self):
+        old = self.run_book(baseline)
+        new = self.run_book(candidate, action_policy='BLOCK_NEW_BUYS')
+        self.assertEqual(new['status'], 'COMPLETE')
+        for field in ('cash', 'shares', 'fees', 'total_return', 'selection_account_states', 'drawdown', 'dividend_ledger'):
+            self.assertEqual(new[field], old[field], field)
+
+    def test_buy_block_does_not_create_news_sale_or_sale_cash(self):
+        event = dict(id='cut', classification='CUT', security_id='A', comparison_key='FY2020-revenue',
+                     available_at='2020-01-31T20:00:00Z', period_end='2020-12-31',
+                     source_hashes=['synthetic'], review_reference='synthetic')
+        result = self.run_book(candidate, [event], action_policy='BLOCK_NEW_BUYS')
+        self.assertEqual(result['status'], 'COMPLETE')
+        self.assertEqual(review_news_cash(result)['reservations'], 0)
+        self.assertFalse(any(row['event'] == 'NEWS_NET_PROCEEDS_RESERVED' for row in result['order_log']))
+        self.assertTrue(any(row.get('risk_overlay', {}).get('guidance_news', {}).get('blocked_security_ids')
+                            for row in result['provider_audit'] if row.get('risk_overlay')))
 
     def test_news_exit_reaches_fill_and_next_selection_real_state(self):
         event = dict(id='cut', classification='CUT', security_id='A', comparison_key='FY2020-revenue',

@@ -90,6 +90,7 @@ def run_frontier_capped_next_open(*, assembled, ohlc, initial_cash, fee_bps,
                             events=assembled['distribution_events'])
                         target, diagnostics = risk.apply(
                             day=day, month=max(plan['decision_date'] for plan in assembled['monthly_inputs'] if plan['decision_date'] <= day), target=ceiling,
+                            shares=arguments['state']['shares'],
                             closes={s: assembled['close_prices'][s][day] for s in ceiling},
                             adjustments=result.get('target_adjustments', ()))
                         result.update(monthly_ceiling=ceiling, target_shares=target,
@@ -102,6 +103,7 @@ def run_frontier_capped_next_open(*, assembled, ohlc, initial_cash, fee_bps,
                     if risk is not None:
                         target, diagnostics = risk.apply(
                             day=day, month=result['target_decision_date'], target=deepcopy(ceiling),
+                            shares=arguments['state']['shares'],
                             closes={s: assembled['close_prices'][s][day] for s in ceiling},
                             adjustments=result.get('target_adjustments', ()))
                         if set(target) != set(ceiling) or any(
