@@ -1,0 +1,89 @@
+import unittest
+from backtest.guidance_news_risk_research_v1 import GuidanceNewsRiskAdapter
+
+
+class BaseRisk:
+    state = {'decision_date': '2026-01-30', 'peaks': {}}
+    exited = False
+
+    def apply(self, **kwargs):
+        return ({key: 0 if self.exited else value for key, value in kwargs['target'].items()}, {'base_preserved': True})
+
+
+def event(identity='cut', kind='CUT', available='2026-01-30T21:00:01Z', key='same-fiscal-period'):
+    return dict(id=identity, classification=kind, available_at=available,
+                comparison_key=key, period_end='2026-02-02', security_id='A',
+                review_reference='synthetic-only', source_hashes=['synthetic-source'])
+
+
+class GuidanceOverlayTests(unittest.TestCase):
+    def adapter(self, events):
+        return GuidanceNewsRiskAdapter(BaseRisk(), events=events, session_closes={
+            '2026-01-30': '2026-01-30T21:00:00Z',
+            '2026-02-02': '2026-02-02T21:00:00Z',
+            '2026-02-03': '2026-02-03T21:00:00Z'})
+
+    def apply(self, adapter, day):
+        return adapter.apply(day=day, month=day[:7], target={'A': 3, 'B': 2}, closes={'A': '100', 'B': '50'})
+
+    def test_after_close_is_not_backdated_and_lock_crosses_month(self):
+        adapter = self.adapter([event()])
+        self.assertEqual(self.apply(adapter, '2026-01-30')[0]['A'], 3)
+        result, audit = self.apply(adapter, '2026-02-02')
+        self.assertEqual(result, {'A': 0, 'B': 2})
+        self.assertTrue(audit['base_preserved'])
+        self.assertFalse(audit['guidance_news']['order_execution_confirmed'])
+        self.assertEqual(self.apply(adapter, '2026-02-03')[0]['A'], 3)
+
+    def test_equal_cutoff_waits_and_preexisting_cut_applies(self):
+        adapter = self.adapter([event(available='2026-01-30T21:00:00Z')])
+        self.assertEqual(self.apply(adapter, '2026-01-30')[0]['A'], 3)
+        adapter = self.adapter([event(available='2026-01-29T21:00:00Z')])
+        self.assertEqual(self.apply(adapter, '2026-01-30')[0]['A'], 0)
+
+    def test_release_never_clears_original_exit(self):
+        adapter = self.adapter([event(available='2026-01-29T21:00:00Z'),
+            event('release', 'UNCHANGED', '2026-02-02T15:00:00Z')])
+        self.apply(adapter, '2026-01-30')
+        adapter.base.exited = True
+        result, audit = self.apply(adapter, '2026-02-02')
+        self.assertEqual(result['A'], 0)
+        self.assertEqual(audit['guidance_news']['blocked_security_ids'], [])
+
+    def test_unknown_or_other_period_cannot_release(self):
+        for replacement in [event('unknown', 'UNKNOWN', '2026-02-02T15:00:00Z'),
+                            event('other', 'RAISE', '2026-02-02T15:00:00Z', 'other-period')]:
+            adapter = self.adapter([event(), replacement])
+            self.assertEqual(self.apply(adapter, '2026-02-02')[0]['A'], 0)
+
+    def test_ambiguous_events_and_naive_time_rejected(self):
+        for events in [[event(), event()], [event(), event('duplicate-time')],
+                       [event(available='2026-01-30T21:00:00')]]:
+            with self.assertRaises(ValueError):
+                self.adapter(events)
+
+    def test_repeated_day_cannot_consume_again(self):
+        adapter = self.adapter([event()])
+        self.apply(adapter, '2026-02-02')
+        with self.assertRaises(ValueError):
+            self.apply(adapter, '2026-02-02')
+
+    def test_conflicting_period_end_and_untyped_identity_rejected(self):
+        other = event('later', 'RAISE', '2026-02-02T15:00:00Z')
+        other['period_end'] = '2026-03-31'
+        malformed = event()
+        malformed['security_id'] = ['A']
+        for events in ([event(), other], [malformed], ['not-an-event']):
+            with self.assertRaises(ValueError):
+                self.adapter(events)
+
+    def test_real_monthly_exit_survives_news_release_and_price_recovery(self):
+        from backtest.monthly_exit_core_research_adapter import MonthlyExitCoreResearchAdapter
+        adapter = self.adapter([event(available='2026-01-29T21:00:00Z'),
+            event('release', 'RAISE', '2026-02-02T15:00:00Z')])
+        adapter.base = MonthlyExitCoreResearchAdapter()
+        for day, price in [('2026-01-30', '100'), ('2026-02-02', '79'), ('2026-02-03', '100')]:
+            result, audit = adapter.apply(day=day, month='2026-01-30', target={'A': 3}, closes={'A': price})
+            self.assertEqual(result['A'], 0)
+        self.assertEqual(adapter.state['exited'], ['A'])
+        self.assertEqual(audit['guidance_news']['blocked_security_ids'], [])
