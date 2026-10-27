@@ -377,7 +377,7 @@ def run_next_open_book(*, session_dates, orders=None, ohlc, initial_cash,
             if fraction and fee_rate > 1:
                 return finish('BLOCKED', 'NEGATIVE_NEWS_NET_PROCEEDS')
         if pending_news_epoch != news_epoch:
-            logs.append(dict(date=previous, event='NEWS_CASH_RELEASED', amount=str(news_reserved), allocation_epoch=pending_news_epoch))
+            logs.append(dict(date=previous, active_date=day, event='NEWS_CASH_RELEASED', amount=str(news_reserved), allocation_epoch=pending_news_epoch))
             news_reserved, news_epoch = Fraction(0), pending_news_epoch
         for order in sell_orders:
             sid, q = order['security_id'], order['quantity']

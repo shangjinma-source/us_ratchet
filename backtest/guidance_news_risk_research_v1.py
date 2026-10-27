@@ -25,7 +25,7 @@ class GuidanceNewsRiskAdapter:
         days = sorted(self.closes)
         if not days or any(self.closes[a] >= self.closes[b] for a, b in zip(days, days[1:])):
             raise ValueError('ORDERED_SESSION_CLOSES_REQUIRED')
-        self.events = deepcopy(events)
+        self.events = deepcopy(list(events))
         identities, simultaneous, period_bindings = set(), set(), {}
         for event in self.events:
             if not isinstance(event, dict) or any(not isinstance(event.get(name), str) or not event[name]
