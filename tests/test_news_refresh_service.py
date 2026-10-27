@@ -19,7 +19,7 @@ class RefreshTests(unittest.TestCase):
             self.assertTrue(entered.wait(1))
             self.assertEqual(service.start()[0], 409)
             restored = NewsRefreshService(folder, runner=lambda: self.fail('must not run'))
-            self.assertEqual(restored.start()[0], 429)
+            self.assertEqual(restored.start()[0], 409)
             finish.set()
             service.worker.join(2)
             self.assertEqual(service.status()['status'], 'SUCCEEDED')

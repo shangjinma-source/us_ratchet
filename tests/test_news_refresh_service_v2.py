@@ -1,5 +1,4 @@
 from contextlib import closing
-import importlib.util
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,9 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location('news_refresh_candidate', Path(__file__).resolve().parents[1]/'docs/candidates/news_refresh_service.py')
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+from data import news_refresh_service as module
 Service = module.NewsRefreshService
 
 

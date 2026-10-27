@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  const statusNames = { pending: '待分析', unanalyzed: '未分析', not_analyzed: '未分析', completed: '已分析', analyzed: '已分析', cached: '已分析（缓存）', failed: '分析失败', skipped: '未分析', unavailable: '不可用', ready: '结果可用', empty: '暂无结果' };
+  const statusNames = { pending: '待分析', unanalyzed: '未分析', not_analyzed: '未分析', completed: '已分析', analyzed: '已分析', cached: '已分析（缓存）', failed: '分析失败', skipped: '未分析', unavailable: '不可用', ready: '结果可用', empty: '暂无结果', skipped_metadata_only: '仅申报信息，未分析', skipped_insufficient_text: '内容不足，未分析' };
   function text(value, fallback = '未提供') {
     if (typeof value === 'string' || typeof value === 'number') return String(value) || fallback;
     return fallback;
@@ -53,7 +53,7 @@
     list(card, '不确定性', event.uncertainty, '尚未提供不确定性评估。');
     if (['analyzed', 'cached', 'completed'].includes(state.toLowerCase())) {
       card.append(element('div', '影响机制', 'section-title'), element('p', text(event.mechanism, '尚未提供作用机制。')));
-      const importanceNames = { high: '高', medium: '中', low: '低', unknown: '未判断' };
+      const importanceNames = { high: '高', medium: '中', low: '低', unknown: '未判断', unclear: '未判断' };
       const info = element('div', undefined, 'metadata');
       const importance = text(event.importance, '未判断');
       info.append(element('span', '重要性：' + (importanceNames[importance.toLowerCase()] || importance)), element('span', '持续时间：' + text(event.horizon, '尚未判断')));
@@ -100,7 +100,7 @@
     } finally { clearTimeout(timeout); button.disabled = false; }
   }
   function jobLabel(status) {
-    return { IDLE: '暂无分析任务', RUNNING: '正在采集并分析，当前保留已有新闻。', SUCCEEDED: '任务完成，正在读取结果；各条分析状态以结果为准。', FAILED: '本次任务失败，已保留原有新闻。' }[status] || '任务状态未知';
+    return { IDLE: '暂无分析任务', RUNNING: '正在采集并分析，当前保留已有新闻。', SUCCEEDED: '采集分析已完成；各条分析状态以结果为准。', FAILED: '本次任务失败，已保留原有新闻。' }[status] || '任务状态未知';
   }
   async function startAnalysis() {
     const button = document.getElementById('analyze'), status = document.getElementById('job-status');

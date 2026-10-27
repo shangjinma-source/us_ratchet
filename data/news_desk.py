@@ -13,6 +13,7 @@ import time
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import requests
+from data.news_issuer_source import capture as capture_issuer
 
 MODEL='gpt-6.1-sol'
 PROMPT_VERSION='news-evidence-v1'
@@ -65,6 +66,20 @@ def parse_sec(raw,source,fetched):
     return events
 
 
+def normalized(value):
+    return re.sub(r'\s+',' ',unescape(re.sub(r'<[^>]+>',' ',value or ''))).strip().casefold()
+
+def analysis_skip_reason(event):
+    if event.get('content_kind')=='SEC_METADATA_ONLY' or event.get('source','').startswith('SEC '):
+        return 'SKIPPED_METADATA_ONLY'
+    body=normalized(event.get('source_text'));title=normalized(event.get('title'))
+    if len(body)<80 or body==title:
+        return 'SKIPPED_INSUFFICIENT_TEXT'
+    if event.get('noise_hint')=='LOW_INFORMATION_EMPLOYER_AWARD':
+        return 'SKIPPED_LOW_INFORMATION'
+    return None
+
+
 def collect(cache,*,limit=20,max_age_days=90):
     if not 1<=limit<=40 or not 1<=max_age_days<=365:raise ValueError('BOUNDED_COLLECTION_REQUIRED')
     cache=Path(cache);(cache/'raw').mkdir(parents=True,exist_ok=True)
@@ -87,18 +102,22 @@ def collect(cache,*,limit=20,max_age_days=90):
                 if stamp and (stamp>now or (now-stamp).days>max_age_days):continue
                 events.append(event)
         except Exception as error:errors.append(dict(source=source['name'],url=source['url'],error_type=type(error).__name__,message=str(error)[:180]))
+    issuer=capture_issuer(cache)
+    events.extend(issuer['events']);receipts.extend(issuer['receipts']);errors.extend(issuer['errors'])
     unique={}
     for event in events:unique.setdefault(event['id'],event)
     ordered=sorted(unique.values(),key=lambda e:e['published_at'] or '',reverse=True)
-    priority=[next((event for event in ordered if ticker in event['tickers']),None) for ticker in ('MRNA','SNDK')]
+    priority=[next((event for event in ordered if 'MRNA' in event['tickers'] and event.get('content_kind')=='ISSUER_RELEASE_BODY'),None),next((event for event in ordered if 'SNDK' in event['tickers']),None)]
     selected=[event for event in priority if event]
     for source in SOURCES:
         representative=next((event for event in ordered if event['source']==source['name']),None)
         if representative and representative not in selected:selected.append(representative)
-    selected=(selected+[event for event in ordered if event not in selected])[:limit]
+    issuer_representative=next((event for event in ordered if event.get('content_kind')=='ISSUER_RELEASE_BODY'),None)
+    if issuer_representative and issuer_representative not in selected:selected.append(issuer_representative)
+    selected=(selected+[event for event in ordered if event not in selected])[:min(limit,20)]
     return dict(schema_version='news-desk-v1',mode='RESEARCH_ONLY_NO_TRADING',status='READY' if selected else 'NO_RECENT_DATA',generated_at=utc_now(),model=None,
-        events=selected,fetch_errors=errors,source_receipts=receipts,source_coverage=[dict(source=source['name'],tickers=source['tickers'],displayed=sum(event['source']==source['name'] for event in selected)) for source in SOURCES],analysis_summary=dict(status='NOT_REQUESTED',model=None,attempts=0,usage=None),
-        limitations=['官方RSS覆盖有限，不等于全市场新闻。','新闻解释尚未证明交易增量，当前不改变股票权重或买卖建议。','发布时间来自来源；采集时间是本机实际取得时间。'])
+        events=selected,fetch_errors=errors,source_receipts=receipts,source_coverage=[dict(source=source['name'],tickers=source['tickers'],displayed=sum(event['source']==source['name'] for event in selected)) for source in SOURCES]+[dict(source='Moderna 公司发布（ACCESS Newswire / QuoteMedia）',tickers=['MRNA'],displayed=sum(event.get('content_kind')=='ISSUER_RELEASE_BODY' for event in selected))],analysis_summary=dict(status='NOT_REQUESTED',model=None,attempts=0,usage=None),
+        limitations=['官方RSS、SEC元数据和Moderna公司发布覆盖有限，不等于全部持仓或全市场新闻。','新闻解释尚未证明交易增量，当前不改变股票权重或买卖建议。','发布时间来自来源；采集时间是本机实际取得时间。'])
 
 
 def output_schema():
@@ -126,13 +145,12 @@ def analyze(snapshot,cache,*,limit=4,timeout=120):
     cache=Path(cache);(cache/'analysis').mkdir(parents=True,exist_ok=True)
     eligible=[]
     for event in snapshot['events']:
-        if event.get('content_kind')=='SEC_METADATA_ONLY' or event['source'].startswith('SEC '):
-            event.update(analysis_status='SKIPPED_METADATA_ONLY',model=None,summary=event.get('source_text',''))
-            continue
-        if len(event.get('source_text','').strip())<80:
-            event.update(analysis_status='SKIPPED_INSUFFICIENT_TEXT',model=None)
+        reason=analysis_skip_reason(event)
+        if reason:
+            event.update(analysis_status=reason,model=None,summary=event.get('source_text','')[:1200])
             continue
         eligible.append(event)
+    eligible.sort(key=lambda event: (0 if event.get('content_kind')=='ISSUER_RELEASE_BODY' and 'MRNA' in event['tickers'] else 1 if event.get('relevance')=='macro' else 2))
     batch=eligible[:limit]
     if not batch:
         snapshot['analysis_summary']=dict(status='NO_ANALYZABLE_CONTENT',model=MODEL,attempts=0,usage=None)

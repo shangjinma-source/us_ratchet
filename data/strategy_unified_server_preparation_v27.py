@@ -24,7 +24,7 @@ SOURCES = {'data/saved_frontier_source_review_v1.py', 'data/strategy_unified_ser
 
 SOURCES |= {'web/strategy_target_recovery_v1.js', 'api/news_desk_v1.py',
             'web/news.html', 'web/news.js', 'data/news_refresh_service.py',
-            'data/news_desk.py'}
+            'data/news_desk.py', 'data/news_issuer_source.py'}
 SOURCES |= FIRST_WINDOW_SOURCES | {'data/saved_frontier_rolling_admission_v1.py'}
 SOURCES |= {
     'data/saved_frontier_current_migration_v1.py',
