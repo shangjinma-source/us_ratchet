@@ -39,8 +39,9 @@ function mount(container,dependencies){
  let controller,newsState=null;const openedNews=new Set();
  const newsApi=typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview;
  const newsCell=(cell,sid)=>newsApi.renderImpactCell(cell,sid,newsState,openedNews,now());
- let syncingReview=false;
+ let syncingReview=false,capitalLocked=false;
  const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer,compact:true,onReviewChange:next=>{newsState=next;if(controller)ui.render(summary,controller.getState(),now(),newsCell);},onComplete:proposal=>{
+  if(capitalLocked)throw Error('CAPITAL_UPDATE_IN_PROGRESS');
   if(!proposal.original_preview)throw Error('REVIEW_PREVIEW_MISSING');
   syncingReview=true;
   try{const next=controller.adoptReviewedPreview(proposal);return {account:next.account,target:next.target,daily:next.daily};}
@@ -48,7 +49,7 @@ function mount(container,dependencies){
  }});
  let disposed=false,chartKey=null,accountKey=null,lastWork=Promise.resolve();
  let wasBusy=false,running=false;
- let expiryTimer=null,cashEdited=false,capitalLocked=false;
+ let expiryTimer=null,cashEdited=false;
  const edited=()=>{cashEdited=true;};
  input.addEventListener('input',edited);
  const safe=fn=>{try{fn();}catch(error){onError(error);}};
@@ -63,7 +64,7 @@ function mount(container,dependencies){
    if(!cashEdited&&value!==null)input.value=value;
   }
   save.disabled=state.busy||capitalLocked;input.disabled=state.busy||capitalLocked;
-  if(!syncingReview)newsReview.update({account:state.account,target:state.target,daily:state.daily});
+  if(!syncingReview)newsReview.update({account:state.account,target:state.target,daily:capitalLocked?null:state.daily});
   const displayed=ui.render(summary,state,now(),newsCell);
   const chartTarget=state.target?structuredClone(state.target):null;
   if(chartTarget){
