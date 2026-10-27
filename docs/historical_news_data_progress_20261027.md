@@ -1,5 +1,32 @@
 # 历史新闻接入：数据整备进展
 
+## 后续批量整备（同日更新）
+
+已新增全价格域离线构建器及非日历直接季度提取 V2。V1 保留为早期日历季度政策，不能把两版覆盖混报。V2 只接受同一申报内唯一的 70—105 天直接季度、同比期末间隔 350—380 天且长度差不超过 7 天；不从累计数或年度数推算季度，也不合并不同收入概念。
+
+| 窗口 | 全价格域证券 | 有事实候选证券 | 去重候选申报 | 指标事实候选 |
+|---|---:|---:|---:|---:|
+| 2021—2023 | 122 | 85 | 716 | 1391 |
+| 2024—2026/7/30 | 127 | 99 | 684 | 1366 |
+
+清单为 `tmp/historical_news_coverage_20261027/sec_event_inventory_fiscal_identity_v5.json`，绑定 330 个来源文件哈希；同 CIK 的不同证券 ID 不重复累计事实。候选不是原文已核验事件，不是交易信号，不代表全季度完整覆盖。所有缺失与冲突均保留，不能视为“无负面新闻”。
+
+补取 10 份 SEC 数据文件，包含 SMCI 申报、SNDK 财务数据、META 历史归档及早窗七股申报；原有财务缓存继续复用。早窗 18 个实际持仓/成交证券均找到历史身份映射候选，其中 ENPH、FTNT、LCID 又取得首暴露前的原始财报封面，CIK/代码/类别/接受时间核验通过。这是具体时点的身份依据，不是全生命周期 PIT 认证。
+
+独立代码审查后，原文数字复核增加官方 URL 中发行人 CIK/申报编号与原文 hash 收据绑定、context 实体 CIK、重复 context/unit 拒绝、不支持转换阻断匹配；历史无 CIK 归档必须父文件列表与官方 URL/hash 绑定。修复后原两份财报 18 项选定数字仍匹配。相关四套测试共 21 项通过。
+
+实际发现 SNDK 同一申报接受时间在两份缓存中相差五小时，批量提取器已按冲突拒绝，未默默采用较新值。这说明时间证据不能只检查字段非空。进一步核验收据单独保留，未修改旧缓存或生产建议。
+
+对此仅追加三次官方请求：当前 submissions 与 SGML 头的纽约时间相互一致；旧响应 hash 与旧 manifest 一致，但未查明差异形成于官方版本还是旧采集阶段。index 请求 403 后未重试。证据在 `tmp/sndk_acceptance_conflict_20261027/`，提取器仍拒绝冲突，不将研究推断悄悄写回原数据。
+
+已对三类人类研究机制做有限筛选，见 `docs/candidates/news_mechanism_screen_20261027.md`。优先待评估的双重负面业绩意外需要公告前同口径预期及首次公开时间；现有季度同比数据不能冒充这些输入。仍未启动新闻经济回测，也没有将研究接入交易。
+
+批量清单可重跑：
+
+```powershell
+D:/python/python.exe -B scripts/build_historical_sec_event_inventory_v1.py --coverage tmp/historical_news_coverage_20261027/coverage.json --supplements tmp/historical_sec_gap_fetch_20261027/receipts.json --supplements tmp/historical_sec_gap_fetch_20261027/held_identity_receipts.json --identity-candidates tmp/historical_news_identity_20261027/mapping_candidate.json --fiscal-quarters --output tmp/historical_news_coverage_20261027/sec_event_inventory_fiscal_identity_recheck.json
+```
+
 ## 结论
 
 本轮交付离线财报事实提取、原始申报数字核验和全证券域缓存清点。新闻交易规则与增量经济回测仍未完成，生产策略未改；不能把本报告当作采用新闻交易的依据。

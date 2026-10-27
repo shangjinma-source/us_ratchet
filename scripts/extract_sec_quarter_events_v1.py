@@ -5,6 +5,7 @@ from datetime import date, datetime
 from fractions import Fraction
 from hashlib import sha256
 import json
+import re
 from pathlib import Path
 
 CONCEPTS = ('RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'NetIncomeLoss')
@@ -19,13 +20,30 @@ def timestamp(value):
     return result
 
 
-def extract(companyfacts, submissions, *, concepts=CONCEPTS, unit='USD', cutoff=None):
+def validate_submission_archives(companyfacts, submissions, archive_bindings):
+    cik = str(int(companyfacts['cik'])).zfill(10)
+    names = {item['name'] for doc in submissions if 'cik' in doc and int(doc['cik']) == int(cik)
+             for item in doc.get('filings', {}).get('files', [])}
+    for document in submissions:
+        if 'cik' in document:
+            continue
+        digest = sha256(json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+        matches = [ref for ref in archive_bindings if ref.get('document_sha256') == digest and
+                   re.fullmatch(r'[0-9a-f]{64}', ref.get('source_sha256', '')) and
+                   ref.get('url', '').startswith('https://data.sec.gov/submissions/')]
+        if not any(ref['url'].rsplit('/', 1)[-1] in names and re.fullmatch(
+                r'https://data\.sec\.gov/submissions/CIK'+cik+r'-submissions-\d{3}\.json', ref['url']) for ref in matches):
+            raise ValueError('SUBMISSION_ARCHIVE_BINDING_REQUIRED')
+
+
+def extract(companyfacts, submissions, *, concepts=CONCEPTS, unit='USD', cutoff=None, archive_bindings=()):
     """Strict calendar Q1-Q3 10-Q scope; comparative values from that accession.
 
     A current snapshot's frame/fy never selects a historical value. The optional
     cutoff admits only filings accepted by that instant; unknown acceptance is
     never imputed from filingDate. Quarterly 10-K derivation is out of scope.
     """
+    validate_submission_archives(companyfacts, submissions, archive_bindings)
     rejected, events = [], []
     until = timestamp(cutoff) if cutoff is not None else None
     filings, conflicts = {}, set()
@@ -123,12 +141,23 @@ def main():
     parser.add_argument('--concept', action='append')
     parser.add_argument('--unit', default='USD')
     parser.add_argument('--cutoff')
+    parser.add_argument('--submission-receipts', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     paths = [args.companyfacts, *args.submissions]
     contents = [p.read_bytes() for p in paths]
+    bindings = []
+    if args.submission_receipts:
+        for ref in json.loads(args.submission_receipts.read_bytes()):
+            for raw in contents[1:]:
+                if ref.get('status') == 200 and sha256(raw).hexdigest() == ref.get('sha256'):
+                    document = json.loads(raw)
+                    bindings.append(dict(url=ref['url'], source_sha256=ref['sha256'], document_sha256=sha256(
+                        json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()))
     result = extract(json.loads(contents[0]), [json.loads(b) for b in contents[1:]],
-                     concepts=args.concept or CONCEPTS, unit=args.unit, cutoff=args.cutoff)
+                     concepts=args.concept or CONCEPTS, unit=args.unit, cutoff=args.cutoff, archive_bindings=bindings)
+    if args.submission_receipts:
+        result['submission_receipts_sha256'] = sha256(args.submission_receipts.read_bytes()).hexdigest()
     result['source_hashes'] = {str(p): sha256(raw).hexdigest() for p, raw in zip(paths, contents)}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
