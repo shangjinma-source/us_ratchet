@@ -1,5 +1,17 @@
 # 新闻辅助交易：共同数据缺口与实际工作边界
 
+## 10月27日开源整库替代路径核查（后续新增证据）
+
+为避免逐家公司补原文，核查了公开整库：
+
+- [FNSPID](https://github.com/Zdong104/FNSPID_Financial_News_Dataset)说明覆盖到2023年，不能补后窗2024—2026。其[公开预览](https://huggingface.co/datasets/Zihan1004/FNSPID)有正文为空且时间为00:00的记录，不能将所有行作为精确新闻时刻；未下载整库。
+- [kurry财报电话会集](https://huggingface.co/datasets/kurry/sp500_earnings_transcripts/blob/main/README.md)声明2005—2025（2025不完整），含全文和公司/季度/日期字段；日期示例未含时区。它是电话会资料，不是新闻最早发布时点证据，不能代替公司财报原文或2026覆盖。
+- [earnings-call-data](https://huggingface.co/datasets/RudrakshNanavaty/earnings-call-data/blob/main/README.md)在电话会基础上提供SEC正文与附件文本、来源字段，可能减少重复寻找官方原文的工作。其sentiment_label由后续股价变动生成，必须排除在事件输入之外；XBRL字段也不是独立历史版本认证。此路径是可继续检查的缓存候选，不是已就绪交易数据。
+
+实际只读请求：取得最后一个数据集文件目录、split和1行预览。raw_press_releases.parquet为260,018,620字节，未下载；默认viewer报告183,414行，而作者说明主episodes约33k，不能将viewer行数当独立事件数。首行A公司2006记录电话会正文非空，SEC正文为空、来源NONE。随后一次MRNA/2021筛选最多8行、响应上限2MiB、20秒超时，无重试；请求超时，不能据此断言该公司没有记录。
+
+本地元数据与样例在tmp/news_dataset_feasibility_20261027。未安装第三方项目、未运行其代码、未调用模型、未运行经济回测。当前没有证据支持直接替换现有历史原文；但也不能继续声称只能逐家公司寻找来源。若继续此缓存路径，应先独立读取raw_press_releases的schema和有限行，确认来源可绑定既有accession、范围及时间口径，再决定是否值得筛选整库；不得直接采用事后标签或将原文缺失视为中性。
+
 当前生产新闻只作分析展示，没有经过经济验证的新闻操作规则。三条路线均未达到采用要求：历史双重预期差缺当时预期；全年收入指引覆盖窄且未形成操作样本；同比双下降的实际暴露筛查没有充分触发。停止重复扩展这些规则，不将它们统称为回测否决，也不声称所有免费数据不可用。
 
 ## 本轮新增披露目录盘点
