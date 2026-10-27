@@ -228,8 +228,12 @@ class NewsInvestmentService:
         if row is None:
             return dict(status='FAILED', error='UNKNOWN_JOB')
         job = json.loads(row[0])
-        if job['status'] == 'RUNNING' and (self.clock()-moment(job['started_at'])).total_seconds() > 360:
-            return dict(status='FAILED', job_id=job_id, error='REVIEW_DEADLINE_EXCEEDED')
+        if job['status'] == 'RUNNING':
+            if (self.clock()-moment(job['started_at'])).total_seconds() > 360:
+                return dict(status='FAILED', job_id=job_id, error='REVIEW_DEADLINE_EXCEEDED')
+            # Non-financial progress must not wait for the preview snapshot lock.
+            # Completed proposals still pass every binding/expiry/news check below.
+            return {key: job[key] for key in ('status', 'job_id', 'started_at') if key in job}
         try:
             self.bound_context(job['binding'])
             if job['status'] == 'COMPLETE' and self.clock() >= moment(job['proposal']['review_valid_until']):
