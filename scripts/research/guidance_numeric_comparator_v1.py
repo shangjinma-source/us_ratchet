@@ -4,6 +4,8 @@ Each record requires issuer_cik, metric, currency, unit_scale, basis,
 fiscal_period_start/end, low/high (decimal strings), publication_datetime,
 status='FORWARD_GUIDANCE', source_url/source_sha256, quote_start/end, low_span/high_span.
 Spans are [start,end) character offsets into the exact registered UTF-8 text.
+MIDPOINT_ABSOLUTE_TOLERANCE instead binds midpoint/tolerance spans and their
+reviewed unit scales; declared low/high must equal the exact derived endpoints.
 
 verified_sources maps content SHA256 to {issuer_cik,url,text,publication_datetime}.
 It is an independently reviewed input, NOT a boolean on the extracted record.
@@ -98,12 +100,24 @@ def _validate(record, sources):
         raise ValueError('SOURCE_PUBLICATION_TIME_MISMATCH')
     quote = [record['quote_start'], record['quote_end']]
     _span(text, quote)
-    for label, amount in [('low', low), ('high', high)]:
+    range_type = record.get('range_type', 'EXPLICIT_ENDPOINTS')
+    if range_type not in {'EXPLICIT_ENDPOINTS', 'MIDPOINT_ABSOLUTE_TOLERANCE'}:
+        raise ValueError('UNSUPPORTED_RANGE_TYPE')
+    labels = ('low', 'high') if range_type == 'EXPLICIT_ENDPOINTS' else ('midpoint', 'tolerance')
+    for label in labels:
         span = record[label + '_span']
         _span(text, span)
         if not quote[0] <= span[0] < span[1] <= quote[1]:
             raise ValueError('NUMBER_OUTSIDE_QUOTE')
         validate_numeric_span(text, span, record[label])
+    if range_type == 'MIDPOINT_ABSOLUTE_TOLERANCE':
+        midpoint, tolerance = _number(record['midpoint']), _number(record['tolerance'])
+        tolerance_scale = _number(record['tolerance_unit_scale'])
+        if tolerance < 0 or tolerance_scale <= 0:
+            raise ValueError('INVALID_ABSOLUTE_TOLERANCE')
+        offset = tolerance * tolerance_scale / _number(record['unit_scale'])
+        if (low, high) != (midpoint-offset, midpoint+offset):
+            raise ValueError('DERIVED_ENDPOINT_MISMATCH')
     return published, low, high
 
 

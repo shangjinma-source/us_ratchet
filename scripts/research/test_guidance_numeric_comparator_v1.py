@@ -106,6 +106,24 @@ class GuidanceComparisonTests(unittest.TestCase):
         self.new['quote_end'] = self.new['low_span'][0]
         self.assertEqual(self.compare()['reason'], 'NUMBER_OUTSIDE_QUOTE')
 
+    def test_midpoint_absolute_tolerance_requires_exact_unit_conversion(self):
+        records, registry = [], {}
+        for midpoint, low, high, stamp in [('26.3', '26', '26.6', '2026-02-01T12:00:00Z'),
+                                          ('23.5', '23.2', '23.8', '2026-05-01T12:00:00Z')]:
+            record, _ = fixture(low, high, stamp)
+            text = f'Full year revenue USD {midpoint} billion, plus or minus 300 million.'
+            digest = sha256(text.encode()).hexdigest()
+            record.update(range_type='MIDPOINT_ABSOLUTE_TOLERANCE', midpoint=midpoint, tolerance='300',
+                tolerance_unit_scale='1000000', unit_scale='1000000000',
+                midpoint_span=[text.index(midpoint), text.index(midpoint)+len(midpoint)],
+                tolerance_span=[text.index('300'), text.index('300')+3],
+                source_sha256=digest, quote_start=0, quote_end=len(text))
+            registry[digest] = dict(text=text, url=record['source_url'], issuer_cik='123', publication_datetime=stamp)
+            records.append(record)
+        self.assertEqual(compare_guidance(*records, registry)['status'], 'NUMERIC_GUIDANCE_CUT_CANDIDATE')
+        records[1]['tolerance_unit_scale'] = '1000000000'
+        self.assertEqual(compare_guidance(*records, registry)['reason'], 'DERIVED_ENDPOINT_MISMATCH')
+
 
 if __name__ == '__main__':
     unittest.main()
