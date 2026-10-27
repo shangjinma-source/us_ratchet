@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse
 from data.news_refresh_service import NewsRefreshService
+from data.news_observation_history import read_history
 
 
 def create_router(root, validate=lambda: None):
@@ -68,5 +69,13 @@ def create_router(root, validate=lambda: None):
         except (OSError, ValueError):
             return JSONResponse(dict(status='unavailable', events=[],
                 message='新闻结果暂时无法读取，当前交易策略不受影响。'), status_code=503, headers=headers)
+
+    @router.get('/api/news/history')
+    def history():
+        validate()
+        try:
+            return JSONResponse(read_history(root / 'data/cache/news'), headers=headers)
+        except Exception:
+            return JSONResponse(dict(status='unavailable', message='历史读取失败，不能视作没有历史。'), status_code=503, headers=headers)
 
     return router

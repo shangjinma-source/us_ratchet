@@ -45,8 +45,29 @@
   function relatedTickers(event, holdings) {
     return holdings.known && Array.isArray(event.tickers) ? event.tickers.filter(ticker => holdings.tickers.includes(ticker)) : [];
   }
-  function orderedEvents(events, holdings) {
-    return events.filter(event => event && typeof event === 'object').map((event,index) => ({event,index})).sort((a,b) => Number(relatedTickers(b.event,holdings).length > 0) - Number(relatedTickers(a.event,holdings).length > 0) || a.index-b.index).map(item => item.event);
+  function targetSnapshot(data) {
+    const unknown = {known:false,tickers:[],rows:[]};
+    if (!data || data.status !== 'SAVED_TARGET' || !/^\d{4}-\d{2}$/.test(data.server_month || '') || data.target_month !== data.server_month || !/^[0-9a-f]{64}$/.test(data.target_id || '') || !/^[0-9a-f]{64}$/.test(data.proposal_id || '') || !Array.isArray(data.proposal_targets) || !data.risk_monthly_targets || typeof data.risk_monthly_targets !== 'object' || Array.isArray(data.risk_monthly_targets)) return unknown;
+    const rows = [], seen = new Set();
+    for (const row of data.proposal_targets) {
+      if (!row || typeof row.security_id !== 'string' || !row.security_id || seen.has(row.security_id) || typeof row.ticker !== 'string' || !/^[A-Z0-9][A-Z0-9.-]{0,19}$/.test(row.ticker) || !Number.isSafeInteger(row.quantity) || row.quantity < 0 || !Object.hasOwn(data.risk_monthly_targets,row.security_id) || data.risk_monthly_targets[row.security_id] !== row.quantity) return unknown;
+      seen.add(row.security_id);
+      if (row.quantity > 0) rows.push({ticker:row.ticker,quantity:row.quantity});
+    }
+    if (Object.keys(data.risk_monthly_targets).length !== seen.size) return unknown;
+    return {known:true,tickers:[...new Set(rows.map(row=>row.ticker))],rows,month:data.target_month};
+  }
+  function targetLabel(event, targets) {
+    const matched = relatedTickers(event,targets);
+    return matched.length ? '月目标关注股：' + matched.join('、') + ' · 非当前买入建议' : '';
+  }
+  function targetCoverageLabels(events,targets) {
+    if (!targets.known) return ['当前有效月目标未知。'];
+    if (!targets.rows.length) return ['本月已保存提案无正股数目标。'];
+    return targets.rows.map(row => row.ticker + ' · 目标 ' + row.quantity + ' 股 · ' + (events.some(event=>relatedTickers(event,targets).includes(row.ticker) && hasBody(event)) ? '本批次有正文片段' : '本批次无正文覆盖'));
+  }
+  function orderedEvents(events, holdings, targets = {known:false,tickers:[]}) {
+    return events.filter(event => event && typeof event === 'object').map((event,index) => ({event,index})).sort((a,b) => Number(relatedTickers(b.event,holdings).length > 0) - Number(relatedTickers(a.event,holdings).length > 0) || Number(relatedTickers(b.event,targets).length > 0) - Number(relatedTickers(a.event,targets).length > 0) || a.index-b.index).map(item => item.event);
   }
   function hasBody(event) {
     return event.content_kind === 'ISSUER_RELEASE_BODY' && typeof event.source_text === 'string' && event.source_text.trim().length > 0;
@@ -69,10 +90,11 @@
     if (!holdings.tickers.length && !holdings.unresolved) result.push('工具当前未记录持仓。');
     return result;
   }
-  function renderEvent(event, requestedModel, holdings) {
+  function renderEvent(event, requestedModel, holdings, targets) {
     const card = element('article', undefined, 'event');
     const tags = element('div', undefined, 'tags');
     tags.append(element('span', relationLabel(event, holdings), 'tag'));
+    const targetTag = targetLabel(event,targets); if (targetTag) tags.append(element('span',targetTag,'tag'));
     const state = text(event.analysis_status, '未分析');
     tags.append(element('span', statusNames[state.toLowerCase()] || state, 'tag accent'));
     const tickers = Array.isArray(event.tickers) ? event.tickers : [];
@@ -106,17 +128,21 @@
     button.disabled = true; status.className = 'status muted'; status.textContent = '正在读取已保存结果…';
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const [response, holdings] = await Promise.all([
+      const [response, holdings, targets] = await Promise.all([
         fetch('/api/news/latest', { method: 'GET', credentials:'same-origin', cache: 'no-store', signal: controller.signal }),
         fetch('/api/strategy-account', { method:'GET', credentials:'same-origin', cache:'no-store', signal:controller.signal })
-          .then(response => response.ok ? response.json() : null).then(holdingsSnapshot).catch(() => holdingsSnapshot(null))
+          .then(response => response.ok ? response.json() : null).then(holdingsSnapshot).catch(() => holdingsSnapshot(null)),
+        fetch('/api/strategy-account/target', {method:'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal})
+          .then(response=>response.ok ? response.json() : null).then(targetSnapshot).catch(()=>targetSnapshot(null))
       ]);
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const data = await response.json();
       if (!data || data.schema_version !== 'news-desk-v1' || !Array.isArray(data.events)) throw new Error('新闻结果版本或格式无效');
       const container = document.getElementById('events'); container.replaceChildren();
-      const events = orderedEvents(data.events, holdings);
-      events.forEach(event => container.append(renderEvent(event, (data.analysis_summary || {}).model || data.model, holdings)));
+      const events = orderedEvents(data.events, holdings, targets);
+      events.forEach(event => container.append(renderEvent(event, (data.analysis_summary || {}).model || data.model, holdings, targets)));
+      const targetCoverage = document.getElementById('target-coverage'); targetCoverage.replaceChildren();
+      list(targetCoverage,'月目标关注股 · 非当前买入建议',targetCoverageLabels(events,targets),'');
       const coverage = document.getElementById('holdings-coverage'); coverage.replaceChildren();
       list(coverage, '已录持仓的本批次正文覆盖', coverageLabels(events, holdings), '');
       coverage.append(element('p', '仅关联工具已录持仓；按本次读取快照排序。正文片段不代表完整公告或全部新闻覆盖，也不代表风险已排除。账户数据仅在本页使用，不发送给模型。', 'muted'));
@@ -136,6 +162,7 @@
       if (Array.isArray(data.fetch_errors) && data.fetch_errors.length) list(warnings, '部分来源采集失败', data.fetch_errors.map(item => typeof item === 'object' && item ? text(item.source || item.url, '来源') + '：' + text(item.error || item.message, '采集失败') : item), '');
       if (Array.isArray(data.limitations) && data.limitations.length) list(warnings, '本次结果边界', data.limitations, '');
     } catch (error) {
+      document.getElementById('target-coverage').replaceChildren(element('p','本次刷新失败，月目标关联不能确认。','error'));
       document.getElementById('holdings-coverage').replaceChildren(element('p', '本次刷新失败；下方若保留旧消息，其持仓关联与覆盖也是旧快照，请勿视作当前状态。', 'error'));
       status.className = 'status error'; status.textContent = '读取失败：' + (error.name === 'AbortError' ? '请求超时' : error.message) + '。可稍后刷新。';
       if (!document.getElementById('events').childElementCount) {
@@ -185,10 +212,42 @@
       status.textContent = '无法确认任务状态：' + (error.name === 'AbortError' ? '请求超时' : error.message) + '。未自动重试分析，请稍后读取最新结果。';
     } finally { button.disabled = false; }
   }
-  if (typeof module !== 'undefined') module.exports = { safeUrl, text, timeLabel, jobLabel, holdingsSnapshot, relatedTickers, orderedEvents, hasBody, relationLabel, coverageLabels };
+  if (typeof module !== 'undefined') module.exports = { safeUrl, text, timeLabel, jobLabel, targetSnapshot, targetLabel, targetCoverageLabels, holdingsSnapshot, relatedTickers, orderedEvents, hasBody, relationLabel, coverageLabels };
   if (typeof document !== 'undefined') {
     document.getElementById('refresh').addEventListener('click', refresh);
     document.getElementById('analyze').addEventListener('click', startAnalysis);
     refresh();
   }
+})();
+
+(function(){
+  if(typeof document==='undefined')return;
+  function node(tag,value){const n=document.createElement(tag);n.textContent=value;return n;}
+  async function loadHistory(){
+    const box=document.getElementById('history-content');if(!box)return;
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+    try{
+      const response=await fetch('/api/news/history',{method:'GET',cache:'no-store',signal:controller.signal});
+      if(!response.ok)throw new Error('unavailable');
+      const data=await response.json();box.replaceChildren();
+      box.append(node('p','仅展示本机留存观察；入库时间不是新闻最早可得时间。文本不同不代表已证实的更正或真假冲突。'));
+      if(data.status==='NO_RECORDED_HISTORY'){box.append(node('p','尚未留存历史；从下次正常采集开始记录，不回填过去。'));return;}
+      if(data.status!=='RECORDED_HISTORY'||!data.evidence||!Array.isArray(data.evidence.observations))throw new Error('invalid');
+      const e=data.evidence,rows=e.observations;
+      box.append(node('p',rows.length+' 条观察；'+e.same_url_groups.filter(g=>g.has_observed_text_variants).length+' 组同链接不同文本；'+e.exact_text_groups.length+' 组跨链接相同片段。'));
+      if(data.truncated)box.append(node('p','已达到本次读取上限；较早记录仍保留在本地。'));
+      const display=rows.slice(0,50);if(rows.length>50)box.append(node('p','页面仅展开前50条观察。'));
+      for(const row of display){
+        const detail=node('details','');detail.append(node('summary',row.title||'未提供标题'));
+        detail.append(node('p','发布：'+(row.published_at||'未知')+'；采集：'+(row.collected_at||'未知')));
+        detail.append(node('p',row.source_text||'未提供原文片段'));
+        for(const warning of row.source_uncertainty||[])detail.append(node('p',warning));
+        try{const url=new URL(row.url);if(['https:','http:'].includes(url.protocol)&&!url.username&&!url.password){const link=node('a','原始来源');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';detail.append(link);}}catch(_){}
+        box.append(detail);
+      }
+    }catch(_){box.replaceChildren(node('p','历史读取失败，不能视作没有记录。'));}
+    finally{clearTimeout(timer);}
+  }
+  document.getElementById('refresh').addEventListener('click',loadHistory);
+  loadHistory();
 })();

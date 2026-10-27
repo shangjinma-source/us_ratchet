@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import requests
 from data.news_issuer_source import capture as capture_issuer
+from data.news_observation_history import append_observations
 
 MODEL='gpt-6.1-sol'
 PROMPT_VERSION='news-evidence-provenance-v2'
@@ -104,6 +105,7 @@ def collect(cache,*,limit=20,max_age_days=90):
         except Exception as error:errors.append(dict(source=source['name'],url=source['url'],error_type=type(error).__name__,message=str(error)[:180]))
     issuer=capture_issuer(cache)
     events.extend(issuer['events']);receipts.extend(issuer['receipts']);errors.extend(issuer['errors'])
+    append_observations(cache, events)  # Public pre-dedup observations; before AI.
     unique={}
     for event in events:unique.setdefault(event['id'],event)
     ordered=sorted(unique.values(),key=lambda e:e['published_at'] or '',reverse=True)

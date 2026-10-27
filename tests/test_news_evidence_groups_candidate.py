@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 
 spec = importlib.util.spec_from_file_location('news_evidence_groups_candidate',
-    Path(__file__).resolve().parents[1] / 'docs/candidates/news_evidence_groups.py')
+    Path(__file__).resolve().parents[1] / 'data/news_evidence_groups.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
