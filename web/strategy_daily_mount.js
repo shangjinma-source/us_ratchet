@@ -32,17 +32,21 @@ function mount(container,dependencies){
  bar.appendChild(heading);
  const summary=el('div',undefined,'monthly-table-scroll');
  const charts=el('div',undefined,'monthly-stock-charts');
- for(const node of [title,cashPanel,bar,summary,charts])card.appendChild(node);
+ const titleBar=el('div',undefined,'account-header');titleBar.appendChild(title);
+ for(const node of [titleBar,cashPanel,bar,summary,charts])card.appendChild(node);
  container.replaceChildren(card);
- const reviewHost=el('div');card.appendChild(reviewHost);
+ const reviewHost=el('div');titleBar.appendChild(reviewHost);
+ let controller,newsState=null;const openedNews=new Set();
+ const newsApi=typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview;
+ const newsCell=(cell,sid)=>newsApi.renderImpactCell(cell,sid,newsState,openedNews,now());
  let syncingReview=false;
- const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer,onComplete:proposal=>{
+ const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer,compact:true,onReviewChange:next=>{newsState=next;if(controller)ui.render(summary,controller.getState(),now(),newsCell);},onComplete:proposal=>{
   if(!proposal.original_preview)throw Error('REVIEW_PREVIEW_MISSING');
   syncingReview=true;
   try{const next=controller.adoptReviewedPreview(proposal);return {account:next.account,target:next.target,daily:next.daily};}
   finally{syncingReview=false;}
  }});
- let disposed=false,chartKey=null,accountKey=null,lastWork=Promise.resolve(),controller;
+ let disposed=false,chartKey=null,accountKey=null,lastWork=Promise.resolve();
  let wasBusy=false,running=false;
  let expiryTimer=null,cashEdited=false,capitalLocked=false;
  const edited=()=>{cashEdited=true;};
@@ -60,7 +64,7 @@ function mount(container,dependencies){
   }
   save.disabled=state.busy||capitalLocked;input.disabled=state.busy||capitalLocked;
   if(!syncingReview)newsReview.update({account:state.account,target:state.target,daily:state.daily});
-  const displayed=ui.render(summary,state,now());
+  const displayed=ui.render(summary,state,now(),newsCell);
   const chartTarget=state.target?structuredClone(state.target):null;
   if(chartTarget){
    const quantities=new Map(displayed.rows.map(row=>[row.security_id,row.monthly_target]));

@@ -152,6 +152,7 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
  return {
   getState:()=>copy(model),
   adoptReviewedPreview(proposal){
+   if(typeof model.account?.revision!=='string'||!model.account.revision||typeof model.target?.target_id!=='string'||!model.target.target_id)fail('REVIEW_ACCOUNT_TARGET_REQUIRED');
    const value=proposal?.original_preview,b=proposal?.original_binding,clock=now();
    if(proposal?.status!=='REVIEW_PROPOSAL_ONLY'||proposal.executable!==false||proposal.orders_created!==false||
       !(Date.parse(proposal.review_valid_until)>clock)||b?.account_revision!==model.account?.revision||
@@ -395,10 +396,10 @@ function actionExplanation(row,result,model){
   return prefix+'现持 '+row.held+' 股，'+(shortage?'按可用现金先买 '+order.quantity+' 股，余 '+shortage.quantity+' 股待资金。':'补入 '+order.quantity+' 股。');
  }).join(' ');
 }
-function render(container,model,now=Date.now()){
+function render(container,model,now=Date.now(),newsCell=null){
  const result=presentation(model,now),doc=container.ownerDocument;
  const table=doc.createElement('table'),head=doc.createElement('tr');table.className='daily-actions-table';
- for(const text of ['股票','实际持有',result.monthly_target_label,result.daily_target_label,'今日动作','建议限价','原因']){
+ for(const text of ['股票','实际持有',result.monthly_target_label,result.daily_target_label,'今日动作','建议限价','原因','新闻影响']){
   const cell=doc.createElement('th');cell.textContent=text;head.appendChild(cell);
  }
  table.appendChild(head);
@@ -420,6 +421,7 @@ function render(container,model,now=Date.now()){
    if(index===5&&!prices&&historical){td.className='historical-advice';if(td.style){td.style.fontSize='0.9em';td.style.fontWeight='400';td.style.color='#64748b';}}
    tr.appendChild(td);
   }
+  const news=doc.createElement('td');if(newsCell)newsCell(news,row.security_id);else news.textContent='未复核，不代表无风险';tr.appendChild(news);
   table.appendChild(tr);
  }
  const explanations={

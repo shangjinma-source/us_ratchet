@@ -21,15 +21,36 @@ function view(state,proposal,now){
  const valid=proposal?.status==='REVIEW_PROPOSAL_ONLY'&&proposal.executable===false&&proposal.orders_created===false&&proposal.original_binding?.account_revision===b.account_revision&&proposal.original_binding?.target_id===b.target_id&&(proposal.original_binding?.proposal_id??null)===b.proposal_id&&Date.parse(proposal.review_valid_until)>now;
  return {ready,valid,rows:valid?(proposal.rows||[]):[],status:!proposal?'尚未复核':proposal.status==='WAIT_RECONCILIATION'?'请先核对持仓':valid?'复核完成 · 独立建议，尚未验证投资效果':'复核已过期，请重新复核'};
 }
-function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,pollInterval=2000,maxPolls=180,onComplete=()=>null}={}){
+function renderImpactCell(container,sid,reviewState,opened=new Set(),now=Date.now()){
  const doc=container.ownerDocument,el=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;};
- const card=el('section'),title=el('h3','AI 投资复核'),note=el('p','点击后才采集并复核，不持续监控。尚未验证能在价格变动前捕捉消息。原策略继续生效，复核不会下单或修改策略。'),button=el('button','复核当前建议'),status=el('p'),body=el('div');button.type='button';
- for(const node of [title,note,button,status,body])card.appendChild(node);container.replaceChildren(card);
+ const row=reviewState?.proposal?.rows?.find(r=>r.security_id===sid);
+ if(!row){container.appendChild(el('span',reviewState?.busy?'复核中，原策略仍生效':reviewState?.status?.includes('过期')?'复核已过期，待重新复核':'未复核，不代表无风险'));return;}
+ container.appendChild(el('span',row.reviewed===false||row.action==='ABSTAIN'?'证据不足，未作判断':(labels[row.action]||'未识别意见')+' · 投资效果未验证'));
+ const old=(row.evidence||[]).some(e=>Number.isFinite(Date.parse(e.published_at))&&(now-Date.parse(e.published_at))/1000>3600);
+ if(old)container.appendChild(el('p','历史背景，非即时预警'));
+ const details=el('details'),summary=el('summary','依据');details.className='news-impact-details';details.open=opened.has(sid);details.addEventListener('toggle',()=>{details.open?opened.add(sid):opened.delete(sid);});details.appendChild(summary);
+ details.appendChild(el('p',row.reason||'未提供理由'));
+ if(row.reviewed!==false&&row.action!=='ABSTAIN'&&row.proposed_target_quantity!==undefined)details.appendChild(el('p',`复核目标意见：${row.proposed_target_quantity} 股；未替换正式动作和限价。`));
+ for(const [key,label] of [['counterevidence','反证'],['uncertainty','不确定性']])details.appendChild(el('p',label+'：'+(Array.isArray(row[key])&&row[key].length?row[key].join('；'):'未提供，不能视为没有')));
+ for(const group of evidenceGroups(Array.isArray(row.evidence)?row.evidence:[])){
+  const item=group.item,url=safeUrl(item.url||item.source_url);
+  if(url){const link=el('a','查看原文');link.href=url;link.target='_blank';link.rel='noopener noreferrer';details.appendChild(link);}
+  details.appendChild(el('p',`发布 ${localTime(item.published_at)} · 本次采集 ${localTime(item.observed_at||item.collected_at)}`));
+  for(const quote of group.quotes)details.appendChild(el('blockquote',quote));
+ }
+ const t=reviewState.proposal.timeliness||{};
+ details.appendChild(el('p',`${t.cached?'复用此前分析':'分析完成'} ${localTime(t.analysis_completed_at)}${t.cached?' · 本次重新校验 '+localTime(t.revalidated_at||reviewState.proposal.review_created_at):''} · 复核有效至 ${localTime(reviewState.proposal.review_valid_until)}`));
+ container.appendChild(details);
+}
+function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,pollInterval=2000,maxPolls=180,onComplete=()=>null,compact=false,onReviewChange=()=>{}}={}){
+ const doc=container.ownerDocument,el=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;};
+ const card=el('section'),title=el('h3','AI 投资复核'),note=el('p','点击后才采集并复核，不持续监控。尚未验证能在价格变动前捕捉消息。原策略继续生效，复核不会下单或修改策略。'),button=el('button',compact?'AI新闻复核':'复核当前建议'),status=el('p'),body=el('div');button.type='button';button.title='按需采集与复核，不持续监控；不会修改正式买卖动作或下单。';
+ for(const node of (compact?[button,status]:[title,note,button,status,body]))card.appendChild(node);container.replaceChildren(card);
  let state={},proposal=null,key='',generation=0,disposed=false,busy=false,timer=null,expiry=null,message='',activeJob=null;
  function cancel(){if(timer!==null)clearTimer(timer);if(expiry!==null)clearTimer(expiry);timer=expiry=null;}
  function draw(){
-  if(disposed)return;const v=view(state,proposal,now());button.disabled=busy||!v.ready;status.textContent=message||v.status;body.replaceChildren();
-  for(const row of v.rows.slice(0,12)){
+  if(disposed)return;const v=view(state,proposal,now());onReviewChange({proposal:v.valid?structuredClone(proposal):null,status:message||v.status,busy});button.disabled=busy||!v.ready;status.textContent=message||v.status;body.replaceChildren();
+  for(const row of (compact?[]:v.rows).slice(0,12)){
    const box=el('div');box.appendChild(el('strong',row.ticker||row.security_id));
    box.appendChild(el('p',`原策略目标 ${row.original_target_quantity??'—'} 股 → AI ${labels[row.action]||'未识别动作'}${row.reviewed===false?'（未准入）':''}`));
    box.appendChild(el('p',row.reason||'未提供理由'));
@@ -82,5 +103,5 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
  button.addEventListener('click',start);draw();
  return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();button.removeEventListener('click',start);},elements:{button,status,body},start};
 }
-const api={mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
+const api={renderImpactCell,mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -21,7 +21,7 @@ const flat=n=>[n,...n.children.flatMap(flat)];
  let timers=new Map(),timerid=0,posts=0,gets=0,notifications=0;const host=new Node('div',doc);
  const instance=mount(host,{...deps(),onChange:()=>notifications++,setTimer:(f,ms)=>{timers.set(++timerid,{f,ms});return timerid;},clearTimer:id=>timers.delete(id),newsReviewFetch:async(url,options)=>{options?posts++:gets++;return {ok:true,json:async()=>({status:'COMPLETE',job_id:'j',proposal:proposal()})};}});
  await instance.ready;await instance.refresh();
- const button=flat(host).find(n=>n.textContent==='复核当前建议');assert.equal(button.disabled,false);
+ const button=flat(host).find(n=>n.textContent==='AI新闻复核');assert.equal(button.disabled,false);
  button.listeners.click[0]();for(let i=0;i<12;i++)await Promise.resolve();
  assert.equal(instance.getState().daily.new_orders[0].limit_price,'11');
  assert.ok(flat(host).some(n=>(n.textContent||'').includes('复核完成')),'review survives top draw');
