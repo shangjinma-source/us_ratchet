@@ -21,7 +21,7 @@ function view(state,proposal,now){
  const valid=proposal?.status==='REVIEW_PROPOSAL_ONLY'&&proposal.executable===false&&proposal.orders_created===false&&proposal.original_binding?.account_revision===b.account_revision&&proposal.original_binding?.target_id===b.target_id&&(proposal.original_binding?.proposal_id??null)===b.proposal_id&&Date.parse(proposal.review_valid_until)>now;
  return {ready,valid,rows:valid?(proposal.rows||[]):[],status:!proposal?'尚未复核':proposal.status==='WAIT_RECONCILIATION'?'请先核对持仓':valid?'复核完成 · 独立建议，尚未验证投资效果':'复核已过期，请重新复核'};
 }
-function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,pollInterval=2000,maxPolls=180}={}){
+function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,pollInterval=2000,maxPolls=180,onComplete=()=>null}={}){
  const doc=container.ownerDocument,el=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;};
  const card=el('section'),title=el('h3','AI 投资复核'),note=el('p','点击后才采集并复核，不持续监控。尚未验证能在价格变动前捕捉消息。原策略继续生效，复核不会下单或修改策略。'),button=el('button','复核当前建议'),status=el('p'),body=el('div');button.type='button';
  for(const node of [title,note,button,status,body])card.appendChild(node);container.replaceChildren(card);
@@ -59,7 +59,14 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
  async function accept(result,token,count){
   if(disposed||token!==generation)return;
   if(typeof result.job_id==='string')activeJob=result.job_id;
-  if(result.status==='COMPLETE'&&result.proposal){proposal=result.proposal;busy=false;message='';draw();
+  if(result.status==='COMPLETE'&&result.proposal){
+   if(!view(state,result.proposal,now()).valid)throw Error('REVIEW_EXPIRED_OR_CHANGED');
+   if(proposal?.review_id!==result.proposal.review_id||!proposal){
+    const next=onComplete(result.proposal);
+    if(disposed||token!==generation)return;
+    if(next){state=structuredClone(next);key=snapshot(state);}
+   }
+   proposal=result.proposal;busy=false;message='';draw();
    if(activeJob&&view(state,proposal,now()).valid){timer=setTimer(async()=>{timer=null;if(disposed||token!==generation||!view(state,proposal,now()).valid)return;try{await accept(await json('/api/news/investment-review/job?job_id='+encodeURIComponent(activeJob)),token,count);}catch{if(!disposed&&token===generation){proposal=null;message='无法确认复核仍有效，请重新复核';draw();}}},15000);timer?.unref?.();}return;}
   if(['RUNNING','QUEUED','STARTED'].includes(result.status)&&typeof result.job_id==='string'&&count<maxPolls){
    message='正在复核，原策略仍然生效';draw();timer=setTimer(async()=>{timer=null;try{await accept(await json('/api/news/investment-review/job?job_id='+encodeURIComponent(result.job_id)),token,count+1);}catch{if(!disposed&&token===generation){busy=false;message='复核读取失败，请稍后重试';draw();}}},pollInterval);return;

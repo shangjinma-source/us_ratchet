@@ -35,7 +35,13 @@ function mount(container,dependencies){
  for(const node of [title,cashPanel,bar,summary,charts])card.appendChild(node);
  container.replaceChildren(card);
  const reviewHost=el('div');card.appendChild(reviewHost);
- const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer});
+ let syncingReview=false;
+ const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer,onComplete:proposal=>{
+  if(!proposal.original_preview)throw Error('REVIEW_PREVIEW_MISSING');
+  syncingReview=true;
+  try{const next=controller.adoptReviewedPreview(proposal);return {account:next.account,target:next.target,daily:next.daily};}
+  finally{syncingReview=false;}
+ }});
  let disposed=false,chartKey=null,accountKey=null,lastWork=Promise.resolve(),controller;
  let wasBusy=false,running=false;
  let expiryTimer=null,cashEdited=false,capitalLocked=false;
@@ -53,7 +59,7 @@ function mount(container,dependencies){
    if(!cashEdited&&value!==null)input.value=value;
   }
   save.disabled=state.busy||capitalLocked;input.disabled=state.busy||capitalLocked;
-  newsReview.update({account:state.account,target:state.target,daily:state.daily});
+  if(!syncingReview)newsReview.update({account:state.account,target:state.target,daily:state.daily});
   const displayed=ui.render(summary,state,now());
   const chartTarget=state.target?structuredClone(state.target):null;
   if(chartTarget){

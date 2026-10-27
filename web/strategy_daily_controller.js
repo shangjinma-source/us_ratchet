@@ -151,6 +151,18 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
  }
  return {
   getState:()=>copy(model),
+  adoptReviewedPreview(proposal){
+   const value=proposal?.original_preview,b=proposal?.original_binding,clock=now();
+   if(proposal?.status!=='REVIEW_PROPOSAL_ONLY'||proposal.executable!==false||proposal.orders_created!==false||
+      !(Date.parse(proposal.review_valid_until)>clock)||b?.account_revision!==model.account?.revision||
+      b?.target_id!==model.target?.target_id||!sameProposal(b,model.target))fail('REVIEW_BINDING_MISMATCH');
+   if(!(Date.parse(value?.risk_valid_from)<=clock&&Date.parse(value?.risk_valid_until)>clock)||
+      Object.values(value?.reference_quotes||{}).some(q=>!(Date.parse(q.reference_valid_until)>clock))||
+      (value?.new_orders||[]).some(o=>!(Date.parse(o.reference_valid_until||value.reference_quotes?.[o.security_id]?.reference_valid_until)>clock)))fail('REVIEW_PREVIEW_EXPIRED');
+   if(model.busy||model.error||pendingReads.size||pendingSaves.size||pendingTargetRequest)fail('DAILY_UI_BUSY');
+   if(!['READY','HOLD'].includes(value?.status))fail('DAILY_STATUS_NOT_ADMITTED');
+   acceptDaily(value);notify();return copy(model);
+  },
   accountInvalidated(){
    if(ownCashStart){retire();notify();return;}
    ++invalidationGeneration;++epoch;retire();model.busy=false;model.error='DAILY_UI_SNAPSHOT_CHANGED';notify();

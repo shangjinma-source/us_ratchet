@@ -172,7 +172,7 @@ class NewsInvestmentService:
                     mode='ON_DEMAND_FRESH_CAPTURE', continuous_monitoring=False,
                     pre_move_detection_verified=False,
                     note='Publication and discovery delays are measured; reading after a price move is not evidence of avoiding that move.'),
-                original_preview_sha256=digest(fresh))
+                original_preview_sha256=digest(fresh), original_preview=deepcopy(fresh))
             self.bound_context(binding)
             if self.news_generation() != generation:
                 raise ValueError('NEWS_UPDATED_DURING_ANALYSIS')

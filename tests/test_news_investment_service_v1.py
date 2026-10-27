@@ -47,6 +47,22 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(proposal['review_valid_until'],'2026-10-27T15:04:00+00:00')
         self.assertEqual(self.preview_call.call_count,4)
 
+    def test_published_original_preview_is_post_model_snapshot(self):
+        initial = deepcopy(self.preview)
+        def update_quote(*args, **kwargs):
+            self.preview['reference_quotes']['A']['reference_valid_until'] = '2026-10-27T15:03:00Z'
+            return deepcopy(self.answer)
+        self.model.side_effect = update_quote
+        result = self.run_job()
+        self.assertEqual(result['status'], 'COMPLETE')
+        proposal = result['proposal']
+        self.assertNotEqual(proposal['original_preview'], initial)
+        self.assertEqual(proposal['original_preview'], self.preview)
+        from data.news_investment_service_v1 import digest
+        self.assertEqual(proposal['original_preview_sha256'], digest(proposal['original_preview']))
+        self.assertEqual(self.preview_call.call_count, 2)
+        self.assertEqual(self.model.call_count, 1)
+
     def test_model_account_change_rejects(self):
         def change(*args,**kwargs):
             self.account['revision']='new'
