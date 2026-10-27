@@ -16,7 +16,7 @@ import requests
 from data.news_issuer_source import capture as capture_issuer
 
 MODEL='gpt-6.1-sol'
-PROMPT_VERSION='news-evidence-v1'
+PROMPT_VERSION='news-evidence-provenance-v2'
 SOURCES=(
     dict(name='SEC Moderna 官方申报',url='https://data.sec.gov/submissions/CIK0001682852.json',tickers=['MRNA'],relevance='company',kind='sec',cik='1682852'),
     dict(name='SEC Sandisk 官方申报',url='https://data.sec.gov/submissions/CIK0002023554.json',tickers=['SNDK'],relevance='company',kind='sec',cik='2023554'),
@@ -140,6 +140,23 @@ def validate_trace_item(item):
         raise RuntimeError('UNEXPECTED_TOOL_USE_OUTPUT_REJECTED')
 
 
+def analysis_public_event(event):
+    value={k:event[k] for k in ('id','title','url','source','published_at','source_text','tickers')}
+    value.update(content_kind=event.get('content_kind'),
+        content_sha256=event.get('content_sha256'),
+        source_uncertainty=list(event.get('source_uncertainty',event.get('uncertainty',[]))))
+    return value
+
+
+def merge_analysis(event,row,**metadata):
+    # Collector limitations are immutable evidence, not model-editable prose.
+    source=list(event.get('source_uncertainty',event.get('uncertainty',[])))
+    model=list(row['uncertainty'])
+    event.update(row,**metadata)
+    event.update(source_uncertainty=source,analysis_uncertainty=model,
+        uncertainty=list(dict.fromkeys(source+model)))
+
+
 def analyze(snapshot,cache,*,limit=4,timeout=120):
     if not 1<=limit<=4 or not 10<=timeout<=180:raise ValueError('BOUNDED_ANALYSIS_REQUIRED')
     cache=Path(cache);(cache/'analysis').mkdir(parents=True,exist_ok=True)
@@ -155,7 +172,7 @@ def analyze(snapshot,cache,*,limit=4,timeout=120):
     if not batch:
         snapshot['analysis_summary']=dict(status='NO_ANALYZABLE_CONTENT',model=MODEL,attempts=0,usage=None)
         return snapshot
-    public=[{k:e[k] for k in ('id','title','url','source','published_at','source_text','tickers')} for e in batch]
+    public=[analysis_public_event(e) for e in batch]
     key=sha256(json.dumps(dict(version=PROMPT_VERSION,model=MODEL,effort='medium',events=public),sort_keys=True).encode()).hexdigest()
     cached=cache/'analysis'/f'{key}.json';attempts=0;usage=None
     try:
@@ -209,7 +226,7 @@ def analyze(snapshot,cache,*,limit=4,timeout=120):
             row=mapping[event['id']]
             if not row['summary'].strip() or len(row['summary'])>2000 or not row['evidence'] or row['strategy_effect']!='NO_CHANGE_RESEARCH_ONLY' or any(url!=event['url'] for url in row['evidence']):raise ValueError('AI_EVIDENCE_MISMATCH')
         if not cached.exists():cached.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
-        for event in batch:event.update(mapping[event['id']],analysis_status=status,model=MODEL,analyzed_at=utc_now())
+        for event in batch:merge_analysis(event,mapping[event['id']],analysis_status=status,model=MODEL,analyzed_at=utc_now())
         snapshot['model']=MODEL;snapshot['analysis_summary']=dict(status=status,model=MODEL,attempts=attempts,usage=usage,cache_key=key,prompt_version=PROMPT_VERSION)
     except Exception as error:
         for event in batch:event.update(analysis_status='FAILED',model=MODEL,analyzed_at=utc_now())

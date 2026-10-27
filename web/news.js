@@ -33,9 +33,46 @@
     });
     parent.append(ul);
   }
-  function renderEvent(event, requestedModel) {
+  function holdingsSnapshot(data) {
+    if (!data || data.status !== 'READY' || !data.account || !Array.isArray(data.account.holdings)) return {known:false, tickers:[], unresolved:0};
+    const tickers = new Set(); let unresolved = 0;
+    data.account.holdings.forEach(row => {
+      if (!row || !Number.isSafeInteger(row.quantity) || row.quantity <= 0 || typeof row.ticker !== 'string' || !/^[A-Z0-9][A-Z0-9.-]{0,19}$/.test(row.ticker)) { unresolved++; return; }
+      tickers.add(row.ticker);
+    });
+    return {known:true, tickers:[...tickers], unresolved};
+  }
+  function relatedTickers(event, holdings) {
+    return holdings.known && Array.isArray(event.tickers) ? event.tickers.filter(ticker => holdings.tickers.includes(ticker)) : [];
+  }
+  function orderedEvents(events, holdings) {
+    return events.filter(event => event && typeof event === 'object').map((event,index) => ({event,index})).sort((a,b) => Number(relatedTickers(b.event,holdings).length > 0) - Number(relatedTickers(a.event,holdings).length > 0) || a.index-b.index).map(item => item.event);
+  }
+  function hasBody(event) {
+    return event.content_kind === 'ISSUER_RELEASE_BODY' && typeof event.source_text === 'string' && event.source_text.trim().length > 0;
+  }
+  function relationLabel(event, holdings) {
+    const related = relatedTickers(event, holdings);
+    if (related.length) return '关联已录持仓：' + related.join('、');
+    if (event.relevance === 'macro') return '宏观事件 · 非个股持仓结论';
+    if (!holdings.known || holdings.unresolved) return '持仓关联尚不能完整确认';
+    if (!Array.isArray(event.tickers) || !event.tickers.length) return '股票关联未知';
+    return '非已录持仓消息';
+  }
+  function coverageLabels(events, holdings) {
+    if (!holdings.known) return ['持仓读取不可用，不能判断持仓覆盖。'];
+    const result = holdings.tickers.map(ticker => {
+      const related = events.filter(event => Array.isArray(event.tickers) && event.tickers.includes(ticker));
+      return ticker + '：' + (related.some(hasBody) ? '本批次有公告正文片段' : related.length ? '本批次无公告正文，仅有摘要或申报信息' : '本批次无关联消息、无公告正文');
+    });
+    if (holdings.unresolved) result.push('另有 ' + holdings.unresolved + ' 条持仓无法确认股票代码或数量，覆盖未知。');
+    if (!holdings.tickers.length && !holdings.unresolved) result.push('工具当前未记录持仓。');
+    return result;
+  }
+  function renderEvent(event, requestedModel, holdings) {
     const card = element('article', undefined, 'event');
     const tags = element('div', undefined, 'tags');
+    tags.append(element('span', relationLabel(event, holdings), 'tag'));
     const state = text(event.analysis_status, '未分析');
     tags.append(element('span', statusNames[state.toLowerCase()] || state, 'tag accent'));
     const tickers = Array.isArray(event.tickers) ? event.tickers : [];
@@ -69,12 +106,20 @@
     button.disabled = true; status.className = 'status muted'; status.textContent = '正在读取已保存结果…';
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch('/api/news/latest', { method: 'GET', cache: 'no-store', signal: controller.signal });
+      const [response, holdings] = await Promise.all([
+        fetch('/api/news/latest', { method: 'GET', credentials:'same-origin', cache: 'no-store', signal: controller.signal }),
+        fetch('/api/strategy-account', { method:'GET', credentials:'same-origin', cache:'no-store', signal:controller.signal })
+          .then(response => response.ok ? response.json() : null).then(holdingsSnapshot).catch(() => holdingsSnapshot(null))
+      ]);
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const data = await response.json();
       if (!data || data.schema_version !== 'news-desk-v1' || !Array.isArray(data.events)) throw new Error('新闻结果版本或格式无效');
       const container = document.getElementById('events'); container.replaceChildren();
-      data.events.forEach(event => { if (event && typeof event === 'object') container.append(renderEvent(event, (data.analysis_summary || {}).model || data.model)); });
+      const events = orderedEvents(data.events, holdings);
+      events.forEach(event => container.append(renderEvent(event, (data.analysis_summary || {}).model || data.model, holdings)));
+      const coverage = document.getElementById('holdings-coverage'); coverage.replaceChildren();
+      list(coverage, '已录持仓的本批次正文覆盖', coverageLabels(events, holdings), '');
+      coverage.append(element('p', '仅关联工具已录持仓；按本次读取快照排序。正文片段不代表完整公告或全部新闻覆盖，也不代表风险已排除。账户数据仅在本页使用，不发送给模型。', 'muted'));
       document.getElementById('empty').hidden = container.childElementCount > 0;
       document.getElementById('empty-title').textContent = '暂无新闻结果';
       document.getElementById('empty-message').textContent = text(data.message, '尚未采集或分析，等待后端生成可核验的结果。');
@@ -91,6 +136,7 @@
       if (Array.isArray(data.fetch_errors) && data.fetch_errors.length) list(warnings, '部分来源采集失败', data.fetch_errors.map(item => typeof item === 'object' && item ? text(item.source || item.url, '来源') + '：' + text(item.error || item.message, '采集失败') : item), '');
       if (Array.isArray(data.limitations) && data.limitations.length) list(warnings, '本次结果边界', data.limitations, '');
     } catch (error) {
+      document.getElementById('holdings-coverage').replaceChildren(element('p', '本次刷新失败；下方若保留旧消息，其持仓关联与覆盖也是旧快照，请勿视作当前状态。', 'error'));
       status.className = 'status error'; status.textContent = '读取失败：' + (error.name === 'AbortError' ? '请求超时' : error.message) + '。可稍后刷新。';
       if (!document.getElementById('events').childElementCount) {
         document.getElementById('empty').hidden = false;
@@ -139,7 +185,7 @@
       status.textContent = '无法确认任务状态：' + (error.name === 'AbortError' ? '请求超时' : error.message) + '。未自动重试分析，请稍后读取最新结果。';
     } finally { button.disabled = false; }
   }
-  if (typeof module !== 'undefined') module.exports = { safeUrl, text, timeLabel, jobLabel };
+  if (typeof module !== 'undefined') module.exports = { safeUrl, text, timeLabel, jobLabel, holdingsSnapshot, relatedTickers, orderedEvents, hasBody, relationLabel, coverageLabels };
   if (typeof document !== 'undefined') {
     document.getElementById('refresh').addEventListener('click', refresh);
     document.getElementById('analyze').addEventListener('click', startAnalysis);
