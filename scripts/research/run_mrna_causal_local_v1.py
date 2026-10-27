@@ -17,8 +17,8 @@ from backtest.monthly_exit_core_research_adapter import MonthlyExitCoreResearchA
 from backtest.guidance_news_risk_research_v1 import GuidanceNewsRiskAdapter
 
 
-def run(root):
-    root=Path(root);out=root/'tmp/mrna_causal_local_20261027';out.mkdir(exist_ok=True)
+def run(root, *, fact_bridge=None, output_relative='tmp/mrna_causal_local_20261027'):
+    root=Path(root);out=root/output_relative;out.mkdir(parents=True, exist_ok=True)
     hashes={}
     def read(relative):
         p=root/relative;raw=p.read_bytes();hashes[relative]=sha256(raw).hexdigest();return json.loads(raw)
@@ -37,6 +37,35 @@ def run(root):
     review=root/stream['events'][0]['review_reference']
     if sha256(review.read_bytes()).hexdigest()!=stream['review_sha256']:raise ValueError('EVENT_REVIEW_CHANGED')
     hashes[stream['events'][0]['review_reference']]=stream['review_sha256']
+    # A freshly validated factual bridge may replace the conditional trigger.
+    # Never let the old manually labelled CUT survive a non-admission result.
+    if fact_bridge is not None:
+        if fact_bridge.get('schema') != 'NEWS_FACT_RULE_BRIDGE_V1':
+            raise ValueError('FACT_BRIDGE_SCHEMA_REQUIRED')
+        if fact_bridge.get('validation_complete') is not True:
+            raise ValueError('FACT_BRIDGE_INPUT_VALIDATION_INCOMPLETE')
+        admitted = fact_bridge.get('rule_admitted')
+        admitted_events = fact_bridge.get('events')
+        if type(admitted) is not bool or not isinstance(admitted_events, list):
+            raise ValueError('FACT_BRIDGE_ADMISSION_REQUIRED')
+        if admitted != bool(admitted_events):
+            raise ValueError('FACT_BRIDGE_ADMISSION_CONFLICT')
+        known = {event['id']: event for event in stream['events']}
+        if len({event['id'] for event in admitted_events}) != len(admitted_events):
+            raise ValueError('DUPLICATE_FACT_BRIDGE_EVENT')
+        for event in admitted_events:
+            reference = known.get(event['id'])
+            if reference is None or any(event.get(key) != reference[key] for key in
+                    ('security_id', 'comparison_key', 'period_end', 'available_at')):
+                raise ValueError('FACT_BRIDGE_EVENT_SCOPE_MISMATCH')
+            if event.get('classification') != 'CUT':
+                raise ValueError('LOCAL_BRIDGE_ONLY_ADMITS_REVIEWED_CUT')
+        replacements = {event['id']: event for event in admitted_events}
+        stream['events'] = [dict(event, classification='UNKNOWN')
+                            if event['id'] not in replacements else replacements[event['id']]
+                            for event in stream['events']]
+        hashes['validated_fact_bridge_canonical_json'] = sha256(
+            json.dumps(fact_bridge, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
     published=story['qmcistory']['qmnews']['qmstory']['datetime']
     available=datetime.fromisoformat(published)
     if available.isoformat()!='2021-11-04T07:00:00-04:00':raise ValueError('EXPECTED_EVENT_TIME_CHANGED')
@@ -58,7 +87,9 @@ def run(root):
     monthly={p['decision_date']:p for p in assembled['monthly_inputs']}
     audits=dict(zip(assembled['session_dates'][:-1],book['provider_audit']))
     results={}
-    for arm in ('NO_ACTION','CONDITIONAL_SUPPLY_DELAY_BLOCK_NEW_BUYS'):
+    candidate_arm = ('FACT_VALIDATED_NEWS_RULE' if fact_bridge is not None
+                     else 'CONDITIONAL_SUPPLY_DELAY_BLOCK_NEW_BUYS')
+    for arm in ('NO_ACTION', candidate_arm):
         risk=MonthlyExitCoreResearchAdapter(actions=assembled['actions'])
         risk.state=deepcopy(case['initial_risk_state_before_close']);risk.last_day=risk.state['session_date']
         overlay=GuidanceNewsRiskAdapter(risk,events=stream['events'] if arm!='NO_ACTION' else [],session_closes=session_closes,action_policy='BLOCK_NEW_BUYS',release_policy='EXPLICIT_REPAIR')
@@ -96,7 +127,7 @@ def run(root):
             if len(replay['daily_ledger'])!=20:raise ValueError('TWENTY_SESSIONS_REQUIRED')
         results[arm]=dict(book=replay,decision_trace=trace,exact_selection_reuse=reuse)
         (out/(arm+'.json')).write_text(json.dumps(results[arm],indent=2),encoding='utf-8')
-    base=results['NO_ACTION']['book'];branch=results['CONDITIONAL_SUPPLY_DELAY_BLOCK_NEW_BUYS']['book']
+    base=results['NO_ACTION']['book'];branch=results[candidate_arm]['book']
     differences=[dict(date=a['date'],baseline_equity=a['equity'],conditional_equity=b['equity'],difference=str(Fraction(b['equity'])-Fraction(a['equity'])))
         for a,b in zip(base['daily_ledger'],branch['daily_ledger']) if a['cash']!=b['cash'] or a['shares']!=b['shares']]
     for relative in ('backtest/historical_dividend_next_open_book_research.py',
@@ -107,13 +138,21 @@ def run(root):
     summary=dict(status='CONDITIONAL_CAUSAL_LOCAL_REPLAY_COMPLETE',sessions=20,baseline_daily_exact=True,
         source_hashes=hashes,availability=published,first_different_account_date=differences[0]['date'] if differences else None,
         terminal_equity_delta=str(Fraction(branch['daily_ledger'][-1]['equity'])-Fraction(base['daily_ledger'][-1]['equity'])),
-        differences=differences,selection_reuse=results['CONDITIONAL_SUPPLY_DELAY_BLOCK_NEW_BUYS']['exact_selection_reuse'],
+        differences=differences,selection_reuse=results[candidate_arm]['exact_selection_reuse'],
         limitations=['Conditional rule consumes 14 source-bound reviewed releases; absence of repair outside that collected corpus is not proven.',
             'Collected issuer Business Wire release review covers November 4 through December 3; other communications and immutable historical versions remain outside verified scope.',
             'Initialized Nov4 close before first close-rule execution, although announcement was public that morning.',
             'Real original risk advances daily; future effective-risk targets never used as decisions.',
             'No optimization: monthly ceiling reused only after exact branch account and original input equality.',
             'Twenty-day local evidence only; no annualization, deployment or universal effectiveness claim.'])
+    if fact_bridge is not None:
+        summary['status'] = 'FACT_BRIDGE_ACCOUNT_REPLAY_COMPLETE'
+        summary['fact_bridge'] = fact_bridge
+        summary['limitations'].append('AI facts require independent source review; this is a three-record assisted pipeline, not autonomous news coverage.')
+        if not fact_bridge['rule_admitted']:
+            if differences:
+                raise ValueError('NON_ADMITTED_FACTS_CHANGED_ACCOUNT')
+            summary['no_admission_account_unchanged'] = True
     (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
     return summary
 
