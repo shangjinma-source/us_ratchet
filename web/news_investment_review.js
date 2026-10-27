@@ -6,6 +6,16 @@ function snapshot(state){return JSON.stringify([binding(state),state.account?.ho
 function safeUrl(value){try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)?u.href:null;}catch{return null;}}
 function localTime(value){const date=new Date(value);return Number.isFinite(date.getTime())?date.toLocaleString('zh-CN',{hour12:false})+'（本地时间）':'未记录';}
 function ageText(seconds){return !Number.isFinite(seconds)?'时长未确认':seconds<3600?Math.floor(Math.max(0,seconds)/60)+' 分钟':(Math.max(0,seconds)/3600).toFixed(1)+' 小时';}
+function evidenceGroups(items){
+ const groups=new Map();
+ for(const item of items){
+  const key=JSON.stringify([item.source_id||item.url||item.source_url||'',item.source_sha256||'']);
+  if(!groups.has(key))groups.set(key,{item,quotes:[]});
+  const quotes=groups.get(key).quotes;
+  if(typeof item.quote==='string'&&item.quote.trim()&&!quotes.includes(item.quote))quotes.push(item.quote);
+ }
+ return [...groups.values()];
+}
 function view(state,proposal,now){
  const b=binding(state),ready=!!(b.account_revision&&b.target_id&&state.daily&&['READY','HOLD'].includes(state.daily.status)&&state.daily.account_revision===b.account_revision&&state.daily.target_id===b.target_id&&(state.daily.proposal_id??null)===b.proposal_id);
  const valid=proposal?.status==='REVIEW_PROPOSAL_ONLY'&&proposal.executable===false&&proposal.orders_created===false&&proposal.original_binding?.account_revision===b.account_revision&&proposal.original_binding?.target_id===b.target_id&&(proposal.original_binding?.proposal_id??null)===b.proposal_id&&Date.parse(proposal.review_valid_until)>now;
@@ -27,18 +37,20 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
    box.appendChild(el('p','不确定性：'+((Array.isArray(row.uncertainty)?row.uncertainty.join('；'):row.uncertainty)||'未提供，不能视为没有不确定性')));
    if(row.reviewed!==false&&row.proposed_target_quantity!==undefined)box.appendChild(el('p',`复核建议目标 ${row.proposed_target_quantity} 股（未写入策略）`));
    const evidence=Array.isArray(row.evidence)?row.evidence:[];
-   for(const item of evidence.slice(0,2)){
+   for(const group of evidenceGroups(evidence)){
+    const item=group.item;
     const url=safeUrl(item.url||item.source_url);const line=el('p');
     if(url){const a=el('a',item.source||item.title||'查看来源');a.href=url;a.target='_blank';a.rel='noopener noreferrer';line.appendChild(a);}
     const measuredAge=(now()-Date.parse(item.published_at))/1000;
     const publishedAge=Number.isFinite(measuredAge)?Math.max(Number.isFinite(item.publication_age_seconds)?item.publication_age_seconds:0,measuredAge):item.publication_age_seconds;
-    line.appendChild(el('span',` 距发布 ${ageText(publishedAge)} · 发布 ${localTime(item.published_at)} · 发现 ${localTime(item.observed_at||item.fetched_at||item.collected_at)} · 分析 ${localTime(item.analyzed_at||proposal.timeliness?.analysis_completed_at)}`));
-    if(Number.isFinite(item.discovery_delay_seconds))line.appendChild(el('span',` · 发现延迟 ${ageText(item.discovery_delay_seconds)}`));
+    line.appendChild(el('span',` 距发布 ${ageText(publishedAge)} · 发布 ${localTime(item.published_at)} · 本次采集 ${localTime(item.observed_at||item.fetched_at||item.collected_at)} · ${proposal.timeliness?.cached?'复用此前分析':'分析完成'} ${localTime(item.analyzed_at||proposal.timeliness?.analysis_completed_at)}`));
+    if(Number.isFinite(item.discovery_delay_seconds))line.appendChild(el('span',` · 发布至本次采集 ${ageText(item.discovery_delay_seconds)}`));
     if(publishedAge>3600)line.appendChild(el('strong',' 历史背景，不是即时预警'));box.appendChild(line);
+    for(const quote of group.quotes)box.appendChild(el('blockquote',quote));
    }body.appendChild(box);
   }
   if(proposal?.analyzed_at)body.appendChild(el('p',`分析时间 ${localTime(proposal.analyzed_at)}`));
-  if(proposal?.timeliness&&typeof proposal.timeliness==='object'){const t=proposal.timeliness;body.appendChild(el('p',`按需采集 · 请求 ${localTime(t.requested_at)} · 分析完成 ${localTime(t.analysis_completed_at)}${Number.isFinite(t.total_seconds)?' · 用时 '+Math.round(t.total_seconds)+' 秒':''}`));}
+  if(proposal?.timeliness&&typeof proposal.timeliness==='object'){const t=proposal.timeliness;body.appendChild(el('p',`按需采集 · 请求 ${localTime(t.requested_at)} · ${t.cached?'复用此前分析':'分析完成'} ${localTime(t.analysis_completed_at)}${t.cached?' · 本次重新校验 '+localTime(t.revalidated_at||proposal.review_created_at):''}${Number.isFinite(t.total_seconds)?' · 用时 '+Math.round(t.total_seconds)+' 秒':''}`));}
   if(proposal)body.appendChild(el('p',`复核时间 ${localTime(proposal.review_created_at)} · 有效至 ${localTime(proposal.review_valid_until)}`));
   if(expiry!==null)clearTimer(expiry);expiry=null;
   const wait=Date.parse(proposal?.review_valid_until)-now();if(wait>0){expiry=setTimer(draw,Math.min(wait,2147483647));expiry?.unref?.();}else if(proposal&&timer!==null){clearTimer(timer);timer=null;}
@@ -63,5 +75,5 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
  button.addEventListener('click',start);draw();
  return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();button.removeEventListener('click',start);},elements:{button,status,body},start};
 }
-const api={mount,view,binding,snapshot,safeUrl,localTime,ageText};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
+const api={mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
 })(typeof window!=='undefined'?window:globalThis);
