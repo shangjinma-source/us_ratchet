@@ -1,0 +1,50 @@
+{
+  "scope": "READ_ONLY_GUIDANCE_FEASIBILITY_NOT_EVENT_ADMISSION",
+  "source_hashes": {
+    "tmp\\historical_sec_gap_fetch_20261027\\PTON.submissions.json": "f427da3b0e670dee449ade5c6cd3777678a8cc5e37e1e89b528177e8f6d8805e"
+  },
+  "pton_submissions": [
+    {
+      "accessionNumber": "0001639825-22-000007",
+      "filingDate": "2022-02-08",
+      "reportDate": "2022-02-08",
+      "acceptanceDateTime": "2022-02-08T12:06:15.000Z",
+      "act": "34",
+      "form": "8-K",
+      "fileNumber": "001-39058",
+      "filmNumber": "22599287",
+      "items": "2.02,7.01,9.01",
+      "core_type": "XBRL",
+      "size": 4322429,
+      "isXBRL": 1,
+      "isInlineXBRL": 1,
+      "isXBRLNumeric": null,
+      "primaryDocument": "pton-20220208.htm",
+      "primaryDocDescription": "8-K"
+    },
+    {
+      "accessionNumber": "0001639825-21-000320",
+      "filingDate": "2021-11-04",
+      "reportDate": "2021-11-04",
+      "acceptanceDateTime": "2021-11-04T20:02:01.000Z",
+      "act": "34",
+      "form": "8-K",
+      "fileNumber": "001-39058",
+      "filmNumber": "211379814",
+      "items": "2.02,9.01",
+      "core_type": "XBRL",
+      "size": 3669379,
+      "isXBRL": 1,
+      "isInlineXBRL": 1,
+      "isXBRLNumeric": null,
+      "primaryDocument": "pton-20211104.htm",
+      "primaryDocDescription": "8-K"
+    }
+  ],
+  "network_budget": {
+    "search_queries": 2,
+    "opened_urls": 2,
+    "total_requested_operations": 4
+  },
+  "raw_official_body_archived": false
+}
