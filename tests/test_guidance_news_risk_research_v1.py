@@ -17,6 +17,31 @@ def event(identity='cut', kind='CUT', available='2026-01-30T21:00:01Z', key='sam
 
 
 class GuidanceOverlayTests(unittest.TestCase):
+    def test_explicit_repair_does_not_release_on_unchanged_or_unrelated_good_news(self):
+        for update in [event('unchanged', 'UNCHANGED', '2026-02-02T15:00:00Z'),
+                       event('raised', 'RAISE', '2026-02-02T15:00:00Z'),
+                       dict(event('repair', 'REPAIRED', '2026-02-02T15:00:00Z'), repairs_event_id='other-cut'),
+                       dict(event('repair', 'REPAIRED', '2026-02-02T15:00:00Z', 'other-period'), repairs_event_id='cut')]:
+            adapter = GuidanceNewsRiskAdapter(BaseRisk(), events=[event(), update],
+                session_closes={'2026-02-02': '2026-02-02T21:00:00Z'},
+                action_policy='BLOCK_NEW_BUYS', release_policy='EXPLICIT_REPAIR')
+            result, _ = adapter.apply(day='2026-02-02', month='2026-02',
+                target={'A': 10}, closes={'A': '100'}, shares={'A': 3})
+            self.assertEqual(result['A'], 3)
+
+    def test_exact_repair_restores_eligibility_but_not_original_exit(self):
+        for exited, expected in [(False, 10), (True, 0)]:
+            base = BaseRisk()
+            base.exited = exited
+            repair = dict(event('repair', 'REPAIRED', '2026-02-02T15:00:00Z'), repairs_event_id='cut')
+            adapter = GuidanceNewsRiskAdapter(base, events=[event(), repair],
+                session_closes={'2026-02-02': '2026-02-02T21:00:00Z'},
+                action_policy='BLOCK_NEW_BUYS', release_policy='EXPLICIT_REPAIR')
+            result, audit = adapter.apply(day='2026-02-02', month='2026-02',
+                target={'A': 10}, closes={'A': '100'}, shares={'A': 3})
+            self.assertEqual(result['A'], expected)
+            self.assertEqual(audit['guidance_news']['active_event_ids'], [])
+
     def test_buy_block_preserves_positions_and_original_sells(self):
         for held, original, expected in [(10, 15, 10), (10, 5, 5), (10, 0, 0), (0, 5, 0)]:
             adapter = GuidanceNewsRiskAdapter(BaseRisk(), events=[event(available='2026-01-29T21:00:00Z')],

@@ -19,10 +19,14 @@ def timestamp(value):
 
 
 class GuidanceNewsRiskAdapter:
-    def __init__(self, base, *, events, session_closes, action_policy='EXIT'):
+    def __init__(self, base, *, events, session_closes, action_policy='EXIT',
+                 release_policy='NONCUT_COMPARISON'):
         if action_policy not in {'EXIT', 'BLOCK_NEW_BUYS'}:
             raise ValueError('UNSUPPORTED_NEWS_ACTION_POLICY')
         self.action_policy = action_policy
+        if release_policy not in {'NONCUT_COMPARISON', 'EXPLICIT_REPAIR'}:
+            raise ValueError('UNSUPPORTED_NEWS_RELEASE_POLICY')
+        self.release_policy = release_policy
         self.base = base
         self.closes = {day: timestamp(value) for day, value in session_closes.items()}
         days = sorted(self.closes)
@@ -55,8 +59,15 @@ class GuidanceNewsRiskAdapter:
             if key in simultaneous:
                 raise ValueError('SIMULTANEOUS_COMPARISON_CONFLICT')
             simultaneous.add(key)
-            if event['classification'] not in {'CUT', 'RAISE', 'UNCHANGED', 'UNKNOWN'}:
+            allowed = {'CUT', 'RAISE', 'UNCHANGED', 'UNKNOWN'}
+            if self.release_policy == 'EXPLICIT_REPAIR':
+                allowed.add('REPAIRED')
+            if event['classification'] not in allowed:
                 raise ValueError('UNSUPPORTED_CLASSIFICATION')
+            if event['classification'] == 'REPAIRED' and (
+                    not isinstance(event.get('repairs_event_id'), str)
+                    or not event['repairs_event_id']):
+                raise ValueError('EXPLICIT_REPAIR_EVENT_BINDING_REQUIRED')
         self.events.sort(key=lambda event: (timestamp(event['available_at']), event['id']))
         self.position, self.last_day, self.locks = 0, None, {}
 
@@ -86,7 +97,12 @@ class GuidanceNewsRiskAdapter:
             key = (event['security_id'], event['comparison_key'])
             if event['classification'] == 'CUT' and day <= event['period_end']:
                 self.locks[key] = deepcopy(event)
-            elif event['classification'] in {'RAISE', 'UNCHANGED'}:
+            elif (self.release_policy == 'NONCUT_COMPARISON'
+                  and event['classification'] in {'RAISE', 'UNCHANGED'}):
+                self.locks.pop(key, None)
+            elif (self.release_policy == 'EXPLICIT_REPAIR'
+                  and event['classification'] == 'REPAIRED'
+                  and self.locks.get(key, {}).get('id') == event['repairs_event_id']):
                 self.locks.pop(key, None)
         expired = [key for key, event in self.locks.items() if day > event['period_end']]
         for key in expired:
@@ -100,6 +116,7 @@ class GuidanceNewsRiskAdapter:
         diagnostics = deepcopy(diagnostics)
         diagnostics['guidance_news'] = dict(policy='GUIDANCE_TRADE_EXPERIMENT_V1',
             action_policy=self.action_policy,
+            release_policy=self.release_policy,
             consumed_event_ids=consumed, blocked_security_ids=sorted(blocked),
             active_event_ids=sorted(event['id'] for event in self.locks.values()),
             expired_comparison_keys=[list(key) for key in sorted(expired)],
