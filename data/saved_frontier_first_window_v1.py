@@ -43,9 +43,15 @@ SOURCES = {
 
 
 
-# Two observed notices only, not a category-wide exemption. Original bytes/times
+# Exact independently reviewed notices only, not a category-wide exemption. Original bytes/times
 # remain in closure and every issuer mention still goes through notice review.
 VERIFIED_UNRELATED_FUTURE_NOTICES = {
+    # Full official notice reviewed in tmp/eta2026_61_review_20261028/review.json.
+    # TRF schedule/clearing infrastructure only; original future RSS time retained.
+    'ETA2026-61': (
+        'Equity Trader Alert',
+        'ETA2026-61 - UPDATED: FINRA/Nasdaq TRF Software Change Scheduled for November 2, 2026',
+        'News Category Alert Markets What You Need To Know Equity Trader Alert #2026-061 Post - Trade'),
     'UTP2026-32': (
         'UTP Vendor Alert',
         'UTP2026-32 - 2027 Failover and Market Wide Circuit Breaker Testing Schedule',

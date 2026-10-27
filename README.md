@@ -50,6 +50,7 @@ python -m uvicorn api.server:app --host 127.0.0.1 --port 8010
 
 ## 文档与验证边界
 
+- [10月28日盘中建议恢复与8列表格验收](docs/intraday_recovery_20261028.md)：修复已核实无关基础设施公告的范围阻塞，R26真实READY建议通过独立校验。
 - [10月27日真实盘中建议恢复与验收](docs/intraday_acceptance_20261027.md)：已通过页面与订单一致性、独立限仓/风险/限价/现金检查，真实成交仍待实际事件。
 - [两完整窗口回撤机制归因](docs/drawdown_mechanism_20261027.md)：不增加经济回测，不把归因称为收益改善。
 - [新闻预算锁加固记录](docs/news_budget_hardening_pending_20261027.md)：跨实例事务预算锁已部署，历史准备记录保留。

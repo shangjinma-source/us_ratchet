@@ -50,8 +50,12 @@ def create_router(*, service):
             reason = 'OFFICIAL_ACTION_SOURCE_UNAVAILABLE'
         except (ValueError, KeyError, TypeError, OSError) as error:
             message = str(error)
-            reason = (message if re.fullmatch('[A-Z][A-Z0-9_]{0,99}', message)
-                      else 'DAILY_PREVIEW_UNAVAILABLE')
+            known_failures = {
+                'SUPPLEMENT_REVIEW_FAILED:WAIT_KNOWN_ACTION_REVIEW': 'WAIT_KNOWN_ACTION_REVIEW',
+            }
+            reason = known_failures.get(message) or (
+                message if re.fullmatch('[A-Z][A-Z0-9_]{0,99}', message)
+                else 'DAILY_PREVIEW_UNAVAILABLE')
         return JSONResponse(status_code=409, headers={'Cache-Control': 'no-store'}, content=dict(
             status='WAIT', detail_status='UNAVAILABLE', reason=reason,
             new_orders=[], reference_quotes={}, orders_created=False))

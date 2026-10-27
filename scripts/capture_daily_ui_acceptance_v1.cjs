@@ -6,7 +6,16 @@ const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-pri
  const directory=process.argv[2];assert(directory,'Output directory required');fs.mkdirSync(directory);
  const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});
  try{const page=await browser.newPage({viewport:{width:1600,height:1100}});let baseline=null,cashPosts=0;const unexpected=[];
- const requests=new Map(),network=[];
+ const requests=new Map(),network=[],previewResponses=[],responseReads=[];
+ page.on('response',response=>{
+  const path=new URL(response.url()).pathname;
+  if(path!=='/api/strategy-daily-v3/preview')return;
+  responseReads.push((async()=>{
+   const entry={path,http_status:response.status(),observed_at:new Date().toISOString()};
+   try{entry.body=await response.json();}catch{entry.body_unavailable=true;}
+   previewResponses.push(entry);
+  })());
+ });
  page.on('request',request=>{
   const path=new URL(request.url()).pathname;
   if(path.startsWith('/api/'))requests.set(request,{path,method:request.method(),started_at:new Date().toISOString(),start:performance.now()});
@@ -39,13 +48,16 @@ const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-pri
    const cells=matches.length===1?[...matches[0].querySelectorAll('td')].map(cell=>cell.textContent.trim()):[];
    return {...row,dom_match_count:matches.length,dom_cells:cells,explanation:cells[6]||''};
   });
-  return {observed_at:new Date().toISOString(),state,visible_rows,page_text:document.body.innerText};
+  const table_headers=[...document.querySelectorAll('#strategyMonthlyTarget table th')].map(cell=>cell.textContent.trim());
+  return {observed_at:new Date().toISOString(),state,visible_rows,table_headers,page_text:document.body.innerText};
  });
  capture.account_before=baseline.account;capture.account_after=(await page.evaluate(async()=>await(await fetch('/api/strategy-account',{cache:'no-store'})).json())).account;
  capture.cash_posts_intercepted=cashPosts;capture.unexpected_writes=unexpected;
+ await Promise.all(responseReads);
  capture.network_timings=network;
+ capture.preview_responses=previewResponses;
  capture.scope='Actual served cash button and real preview; cash acknowledgement intercepted; no real account write';
  fs.writeFileSync(directory+'/capture.json',JSON.stringify(capture,null,2));await page.screenshot({path:directory+'/page.png',fullPage:true});
- console.log(JSON.stringify({captured:true,status:capture.state.daily?.status,reason:capture.state.daily?.reason,directory}));
+ console.log(JSON.stringify({captured:true,status:capture.state.daily?.status??null,reason:capture.state.daily?.reason??capture.state.error??null,preview_http_status:previewResponses.at(-1)?.http_status??null,directory}));
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -9,6 +9,7 @@ const allowed=new Set(['READY','WAIT','DAILY_PREVIEW_DISABLED','WAIT_POLICY_RELE
  'WAIT_FRESH_SIGNAL','WAIT_MONTHLY_TARGET','WAIT_PENDING_RECONCILIATION',
  'WAIT_EXECUTION_ELIGIBILITY','HOLD','CONDITIONAL_PREVIEW_READY']);
 function waitingExplanation(reason){
+ if(reason==='WAIT_KNOWN_ACTION_REVIEW')return '公司行动或相关公告尚待核验，本次未生成新建议；旧价格不可用于挂单。';
  if(reason==='TARGET_RECOVERY_COMPLETE_RESUBMIT_CASH')return '上次目标已恢复，现金尚未再次修改。请核对当前可用现金后重新提交本次余额。';
  if(reason==='CASH_INPUT_SNAPSHOT_CHANGED')return '账户余额已变化，本次输入未覆盖账户。请核对当前余额后再点击查看建议。';
  if(reason==='WAIT_CALENDAR_SESSION')return '当前不在策略交易时段，等待下一交易时段后更新建议。';

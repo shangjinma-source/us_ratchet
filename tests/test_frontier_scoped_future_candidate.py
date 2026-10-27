@@ -12,7 +12,7 @@ module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 class ScopedFutureTests(unittest.TestCase):
     def raw(self, notices=None, channel='Tue, 27 Oct 2026 16:20:43 GMT'):
         if notices is None:
-            notices=[dict(identifier=k,category=v[0],title=v[1],description=v[2],date='Tue, 27 Oct 2026 19:30:00 GMT') for k,v in module.VERIFIED_UNRELATED_FUTURE_NOTICES.items()]
+            notices=[dict(identifier=k,category=v[0],title=v[1],description=v[2],date='Tue, 27 Oct 2026 19:30:00 GMT') for k in ('UTP2026-32', 'ETP2026-175') for v in (module.VERIFIED_UNRELATED_FUTURE_NOTICES[k],)]
         items=[]
         for row in notices:
             items.append('<item><title>'+escape(row['title'])+'</title><NewsCategory>'+escape(row['category'])+'</NewsCategory><link>http://www.nasdaqtrader.com/TraderNews.aspx?id='+row['identifier']+'</link><description>'+escape(row['description'])+'</description><pubDate>'+row['date']+'</pubDate></item>')
