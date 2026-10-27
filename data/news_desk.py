@@ -114,6 +114,9 @@ def collect(cache,*,limit=20,max_age_days=90):
     ordered=sorted(unique.values(),key=lambda e:e['published_at'] or '',reverse=True)
     priority=[next((event for event in ordered if 'MRNA' in event['tickers'] and event.get('content_kind') in ('ISSUER_RELEASE_BODY','OFFICIAL_RELEASE_BODY')),None),next((event for event in ordered if 'SNDK' in event['tickers']),None)]
     selected=[event for event in priority if event]
+    for event in ordered:
+        if event.get('content_kind') in ('ISSUER_RELEASE_BODY','OFFICIAL_RELEASE_BODY') and event not in selected:
+            selected.append(event)
     for source in SOURCES:
         representative=next((event for event in ordered if event['source']==source['name']),None)
         if representative and representative not in selected:selected.append(representative)

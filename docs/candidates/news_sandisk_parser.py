@@ -29,12 +29,14 @@ def parse_release(raw, url, collected_at):
     title = heading.get_text(' ', strip=True)
     container = heading.parent
     body_node = container.select_one('.para-text')
-    date_node = heading.find_next_sibling('p')
+    date_nodes = [node for node in container.find_all('p', recursive=False)
+                  if re.search(r'[A-Za-z]+ \d{1,2},\s+\d{4}', node.get_text(' ', strip=True))]
+    date_node = date_nodes[0] if len(date_nodes) == 1 else None
     meta = soup.find('meta', attrs={'name': 'article:published_time'})
     if body_node is None or date_node is None or meta is None or not title:
         raise ValueError('ARTICLE_STRUCTURE_MISSING')
     body = body_node.get_text(' ', strip=True)
-    if len(body) < 100 or not re.search(r'NASDAQ\s*:\s*SNDK\b', body):
+    if len(body) < 100 or not re.search(r'\bSandisk\b', body, re.IGNORECASE):
         raise ValueError('ISSUER_BODY_MISSING')
     stamp = meta.get('content', '')
     published = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
@@ -55,6 +57,7 @@ def parse_release(raw, url, collected_at):
         warnings.append('正文超过6000字符，展示文本截断；原始HTML另存。')
     event = dict(id=sha256(url.encode()).hexdigest()[:24], title=title, url=url,
                  source='Sandisk 官方新闻室', source_type='official', tickers=['SNDK'],
+                 ticker_association='fixed_official_issuer_mapping_not_body_ticker_mention',
                  relevance='company', published_at=published.isoformat(), published_raw=stamp,
                  collected_at=collected_at, content_kind='OFFICIAL_RELEASE_BODY',
                  source_text=body[:6000], content_sha256=sha256(body.encode()).hexdigest(),
