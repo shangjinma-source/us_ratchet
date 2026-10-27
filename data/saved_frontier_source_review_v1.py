@@ -8,7 +8,7 @@ from copy import deepcopy
 from hashlib import sha256
 
 from core.strategy_account_ledger import canonical, replay, require
-from data.monthly_peak_raw_history import review_monthly_supplement
+from data.frontier_monthly_peak_raw_history_v1 import review_monthly_supplement
 from data.strategy_daily_session_capture import stamp
 
 
@@ -54,6 +54,7 @@ def review_proposal_monthly_sources(*, target, proposal, state, risk_state,
     result = dict(schema='SAVED_FRONTIER_CONDITIONAL_SOURCE_REVIEW_V1',
         status='CONDITIONAL_PROPOSAL_MONTHLY_SOURCES_REVIEWED', binding=binding,
         inputs=reviewed['inputs'], source_sha256=deepcopy(capture['source_hashes']),
+        future_notice_scope=deepcopy(reviewed['future_notice_scope']),
         capture_id=capture['capture_id'], reviewed_at=current.isoformat(),
         source_received_at=capture['finished_at'], valid_from=current.isoformat(),
         valid_until=execution_session['close'], full_price_window_verified=True,

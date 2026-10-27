@@ -27,6 +27,8 @@ SOURCES |= {'web/strategy_target_recovery_v1.js', 'api/news_desk_v1.py',
             'data/news_desk.py', 'data/news_issuer_source.py',
             'data/news_evidence_groups.py', 'data/news_observation_history.py',
             'data/news_sandisk_capture.py', 'data/news_sandisk_parser.py'}
+SOURCES |= {'web/news_investment_review.js', 'api/news_investment_review_v1.py', 'data/news_investment_service_v1.py', 'data/news_investment_composition_v1.py', 'data/news_investment_sources_v1.py', 'data/news_investment_model_v1.py', 'core/news_investment_review_v1.py'}
+SOURCES |= {'data/frontier_monthly_peak_raw_history_v1.py'}
 SOURCES |= FIRST_WINDOW_SOURCES | {'data/saved_frontier_rolling_admission_v1.py'}
 SOURCES |= {
     'data/saved_frontier_current_migration_v1.py',
@@ -158,6 +160,8 @@ def build_unified_server_preparation_v27(*, root, configuration_path, configurat
     router.include_router(display_router(service=display))
     from api.news_desk_v1 import create_router as news_router
     router.include_router(news_router(root, validate=validate))
+    from data.news_investment_composition_v1 import compose as investment_router
+    router.include_router(investment_router(root=root, monthly_view=view, observed_daily=observed, validate=sources_gate))
     sources_gate()
     return dict(prepared, router=router, monthly=monthly, frontier_monthly=view,
         observed_daily=observed, frontier_reader=reader, latest_display=display,

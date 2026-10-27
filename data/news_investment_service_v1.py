@@ -1,0 +1,209 @@
+"""Asynchronous, account-bound AI opinions; never writes financial state or orders."""
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+from copy import deepcopy
+from datetime import datetime, timezone, timedelta
+from hashlib import sha256
+import json
+from pathlib import Path
+import sqlite3
+from threading import Thread, Lock
+from uuid import uuid4
+
+from core.news_investment_review_v1 import build_review_proposal, moment
+from data.news_refresh_service import owner_alive, process_identity
+
+_workers = set()
+_workers_lock = Lock()
+
+
+def digest(value):
+    return sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+class NewsInvestmentService:
+    def __init__(self, *, cache, context, preview, validate=lambda: None,
+                 collector=None, model=None, source_builder=None, clock=None):
+        self.cache = Path(cache)
+        self.context, self.preview, self.validate = context, preview, validate
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.collector, self.model, self.source_builder = collector, model, source_builder
+
+    def connection(self):
+        self.cache.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.cache/'investment_jobs_v1.sqlite3', timeout=5)
+        connection.execute('PRAGMA synchronous=FULL')
+        connection.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, document TEXT NOT NULL)')
+        return connection
+
+    @staticmethod
+    def save(connection, job):
+        connection.execute('INSERT OR REPLACE INTO jobs VALUES (?,?)',
+                           (job['job_id'], json.dumps(job, ensure_ascii=False)))
+
+    def bound_context(self, binding):
+        self.validate()
+        account, target, names = self.context()
+        if (account['revision'] != binding['expected_revision'] or
+                target['target_id'] != binding['target_id'] or
+                target['proposal_id'] != binding['expected_proposal_id']):
+            raise ValueError('STALE_ACCOUNT_OR_TARGET')
+        return deepcopy(account), deepcopy(target), dict(names)
+
+    def news_generation(self):
+        path = self.cache/'observations_v1.sqlite3'
+        if not path.exists():
+            return 0
+        with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro', uri=True)) as connection:
+            return connection.execute('SELECT COALESCE(MAX(sequence),0) FROM batches').fetchone()[0]
+
+    def start(self, binding):
+        self.bound_context(binding)
+        now = self.clock()
+        with closing(self.connection()) as connection, connection:
+            connection.execute('BEGIN IMMEDIATE')
+            rows = [json.loads(row[0]) for row in connection.execute('SELECT document FROM jobs')]
+            for row in rows:
+                if row['status'] == 'RUNNING':
+                    alive = owner_alive(row['worker_pid'], row['worker_created_at'])
+                    if row['worker_pid'] == process_identity()[0]:
+                        with _workers_lock:
+                            alive = alive and row['job_id'] in _workers
+                    if alive:
+                        return 409, dict(status='RUNNING', job_id=row['job_id'], error='ANALYSIS_ALREADY_RUNNING')
+                    row.update(status='FAILED', error='WORKER_STOPPED', finished_at=now.isoformat())
+                    self.save(connection, row)
+            recent = [row for row in rows if (now-moment(row['started_at'])).total_seconds() < 86400]
+            if any(moment(row['started_at']) > now for row in rows):
+                raise ValueError('CLOCK_REVERSED')
+            if any((now-moment(row['started_at'])).total_seconds() < 60 for row in recent):
+                return 429, dict(status='FAILED', error='ONE_MINUTE_COOLDOWN')
+            if len(recent) >= 24:
+                return 429, dict(status='FAILED', error='DAILY_REVIEW_BUDGET_EXHAUSTED')
+            pid, created = process_identity()
+            job = dict(job_id=uuid4().hex, status='RUNNING', started_at=now.isoformat(),
+                       binding=dict(binding), worker_pid=pid, worker_created_at=created)
+            self.save(connection, job)
+            with _workers_lock:
+                _workers.add(job['job_id'])
+        worker = Thread(target=self.run, args=(job,), daemon=True, name='investment-review')
+        try:
+            worker.start()
+        except Exception:
+            with _workers_lock:
+                _workers.discard(job['job_id'])
+            job.update(status='FAILED', error='WORKER_START_FAILED')
+            with closing(self.connection()) as connection, connection:
+                self.save(connection, job)
+            raise
+        return 202, dict(status='RUNNING', job_id=job['job_id'], started_at=job['started_at'])
+
+    @staticmethod
+    def normalize_preview(value):
+        result = deepcopy(value)
+        if result.get('effective_target_quantities') is None:
+            result['effective_target_quantities'] = result.get('daily_gate', {}).get('effective_target_quantities')
+        if result.get('status') not in ('READY', 'HOLD') or not isinstance(result.get('effective_target_quantities'), dict):
+            raise ValueError('CURRENT_STRATEGY_PREVIEW_UNAVAILABLE')
+        return result
+
+    def run(self, job):
+        try:
+            from data.news_desk import collect
+            from data.news_investment_model_v1 import analyze_review
+            from data.news_investment_sources_v1 import build_sources
+            binding = job['binding']
+            account, target, names = self.bound_context(binding)
+            # News capture does not wait for a potentially slow market preview.
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                capture = executor.submit(self.collector or collect, self.cache, limit=20)
+                initial = executor.submit(self.preview, **binding)
+                snapshot = capture.result()
+                original = self.normalize_preview(initial.result())
+            self.bound_context(binding)
+            quantities = original['effective_target_quantities']
+            positions = [dict(security_id=sid, ticker=names.get(sid, ''),
+                              original_qty=account['shares'].get(sid, 0), target_qty=quantities.get(sid, 0))
+                         for sid in sorted(set(account['shares']) | set(quantities))
+                         if account['shares'].get(sid,0)>0 or quantities.get(sid,0)>0]
+            source_result = (self.source_builder or build_sources)(snapshot, self.cache, positions)
+            generation = self.news_generation()
+            sources = source_result['sources']
+            if not sources:
+                raise ValueError('NO_COMPLETE_CURRENT_SOURCE_BODY')
+            analysis_started = self.clock()
+            remaining_seconds = 360 - (analysis_started-moment(job['started_at'])).total_seconds()
+            model_timeout = min(120, int(remaining_seconds))
+            if model_timeout <= 0:
+                raise ValueError('REVIEW_DEADLINE_EXCEEDED')
+            answer = (self.model or analyze_review)(list(sources.values()), positions,
+                                                    self.cache/'investment_analysis', timeout=model_timeout)
+            job['analysis_receipt'] = answer.get('receipt')
+            if answer.get('status') not in ('SUCCEEDED', 'CACHED'):
+                raise ValueError('MODEL_REVIEW_UNAVAILABLE')
+            # No account lock is held during model execution. Re-read and re-quote.
+            account, target, names = self.bound_context(binding)
+            fresh = self.normalize_preview(self.preview(**binding))
+            if fresh['effective_target_quantities'] != quantities:
+                raise ValueError('STRATEGY_TARGET_CHANGED_DURING_ANALYSIS')
+            finished = self.clock()
+            if (finished-moment(job['started_at'])).total_seconds() > 360:
+                raise ValueError('REVIEW_DEADLINE_EXCEEDED')
+            deadline = min(finished+timedelta(minutes=5), moment(fresh['risk_valid_until']))
+            for quote in fresh.get('reference_quotes', {}).values():
+                deadline = min(deadline, moment(quote['reference_valid_until']))
+            review = dict(schema='NEWS_INVESTMENT_REVIEW_V1', review_id=job['job_id'],
+                          created_at=finished.isoformat(), valid_until=deadline.isoformat(),
+                          account_revision=account['revision'], target_id=target['target_id'],
+                          proposal_id=target['proposal_id'], rows=answer['rows'])
+            proposal = build_review_proposal(review=review, original_preview=fresh, account=account,
+                                             sources=sources, now=finished.isoformat())
+            for row in proposal['rows']:
+                row['ticker'] = names.get(row['security_id'], row['security_id'])
+                for source in row['evidence']:
+                    source['publication_age_seconds'] = (finished-moment(source['published_at'])).total_seconds()
+                    source['discovery_delay_seconds'] = (moment(source['observed_at'])-moment(source['published_at'])).total_seconds()
+            proposal.update(coverage=source_result['coverage'], model=answer.get('model'),
+                timeliness=dict(requested_at=job['started_at'], analysis_started_at=analysis_started.isoformat(),
+                    analysis_completed_at=(answer.get('receipt') or {}).get('finished_at', finished.isoformat()),
+                    revalidated_at=finished.isoformat(), cached=answer.get('status')=='CACHED',
+                    analysis_seconds=(answer.get('receipt') or {}).get('elapsed_seconds'),
+                    total_seconds=(finished-moment(job['started_at'])).total_seconds(),
+                    mode='ON_DEMAND_FRESH_CAPTURE', continuous_monitoring=False,
+                    pre_move_detection_verified=False,
+                    note='Publication and discovery delays are measured; reading after a price move is not evidence of avoiding that move.'),
+                original_preview_sha256=digest(fresh))
+            self.bound_context(binding)
+            if self.news_generation() != generation:
+                raise ValueError('NEWS_UPDATED_DURING_ANALYSIS')
+            job.update(status='COMPLETE', proposal=proposal, source_fingerprint=source_result['fingerprint'],
+                       news_generation=generation)
+        except Exception as error:
+            reason = str(error)
+            job.update(status='FAILED', error=reason if reason.isupper() and len(reason)<120 else 'INVESTMENT_REVIEW_FAILED')
+        finally:
+            job['finished_at'] = self.clock().isoformat()
+            try:
+                with closing(self.connection()) as connection, connection:
+                    self.save(connection, job)
+            finally:
+                with _workers_lock:
+                    _workers.discard(job['job_id'])
+
+    def status(self, job_id):
+        with closing(self.connection()) as connection:
+            row = connection.execute('SELECT document FROM jobs WHERE id=?', (job_id,)).fetchone()
+        if row is None:
+            return dict(status='FAILED', error='UNKNOWN_JOB')
+        job = json.loads(row[0])
+        if job['status'] == 'RUNNING' and (self.clock()-moment(job['started_at'])).total_seconds() > 360:
+            return dict(status='FAILED', job_id=job_id, error='REVIEW_DEADLINE_EXCEEDED')
+        try:
+            self.bound_context(job['binding'])
+            if job['status'] == 'COMPLETE' and self.clock() >= moment(job['proposal']['review_valid_until']):
+                raise ValueError('REVIEW_EXPIRED')
+            if job['status'] == 'COMPLETE' and self.news_generation() != job['news_generation']:
+                raise ValueError('NEWS_UPDATED')
+        except Exception:
+            return dict(status='STALE', job_id=job_id, error='REFRESH_ACCOUNT_AND_REVIEW')
+        return {key: job[key] for key in ('status','job_id','started_at','finished_at','proposal','error') if key in job}

@@ -41,6 +41,51 @@ SOURCES = {
 }
 
 
+
+# Two observed notices only, not a category-wide exemption. Original bytes/times
+# remain in closure and every issuer mention still goes through notice review.
+VERIFIED_UNRELATED_FUTURE_NOTICES = {
+    'UTP2026-32': (
+        'UTP Vendor Alert',
+        'UTP2026-32 - 2027 Failover and Market Wide Circuit Breaker Testing Schedule',
+        'News Category Alert Markets What You Need To Know UTP Vendor Alert #2026-032 UTP - SIP'),
+    'ETP2026-175': (
+        'Trader Alerts - New ETP Listings',
+        'ETP2026-175 - Nasdaq Texas to Begin Dual Listing Twenty-Five VictoryShares ETFs on Tuesday, October 27, 2026',
+        'News Category Alert Markets What You Need To Know Trader Alerts - New ETP Listings #2026-175 NTX'),
+}
+
+
+def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
+    notices = review_notices(raw, ticker=ticker, issuer_names=issuer_names)
+    require(feed['channel']['future_publication'] is False and
+            not feed['channel'].get('publication_time_issue'), 'WAIT_KNOWN_ACTION_REVIEW')
+    require(not notices['blocking'], 'WAIT_KNOWN_ACTION_REVIEW')
+    ignored = []
+    for row in feed['items']:
+        require(row.get('publication_time_issue') is None and
+                row.get('future_publication') in (True, False), 'WAIT_KNOWN_ACTION_REVIEW')
+        if not row['future_publication']:
+            continue
+        # Conservative: even a title-only target mention exempted by the older
+        # ETF grammar prevents using this unrelated-future exemption.
+        require(not notices['matches'], 'WAIT_KNOWN_ACTION_REVIEW')
+        matches = [identifier for identifier, signature in VERIFIED_UNRELATED_FUTURE_NOTICES.items()
+                   if (row.get('news_category'), row.get('title'), row.get('description_summary')) == signature
+                   and row.get('link') == 'http://www.nasdaqtrader.com/TraderNews.aspx?id='+identifier]
+        require(len(matches) == 1 and row.get('description_truncated') is False,
+                'WAIT_KNOWN_ACTION_REVIEW')
+        ignored.append(dict(identifier=matches[0], index=row['index'], title=row['title'],
+            news_category=row['news_category'], link=row['link'], guid=row.get('guid'),
+            original_pubDate=row['pubDate'], published_at_utc=row['published_at_utc'],
+            observed_at=feed['observed_at'], disposition='VERIFIED_UNRELATED_NOTICE_TIME_ANOMALY_RETAINED'))
+    return dict(schema='ISSUER_SCOPED_FUTURE_NOTICE_REVIEW_V1', ticker=ticker,
+        issuer_names=list(issuer_names), ignored_future_items=ignored,
+        raw_sha256=sha256(raw).hexdigest(), issuer_notice_review=notices,
+        original_times_modified=False, complete_action_coverage=False,
+        limitation='Only exact observed infrastructure/other-issuer ETF notices excluded from this issuer gate; no point-in-time or no-action certification.')
+
+
 def review_first_window(*, root, configuration_bytes, configuration_sha256,
                         capture_files, state, target, proposal, extra_security_ids=(), clock=None):
     """Return one SID's closed packet, to be aggregated before daily admission.
@@ -224,14 +269,14 @@ def _review(*, root, configuration_bytes, configuration_sha256, capture_files,
     require(overlaps, 'WAIT_BASELINE_RAW_PRICE_OVERLAP')
     feed = parse_official_feed(capture_files['official.response.bin'], observed_at=received[1])
     names = [meta[k] for k in ('longName','shortName') if isinstance(meta.get(k),str)]
-    require(not feed['channel']['future_publication'] and not any(r['future_publication'] for r in feed['items'])
-            and not review_notices(capture_files['official.response.bin'], ticker=entry['ticker'], issuer_names=names)['blocking'],
-            'WAIT_KNOWN_ACTION_REVIEW')
+    future_notice_scope = review_future_notice_scope(capture_files['official.response.bin'],
+        feed=feed, ticker=entry['ticker'], issuer_names=names)
     units_name = prefix+'units.json'
     include(units_name, canonical(dict(status='CONDITIONAL_FIRST_WINDOW_REVIEWED',
         baseline_review=baseline['review_reference'], overlap_exact_dates=sorted(overlaps),
         baseline_overlap_semantics='ONLY_FIXED_CALENDAR_CLOSED_AT_ORIGINAL_RECEIPT',
         identity_closure_scope='CURRENT_SECURITY_REFERENCES_V1',
+        future_notice_scope=future_notice_scope,
         identity_source_references=entry['identity']['source_references'],
         excluded_unclosed_baseline_bars=excluded, baseline_receipt_bindings=receipt_bindings,
         source_authenticated=False, coverage_complete=False, policy_approved=False,

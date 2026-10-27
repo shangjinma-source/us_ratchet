@@ -34,6 +34,8 @@ function mount(container,dependencies){
  const charts=el('div',undefined,'monthly-stock-charts');
  for(const node of [title,cashPanel,bar,summary,charts])card.appendChild(node);
  container.replaceChildren(card);
+ const reviewHost=el('div');card.appendChild(reviewHost);
+ const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer});
  let disposed=false,chartKey=null,accountKey=null,lastWork=Promise.resolve(),controller;
  let wasBusy=false,running=false;
  let expiryTimer=null,cashEdited=false,capitalLocked=false;
@@ -51,6 +53,7 @@ function mount(container,dependencies){
    if(!cashEdited&&value!==null)input.value=value;
   }
   save.disabled=state.busy||capitalLocked;input.disabled=state.busy||capitalLocked;
+  newsReview.update({account:state.account,target:state.target,daily:state.daily});
   const displayed=ui.render(summary,state,now());
   const chartTarget=state.target?structuredClone(state.target):null;
   if(chartTarget){
@@ -111,7 +114,7 @@ function mount(container,dependencies){
    if(value!==null&&state.account?.cash_confirmation_valid){input.value=value;cashEdited=false;}
   },
   elements:{form,input,save,cashPanel,summary,charts},
-  dispose(){disposed=true;doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);doc.defaultView?.removeEventListener('pageshow',resume);if(expiryTimer!==null)clearTimer(expiryTimer);expiryTimer=null;input.removeEventListener('input',edited);form.removeEventListener('submit',submit);controller.invalidate();}
+  dispose(){newsReview.dispose();disposed=true;doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);doc.defaultView?.removeEventListener('pageshow',resume);if(expiryTimer!==null)clearTimer(expiryTimer);expiryTimer=null;input.removeEventListener('input',edited);form.removeEventListener('submit',submit);controller.invalidate();}
  };
 }
 const api={mount};
