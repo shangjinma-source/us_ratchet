@@ -124,7 +124,7 @@ def _validate(answer, payload):
 
 def analyze_review(sources, positions, cache, *, timeout=120, max_chars=60000):
     """No inference on load: caller must explicitly invoke. Server binds account revision/expiry."""
-    if not 1 <= timeout <= 120 or not 1 <= max_chars <= 60000:
+    if not 1 <= timeout <= 120 or not type(max_chars) is int or not 1 <= max_chars <= 120000:
         raise ValueError('BOUNDED_BUDGET_REQUIRED')
     payload, excluded = _project(sources, positions)
     coverage = {'included_source_ids': [s['id'] for s in payload['sources']], 'excluded': excluded, 'truncated': False}

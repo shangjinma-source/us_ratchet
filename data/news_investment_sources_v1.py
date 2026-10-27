@@ -60,7 +60,8 @@ def recover(event, receipts, cache):
     return next(iter(unique.values()))
 
 
-def build_sources(snapshot,cache,positions):
+def build_sources(snapshot,cache,positions,*,max_chars=60000):
+    require(type(max_chars) is int and 1<=max_chars<=110000,'BOUNDED_SOURCE_BUDGET_REQUIRED')
     cache=Path(cache);now=moment(snapshot['generated_at'])
     mapping={}
     for position in positions:
@@ -79,7 +80,7 @@ def build_sources(snapshot,cache,positions):
             require(now-publication<=timedelta(days=7),'OLDER_THAN_SEVEN_DAYS')
             body,raw_digest=recover(event,snapshot['source_receipts'],cache)
             require(counts.get(sid,0)<2,'LATEST_TWO_SOURCE_LIMIT')
-            require(total+len(body)<=60000,'FULL_TEXT_BATCH_BUDGET_EXCEEDED')
+            require(total+len(body)<=max_chars,'FULL_TEXT_BATCH_BUDGET_EXCEEDED')
             source_id=event['id']+':'+event['content_sha256']
             require(source_id not in sources,'DUPLICATE_SOURCE')
             sources[source_id]=dict(id=source_id,security_ids=[sid],tickers=tickers,title=event['title'],url=event['url'],

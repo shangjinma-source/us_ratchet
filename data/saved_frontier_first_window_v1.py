@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from fractions import Fraction
 from hashlib import sha256
 import json
+import re
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -56,6 +57,46 @@ VERIFIED_UNRELATED_FUTURE_NOTICES = {
 }
 
 
+def other_issuer_eca_scope(row, *, ticker, issuer_names):
+    """Conditional scope classification, not review/approval of the other action.
+
+    Two Nasdaq full notices independently confirmed the exact single-issuer
+    reverse-split headline templates. Future variants are NOT body-authenticated.
+    Unknown/multi-party titles are deliberately unsupported.
+    """
+    if row.get('news_category') != 'Equity Corporate Actions Alert' or row.get('description_truncated') is not False:
+        return None
+    match = re.fullmatch(r'(ECA(20[0-9]{2})-([1-9][0-9]*)) - Information Regarding the '
+        r'(Reverse Stock Split and CUSIP Number Change|Reverse Stock Split, Par Value and CUSIP Number Change) '
+        r"for ([A-Za-z0-9][A-Za-z0-9 .,'’-]{1,139}) \(([A-Z]{1,5})\)", row.get('title',''))
+    if not match:
+        return None
+    identifier, year, number, action, issuer, symbol = match.groups()
+    if row.get('link') != 'http://www.nasdaqtrader.com/TraderNews.aspx?id='+identifier:
+        return None
+    if row.get('description_summary') != ('News Category Alert Markets What You Need To Know '
+        'Equity Corporate Actions Alert #'+year+'-'+number+' The Nasdaq Stock Market'):
+        return None
+    # No issuer lists, former/successor relationships, aliases or multiple ticker
+    # syntax. A comma is accepted only before one trailing legal suffix.
+    if re.search(r'\b(and|formerly|former|fka|successor|versus|including)\b',issuer,re.I):
+        return None
+    if ',' in issuer and not re.fullmatch(r"[A-Za-z0-9 .’'-]+, (?:Inc|Corp|Ltd)\.?",issuer):
+        return None
+    normalize = lambda value: re.sub(r'[^a-z0-9]','',value.lower())
+    subject = normalize(issuer)
+    names = {normalize(n) for n in issuer_names if isinstance(n,str) and normalize(n)}
+    if not names:
+        return None
+    names |= {stem for n in tuple(names) if len(stem := re.sub(r'(incorporated|corporation|holdings|limited|inc|corp|ltd|plc)$','',n)) >= 3}
+    if symbol.casefold() == ticker.casefold() or any(subject == n or subject in n or n in subject for n in names):
+        return None
+    return dict(identifier=identifier, issuer=issuer, ticker=symbol, action=action,
+        classification='OTHER_SINGLE_ISSUER_ECA_REVERSE_SPLIT_TEMPLATE',
+        full_body_reviewed_for_this_item=False,
+        limitation='Conditional title/template scope only; not certification of this corporate action or absence of actions for the target.')
+
+
 def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
     notices = review_notices(raw, ticker=ticker, issuer_names=issuer_names)
     require(feed['channel']['future_publication'] is False and
@@ -73,9 +114,12 @@ def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
         matches = [identifier for identifier, signature in VERIFIED_UNRELATED_FUTURE_NOTICES.items()
                    if (row.get('news_category'), row.get('title'), row.get('description_summary')) == signature
                    and row.get('link') == 'http://www.nasdaqtrader.com/TraderNews.aspx?id='+identifier]
-        require(len(matches) == 1 and row.get('description_truncated') is False,
+        eca_scope = other_issuer_eca_scope(row, ticker=ticker, issuer_names=issuer_names)
+        require((len(matches) == 1 or eca_scope is not None) and row.get('description_truncated') is False,
                 'WAIT_KNOWN_ACTION_REVIEW')
-        ignored.append(dict(identifier=matches[0], index=row['index'], title=row['title'],
+        ignored.append(dict(identifier=matches[0] if matches else eca_scope['identifier'],
+            scope_classification=eca_scope or dict(classification='EXACT_PREVIOUSLY_REVIEWED_NOTICE'),
+            index=row['index'], title=row['title'],
             news_category=row['news_category'], link=row['link'], guid=row.get('guid'),
             original_pubDate=row['pubDate'], published_at_utc=row['published_at_utc'],
             observed_at=feed['observed_at'], disposition='VERIFIED_UNRELATED_NOTICE_TIME_ANOMALY_RETAINED'))
@@ -83,7 +127,7 @@ def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
         issuer_names=list(issuer_names), ignored_future_items=ignored,
         raw_sha256=sha256(raw).hexdigest(), issuer_notice_review=notices,
         original_times_modified=False, complete_action_coverage=False,
-        limitation='Only exact observed infrastructure/other-issuer ETF notices excluded from this issuer gate; no point-in-time or no-action certification.')
+        limitation='Exact observed infrastructure/ETF notices and strictly parsed other-single-issuer ECA reverse-split templates excluded from this issuer gate; no point-in-time or no-action certification.')
 
 
 def review_first_window(*, root, configuration_bytes, configuration_sha256,

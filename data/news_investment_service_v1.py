@@ -126,7 +126,7 @@ class NewsInvestmentService:
                               original_qty=account['shares'].get(sid, 0), target_qty=quantities.get(sid, 0))
                          for sid in sorted(set(account['shares']) | set(quantities))
                          if account['shares'].get(sid,0)>0 or quantities.get(sid,0)>0]
-            source_result = (self.source_builder or build_sources)(snapshot, self.cache, positions)
+            source_result = (self.source_builder or build_sources)(snapshot, self.cache, positions, max_chars=110000)
             generation = self.news_generation()
             sources = source_result['sources']
             if not sources:
@@ -137,7 +137,7 @@ class NewsInvestmentService:
             if model_timeout <= 0:
                 raise ValueError('REVIEW_DEADLINE_EXCEEDED')
             answer = (self.model or analyze_review)(list(sources.values()), positions,
-                                                    self.cache/'investment_analysis', timeout=model_timeout)
+                                                    self.cache/'investment_analysis', timeout=model_timeout, max_chars=120000)
             job['analysis_receipt'] = answer.get('receipt')
             if answer.get('status') not in ('SUCCEEDED', 'CACHED'):
                 raise ValueError('MODEL_REVIEW_UNAVAILABLE')

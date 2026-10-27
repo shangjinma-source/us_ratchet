@@ -73,4 +73,3 @@ class JointIssuerOfflineTests(unittest.TestCase):
         with self.assertRaises(ValueError):parse_issuer_story(headline,document,self.stamp)
 
 if __name__=='__main__':unittest.main()
-
