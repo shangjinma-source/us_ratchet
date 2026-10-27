@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import sqlite3
 from threading import Thread, Lock
+from time import monotonic
 from uuid import uuid4
 
 from core.news_investment_review_v1 import build_review_proposal, moment
@@ -108,25 +109,41 @@ class NewsInvestmentService:
         return result
 
     def run(self, job):
+        run_started = monotonic()
+        stages, stage_lock = {}, Lock()
+        def measured(name, callback, *args, **kwargs):
+            began = monotonic()
+            outcome = 'FAILED'
+            try:
+                value = callback(*args, **kwargs)
+                outcome = 'COMPLETE'
+                return value
+            finally:
+                with stage_lock:
+                    stages[name] = dict(seconds=max(0.0, monotonic()-began), status=outcome)
+        job['stage_timings'] = stages
         try:
             from data.news_desk import collect
             from data.news_investment_model_v1 import analyze_review
             from data.news_investment_sources_v1 import build_sources
             binding = job['binding']
-            account, target, names = self.bound_context(binding)
+            account, target, names = measured('initial_bound_context', self.bound_context, binding)
             # News capture does not wait for a potentially slow market preview.
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                capture = executor.submit(self.collector or collect, self.cache, limit=20)
-                initial = executor.submit(self.preview, **binding)
-                snapshot = capture.result()
-                original = self.normalize_preview(initial.result())
+            def parallel_inputs():
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    capture = executor.submit(measured, 'news_capture', self.collector or collect, self.cache, limit=20)
+                    initial = executor.submit(measured, 'initial_preview', self.preview, **binding)
+                    snapshot = capture.result()
+                    original = self.normalize_preview(initial.result())
+                    return snapshot, original
+            snapshot, original = measured('parallel_capture_preview', parallel_inputs)
             self.bound_context(binding)
             quantities = original['effective_target_quantities']
             positions = [dict(security_id=sid, ticker=names.get(sid, ''),
                               original_qty=account['shares'].get(sid, 0), target_qty=quantities.get(sid, 0))
                          for sid in sorted(set(account['shares']) | set(quantities))
                          if account['shares'].get(sid,0)>0 or quantities.get(sid,0)>0]
-            source_result = (self.source_builder or build_sources)(snapshot, self.cache, positions, max_chars=110000)
+            source_result = measured('source_builder', self.source_builder or build_sources, snapshot, self.cache, positions, max_chars=110000)
             generation = self.news_generation()
             sources = source_result['sources']
             if not sources:
@@ -136,14 +153,15 @@ class NewsInvestmentService:
             model_timeout = min(120, int(remaining_seconds))
             if model_timeout <= 0:
                 raise ValueError('REVIEW_DEADLINE_EXCEEDED')
-            answer = (self.model or analyze_review)(list(sources.values()), positions,
+            answer = measured('current_analysis_lookup', self.model or analyze_review, list(sources.values()), positions,
                                                     self.cache/'investment_analysis', timeout=model_timeout, max_chars=120000)
+            analysis_attempt_finished = self.clock()
             job['analysis_receipt'] = answer.get('receipt')
             if answer.get('status') not in ('SUCCEEDED', 'CACHED'):
                 raise ValueError('MODEL_REVIEW_UNAVAILABLE')
             # No account lock is held during model execution. Re-read and re-quote.
             account, target, names = self.bound_context(binding)
-            fresh = self.normalize_preview(self.preview(**binding))
+            fresh = self.normalize_preview(measured('post_analysis_preview', self.preview, **binding))
             if fresh['effective_target_quantities'] != quantities:
                 raise ValueError('STRATEGY_TARGET_CHANGED_DURING_ANALYSIS')
             finished = self.clock()
@@ -168,14 +186,21 @@ class NewsInvestmentService:
                     analysis_completed_at=(answer.get('receipt') or {}).get('finished_at', finished.isoformat()),
                     revalidated_at=finished.isoformat(), cached=answer.get('status')=='CACHED',
                     analysis_seconds=(answer.get('receipt') or {}).get('elapsed_seconds'),
+                    current_analysis_lookup_seconds=stages['current_analysis_lookup']['seconds'],
+                    current_analysis_attempt_completed_at=analysis_attempt_finished.isoformat(),
+                    original_model_started_at=(answer.get('receipt') or {}).get('started_at'),
+                    original_model_completed_at=(answer.get('receipt') or {}).get('finished_at'),
+                    original_model_elapsed_seconds=(answer.get('receipt') or {}).get('elapsed_seconds'),
                     total_seconds=(finished-moment(job['started_at'])).total_seconds(),
                     mode='ON_DEMAND_FRESH_CAPTURE', continuous_monitoring=False,
                     pre_move_detection_verified=False,
                     note='Publication and discovery delays are measured; reading after a price move is not evidence of avoiding that move.'),
                 original_preview_sha256=digest(fresh), original_preview=deepcopy(fresh))
-            self.bound_context(binding)
-            if self.news_generation() != generation:
-                raise ValueError('NEWS_UPDATED_DURING_ANALYSIS')
+            def final_validation():
+                self.bound_context(binding)
+                if self.news_generation() != generation:
+                    raise ValueError('NEWS_UPDATED_DURING_ANALYSIS')
+            measured('final_validation', final_validation)
             job.update(status='COMPLETE', proposal=proposal, source_fingerprint=source_result['fingerprint'],
                        news_generation=generation)
         except Exception as error:
@@ -184,6 +209,13 @@ class NewsInvestmentService:
         finally:
             job['finished_at'] = self.clock().isoformat()
             try:
+                job['worker_elapsed_before_persistence_seconds'] = max(0.0, monotonic()-run_started)
+                job['request_to_result_ready_wall_seconds'] = (moment(job['finished_at'])-moment(job['started_at'])).total_seconds()
+                job['timing_scope'] = 'Worker monotonic duration excludes queue wait and persistence; request-to-ready UTC duration includes queue wait but excludes persistence. Neither is full user-visible completion time.'
+                if job.get('proposal'):
+                    job['proposal']['timeliness']['stage_timings'] = deepcopy(stages)
+                    for key in ('worker_elapsed_before_persistence_seconds','request_to_result_ready_wall_seconds','timing_scope'):
+                        job['proposal']['timeliness'][key] = job[key]
                 with closing(self.connection()) as connection, connection:
                     self.save(connection, job)
             finally:
@@ -205,5 +237,6 @@ class NewsInvestmentService:
             if job['status'] == 'COMPLETE' and self.news_generation() != job['news_generation']:
                 raise ValueError('NEWS_UPDATED')
         except Exception:
-            return dict(status='STALE', job_id=job_id, error='REFRESH_ACCOUNT_AND_REVIEW')
-        return {key: job[key] for key in ('status','job_id','started_at','finished_at','proposal','error') if key in job}
+            timing = {key: job[key] for key in ('stage_timings','worker_elapsed_before_persistence_seconds','request_to_result_ready_wall_seconds','timing_scope') if key in job}
+            return dict(status='STALE', job_id=job_id, error='REFRESH_ACCOUNT_AND_REVIEW', **timing)
+        return {key: job[key] for key in ('status','job_id','started_at','finished_at','proposal','error','stage_timings','worker_elapsed_before_persistence_seconds','request_to_result_ready_wall_seconds','timing_scope') if key in job}
