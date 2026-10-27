@@ -11,3 +11,4 @@ uvicorn>=0.27
 yfinance>=0.2.40
 jsonschema>=4
 psutil>=5.9
+beautifulsoup4>=4.12

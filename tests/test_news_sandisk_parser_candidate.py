@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 
 spec = importlib.util.spec_from_file_location('sandisk_candidate',
-    Path(__file__).resolve().parents[1] / 'docs/candidates/news_sandisk_parser.py')
+    Path(__file__).resolve().parents[1] / 'data/news_sandisk_parser.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 URL = 'https://www.sandisk.com/company/newsroom/press-releases/2026/sample'
@@ -33,10 +33,21 @@ class SandiskParserTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.parse_release(raw, url, date)
 
-    def test_wrong_ticker_and_conflicting_date_rejected(self):
-        for raw in [page().replace(b'SNDK', b'OTHER'), page().replace(b'September 29,', b'September 28,')]:
+    def test_no_issuer_and_conflicting_date_rejected(self):
+        for raw in [page().replace(b'Sandisk', b'OtherCo'), page().replace(b'September 29,', b'September 28,')]:
             with self.assertRaises(ValueError):
                 module.parse_release(raw, URL, '2026-10-27T00:00:00+00:00')
+
+    def test_no_ticker_product_body_allowed_but_navigation_not_body(self):
+        result = module.parse_release(page().replace(b'(NASDAQ: SNDK)', b''), URL,
+                                      '2026-10-27T00:00:00+00:00')
+        self.assertEqual(result['event']['ticker_association'], 'fixed_official_issuer_mapping_not_body_ticker_mention')
+        raw = page().replace(b'Sandisk', b'OtherCo').replace(b'<body>', b'<body><nav>Sandisk</nav>')
+        with self.assertRaises(ValueError):
+            module.parse_release(raw, URL, '2026-10-27T00:00:00+00:00')
+        with self.assertRaises(ValueError):
+            module.parse_release(page().replace(URL.encode(), (URL+'-wrong').encode()), URL,
+                                 '2026-10-27T00:00:00+00:00')
 
     def test_generic_title_and_truncation(self):
         result = module.parse_release(page('Sandisk (NASDAQ:SNDK) ' + 'Details ' * 1000), URL,

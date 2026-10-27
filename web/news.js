@@ -70,7 +70,7 @@
     return events.filter(event => event && typeof event === 'object').map((event,index) => ({event,index})).sort((a,b) => Number(relatedTickers(b.event,holdings).length > 0) - Number(relatedTickers(a.event,holdings).length > 0) || Number(relatedTickers(b.event,targets).length > 0) - Number(relatedTickers(a.event,targets).length > 0) || a.index-b.index).map(item => item.event);
   }
   function hasBody(event) {
-    return event.content_kind === 'ISSUER_RELEASE_BODY' && typeof event.source_text === 'string' && event.source_text.trim().length > 0;
+    return ['ISSUER_RELEASE_BODY','OFFICIAL_RELEASE_BODY'].includes(event.content_kind) && typeof event.source_text === 'string' && event.source_text.trim().length > 0;
   }
   function relationLabel(event, holdings) {
     const related = relatedTickers(event, holdings);

@@ -25,7 +25,8 @@ SOURCES = {'data/saved_frontier_source_review_v1.py', 'data/strategy_unified_ser
 SOURCES |= {'web/strategy_target_recovery_v1.js', 'api/news_desk_v1.py',
             'web/news.html', 'web/news.js', 'data/news_refresh_service.py',
             'data/news_desk.py', 'data/news_issuer_source.py',
-            'data/news_evidence_groups.py', 'data/news_observation_history.py'}
+            'data/news_evidence_groups.py', 'data/news_observation_history.py',
+            'data/news_sandisk_capture.py', 'data/news_sandisk_parser.py'}
 SOURCES |= FIRST_WINDOW_SOURCES | {'data/saved_frontier_rolling_admission_v1.py'}
 SOURCES |= {
     'data/saved_frontier_current_migration_v1.py',

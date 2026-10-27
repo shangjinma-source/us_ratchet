@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 import requests
 from data.news_issuer_source import capture as capture_issuer
+from data.news_sandisk_capture import capture as capture_sandisk
 from data.news_observation_history import append_observations
 
 MODEL='gpt-6.1-sol'
@@ -105,21 +106,25 @@ def collect(cache,*,limit=20,max_age_days=90):
         except Exception as error:errors.append(dict(source=source['name'],url=source['url'],error_type=type(error).__name__,message=str(error)[:180]))
     issuer=capture_issuer(cache)
     events.extend(issuer['events']);receipts.extend(issuer['receipts']);errors.extend(issuer['errors'])
+    sandisk=capture_sandisk(cache)
+    events.extend(sandisk['events']);receipts.extend(sandisk['receipts']);errors.extend(sandisk['errors'])
     append_observations(cache, events)  # Public pre-dedup observations; before AI.
     unique={}
     for event in events:unique.setdefault(event['id'],event)
     ordered=sorted(unique.values(),key=lambda e:e['published_at'] or '',reverse=True)
-    priority=[next((event for event in ordered if 'MRNA' in event['tickers'] and event.get('content_kind')=='ISSUER_RELEASE_BODY'),None),next((event for event in ordered if 'SNDK' in event['tickers']),None)]
+    priority=[next((event for event in ordered if 'MRNA' in event['tickers'] and event.get('content_kind') in ('ISSUER_RELEASE_BODY','OFFICIAL_RELEASE_BODY')),None),next((event for event in ordered if 'SNDK' in event['tickers']),None)]
     selected=[event for event in priority if event]
     for source in SOURCES:
         representative=next((event for event in ordered if event['source']==source['name']),None)
         if representative and representative not in selected:selected.append(representative)
-    issuer_representative=next((event for event in ordered if event.get('content_kind')=='ISSUER_RELEASE_BODY'),None)
+    sandisk_representative=next((event for event in ordered if event.get('content_kind')=='OFFICIAL_RELEASE_BODY' and 'SNDK' in event.get('tickers',[])),None)
+    if sandisk_representative and sandisk_representative not in selected:selected.append(sandisk_representative)
+    issuer_representative=next((event for event in ordered if event.get('content_kind') in ('ISSUER_RELEASE_BODY','OFFICIAL_RELEASE_BODY')),None)
     if issuer_representative and issuer_representative not in selected:selected.append(issuer_representative)
     selected=(selected+[event for event in ordered if event not in selected])[:min(limit,20)]
     return dict(schema_version='news-desk-v1',mode='RESEARCH_ONLY_NO_TRADING',status='READY' if selected else 'NO_RECENT_DATA',generated_at=utc_now(),model=None,
-        events=selected,fetch_errors=errors,source_receipts=receipts,source_coverage=[dict(source=source['name'],tickers=source['tickers'],displayed=sum(event['source']==source['name'] for event in selected)) for source in SOURCES]+[dict(source='Moderna 公司发布（ACCESS Newswire / QuoteMedia）',tickers=['MRNA'],displayed=sum(event.get('content_kind')=='ISSUER_RELEASE_BODY' for event in selected))],analysis_summary=dict(status='NOT_REQUESTED',model=None,attempts=0,usage=None),
-        limitations=['官方RSS、SEC元数据和Moderna公司发布覆盖有限，不等于全部持仓或全市场新闻。','新闻解释尚未证明交易增量，当前不改变股票权重或买卖建议。','发布时间来自来源；采集时间是本机实际取得时间。'])
+        events=selected,fetch_errors=errors,source_receipts=receipts,source_coverage=[dict(source=source['name'],tickers=source['tickers'],displayed=sum(event['source']==source['name'] for event in selected)) for source in SOURCES]+[dict(source='Moderna 公司发布（ACCESS Newswire / QuoteMedia）',tickers=['MRNA'],displayed=sum(event.get('source')=='Moderna 公司发布（ACCESS Newswire / QuoteMedia）' for event in selected)),dict(source='Sandisk 官方新闻室',tickers=['SNDK'],displayed=sum(event.get('source')=='Sandisk 官方新闻室' for event in selected))],analysis_summary=dict(status='NOT_REQUESTED',model=None,attempts=0,usage=None),
+        limitations=['官方RSS、SEC元数据及两家公司正文来源覆盖有限，不等于全部持仓或全市场新闻。','新闻解释尚未证明交易增量，当前不改变股票权重或买卖建议。','发布时间来自来源；采集时间是本机实际取得时间。'])
 
 
 def output_schema():
@@ -169,7 +174,7 @@ def analyze(snapshot,cache,*,limit=4,timeout=120):
             event.update(analysis_status=reason,model=None,summary=event.get('source_text','')[:1200])
             continue
         eligible.append(event)
-    eligible.sort(key=lambda event: (0 if event.get('content_kind')=='ISSUER_RELEASE_BODY' and 'MRNA' in event['tickers'] else 1 if event.get('relevance')=='macro' else 2))
+    eligible.sort(key=lambda event: (0 if event.get('content_kind') in ('ISSUER_RELEASE_BODY','OFFICIAL_RELEASE_BODY') else 1 if event.get('relevance')=='macro' else 2))
     batch=eligible[:limit]
     if not batch:
         snapshot['analysis_summary']=dict(status='NO_ANALYZABLE_CONTENT',model=MODEL,attempts=0,usage=None)

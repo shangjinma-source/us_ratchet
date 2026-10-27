@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict');
 const h=require('../web/news.js');
 const payload={status:'SAVED_TARGET',target_id:'a'.repeat(64),proposal_id:'b'.repeat(64),target_month:'2026-10',server_month:'2026-10',proposal_targets:[{security_id:'sid:1',ticker:'MRNA',quantity:52},{security_id:'sid:2',ticker:'SNDK',quantity:10}],risk_monthly_targets:{'sid:1':52,'sid:2':10}};
+assert.equal(h.hasBody({content_kind:'OFFICIAL_RELEASE_BODY',source_text:'official body'}),true);
 const targets=h.targetSnapshot(payload),held={known:true,tickers:['SNDK']};
 assert.equal(targets.known,true);
 const events=[{id:1,tickers:['NVDA']},{id:2,tickers:['MRNA']},{id:3,tickers:['SNDK']},{id:4,tickers:['MRNA']}];

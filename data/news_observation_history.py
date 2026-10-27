@@ -14,7 +14,7 @@ from data.news_evidence_groups import group_evidence
 DATABASE = 'observations_v1.sqlite3'
 FIELDS = ('id', 'title', 'url', 'source', 'source_type', 'published_at',
           'published_raw', 'collected_at', 'tickers', 'relevance', 'source_text',
-          'content_kind', 'content_sha256', 'issuer_source_chain', 'noise_hint')
+          'content_kind', 'content_sha256', 'issuer_source_chain', 'noise_hint', 'listing_published_raw', 'ticker_association')
 
 
 def append_observations(cache, events):
