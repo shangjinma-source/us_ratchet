@@ -146,6 +146,31 @@ def reviewed_eca_776_scope(row, *, ticker, issuer_names):
         limitation='Only reviewed body version and these two target issuers; not a general merger exemption or proof of no other actions.')
 
 
+def reviewed_eca_772_scope(row, *, ticker, issuer_names):
+    """Exact reviewed two-security holding-company notice, not a general exemption."""
+    expected = (
+        'Equity Corporate Actions Alert',
+        'ECA2026-772 - Information Regarding the Formation of a Holding Company for Navient Corporation (NAVI & JSM)',
+        'News Category Alert Markets What You Need To Know Equity Corporate Actions Alert #2026-772 The Nasdaq Stock Market',
+        'http://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-772')
+    if tuple(row.get(k) for k in ('news_category', 'title', 'description_summary', 'link')) != expected or row.get('description_truncated') is not False:
+        return None
+    verified_targets = {'MRNA': {'modernainc', 'moderna'}, 'SNDK': {'sandiskcorporation', 'sandisk'}}
+    names = {re.sub(r'[^a-z0-9]', '', name.casefold()) for name in issuer_names if isinstance(name, str)}
+    if ticker not in verified_targets or not names or not names <= verified_targets[ticker]:
+        return None
+    return dict(identifier='ECA2026-772', classification='BODY_REVIEWED_OTHER_ISSUERS_HOLDING_COMPANY_FORMATION',
+        reviewed_body_sha256='613c43b72e1b3576d93b17a1a3f7f5e80838ab52b7c1651a26d4d91c6d2af37a',
+        official_url='https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-772',
+        securities=[dict(ticker='NAVI', old_issuer='Navient Corporation', new_issuer='Navient Holdings, Inc.',
+                         issue_type='Common Stock', old_cusip='63938C108', new_cusip='63943R108'),
+                    dict(ticker='JSM', old_issuer='Navient Corporation', new_issuer='Navient LLC',
+                         issue_type='6% Senior Notes due December 15, 2043', cusip='63938C405')],
+        expected_reorganization_time='2026-10-28 23:59 America/New_York', marketplace_effective_date='2026-10-29',
+        runtime_full_body_refetched=False,
+        limitation='Only this reviewed body version and MRNA/SNDK issuer identities; not proof of completion or a general multi-security exemption.')
+
+
 def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
     notices = review_notices(raw, ticker=ticker, issuer_names=issuer_names)
     require(feed['channel']['future_publication'] is False and
@@ -164,7 +189,8 @@ def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
                    if (row.get('news_category'), row.get('title'), row.get('description_summary')) == signature
                    and row.get('link') == 'http://www.nasdaqtrader.com/TraderNews.aspx?id='+identifier]
         eca_scope = (other_issuer_eca_scope(row, ticker=ticker, issuer_names=issuer_names) or
-                     reviewed_eca_776_scope(row, ticker=ticker, issuer_names=issuer_names))
+                     reviewed_eca_776_scope(row, ticker=ticker, issuer_names=issuer_names) or
+                     reviewed_eca_772_scope(row, ticker=ticker, issuer_names=issuer_names))
         require((len(matches) == 1 or eca_scope is not None) and row.get('description_truncated') is False,
                 'WAIT_KNOWN_ACTION_REVIEW')
         ignored.append(dict(identifier=matches[0] if matches else eca_scope['identifier'],
