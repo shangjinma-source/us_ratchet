@@ -46,6 +46,12 @@ SOURCES = {
 # Exact independently reviewed notices only, not a category-wide exemption. Original bytes/times
 # remain in closure and every issuer mention still goes through notice review.
 VERIFIED_UNRELATED_FUTURE_NOTICES = {
+    # Official full-body review: index data products only, no issuer corporate action.
+    # Exact signature remains required; never an identifier/category-only bypass.
+    'fpnews2026-74': (
+        'Financial Products News',
+        'fpnews2026-74 - Nasdaq Announces Launch of Six New Indexes Effective Wednesday, October 28th, 2026',
+        'News Category Alert Markets What You Need To Know Financial Products News #2026-074'),
     # Full official notice reviewed in tmp/eta2026_61_review_20261028/review.json.
     # TRF schedule/clearing infrastructure only; original future RSS time retained.
     'ETA2026-61': (
@@ -60,6 +66,19 @@ VERIFIED_UNRELATED_FUTURE_NOTICES = {
         'Trader Alerts - New ETP Listings',
         'ETP2026-175 - Nasdaq Texas to Begin Dual Listing Twenty-Five VictoryShares ETFs on Tuesday, October 27, 2026',
         'News Category Alert Markets What You Need To Know Trader Alerts - New ETP Listings #2026-175 NTX'),
+}
+
+# Audit identity for the reviewed document, not a claim of a new HTTP body check.
+# Runtime source pins bind this reviewed scope record; retain the official bytes
+# and receipt in the release evidence archive for independent re-verification.
+VERIFIED_UNRELATED_NOTICE_EVIDENCE = {
+    'fpnews2026-74': dict(
+        classification='REVIEWED_INDEX_DATA_DISSEMINATION_NO_ISSUER_ACTION',
+        official_url='https://www.nasdaqtrader.com/TraderNews.aspx?id=fpnews2026-74',
+        reviewed_body_sha256='c73d2260444a8b7360a78762a7432d003ab0cc54edb631f2833f4c0e06ecbacd',
+        review_schema='OFFICIAL_NOTICE_SCOPE_REVIEW_V1',
+        scope='Six TWD technology/semiconductor index data products on GIDS/GIW/GIFFD; no issuer shares, CUSIP, cash or entitlement change.',
+        runtime_full_body_refetched=False),
 }
 
 
@@ -124,7 +143,7 @@ def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
         require((len(matches) == 1 or eca_scope is not None) and row.get('description_truncated') is False,
                 'WAIT_KNOWN_ACTION_REVIEW')
         ignored.append(dict(identifier=matches[0] if matches else eca_scope['identifier'],
-            scope_classification=eca_scope or dict(classification='EXACT_PREVIOUSLY_REVIEWED_NOTICE'),
+            scope_classification=eca_scope or deepcopy(VERIFIED_UNRELATED_NOTICE_EVIDENCE.get(matches[0], dict(classification='EXACT_PREVIOUSLY_REVIEWED_NOTICE'))),
             index=row['index'], title=row['title'],
             news_category=row['news_category'], link=row['link'], guid=row.get('guid'),
             original_pubDate=row['pubDate'], published_at_utc=row['published_at_utc'],
