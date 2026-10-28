@@ -9,7 +9,10 @@ const cells=[text('TEST'),{textContent:'0 → 2',querySelector:s=>s==='strong'?t
 const row={querySelector:()=>cells[0],querySelectorAll:()=>cells};
 const table={querySelectorAll:s=>s==='tr'?[row]:['股票','持仓 → 目标','今日建议','原因与 AI 复核'].map(text)};
 const save={textContent:'更新现金并查看建议',disabled:false};
-global.document={querySelectorAll:s=>s.endsWith('table')?[table]:[save],getElementById:()=>({disabled:false}),body:{innerText:'Actual DOM'}};
+const cashSelector='#strategyMonthlyTarget form.monthly-cash-form > button[type=submit]';
+const hiddenCapitalSubmit={textContent:'确认资金变更',disabled:false};
+let cashForms=[save];
+global.document={querySelectorAll:s=>{if(s==='#strategyMonthlyTarget table')return [table];if(s===cashSelector)return cashForms;if(s==='#strategyMonthlyTarget button[type=submit]')return [save,hiddenCapitalSubmit];throw Error('Unexpected selector '+s);},getElementById:()=>({disabled:false}),body:{innerText:'Actual DOM'}};
 global.window=new Proxy({},{get(){throw Error('HIDDEN_APPLICATION_STATE_FORBIDDEN');}});
 global.fetch=()=>{throw Error('NETWORK_FORBIDDEN');};
 const result=captureDailyDom();
@@ -19,4 +22,6 @@ assert.equal(result.ui_controls.cash_button_disabled,false);
 assert.equal(result.scope,'READ_ONLY_PAGE_CAPTURE');
 for(const key of ['state','api_state','account_before','account_after','cash_posts_intercepted','unexpected_writes'])assert.equal(key in result,false,key+' cannot be certified by DOM');
 save.disabled=true;assert.equal(captureDailyDom().ui_controls.cash_button_disabled,true);
+cashForms=[save,{...save}];assert.throws(()=>captureDailyDom(),/UI_SETTLED_CONTROLS_REQUIRED/);
+cashForms=[save];assert.equal(captureDailyDom().ui_controls.cash_button_text,'更新现金并查看建议');
 console.log('PASS pure DOM extractor: no hidden application state, no fetch/click/browser launch, financial/write audit supplied separately');

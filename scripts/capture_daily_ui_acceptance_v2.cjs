@@ -6,7 +6,7 @@
 function captureDailyDom() {
  const tables=[...document.querySelectorAll('#strategyMonthlyTarget table')];
  if(tables.length!==1)throw Error('EXACTLY_ONE_DAILY_TABLE_REQUIRED');
- const saves=[...document.querySelectorAll('#strategyMonthlyTarget button[type=submit]')];
+ const saves=[...document.querySelectorAll('#strategyMonthlyTarget form.monthly-cash-form > button[type=submit]')];
  const refresh=document.getElementById('btnRefresh');
  if(saves.length!==1||!refresh)throw Error('UI_SETTLED_CONTROLS_REQUIRED');
  const ui_controls={cash_button_text:saves[0].textContent.trim(),cash_button_disabled:saves[0].disabled,refresh_button_disabled:refresh.disabled};
