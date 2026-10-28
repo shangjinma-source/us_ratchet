@@ -1,0 +1,93 @@
+{
+  "scope": "One synthetic real model integration call; not investment or backtest evidence",
+  "result": {
+    "schema": "SOURCE_ONLY_EVENT_OPINION_V1",
+    "rows": [
+      {
+        "security_id": "synthetic:factory",
+        "ticker": "SYNTHETIC",
+        "reason": "仅就该合成测试披露，唯一工厂火灾停产、预计六个月无产出且年度销售展望撤回，构成已发生的重大经营中断；未签约替代产能使恢复生产存在约束。停产可能削弱收入与现金生成，九个月现金储备和保险赔付尚不足以消除风险，支持条件性减持、保留一半持仓；现有缓冲也不足以支持强制清仓。",
+        "buy_fraction": "0/1",
+        "holding_fraction": "1/2",
+        "counterevidence": [
+          "按当前披露的支出速度，现金足够维持九个月，长于预计六个月的停产期。",
+          "保险方已确认收到索赔，但尚未确认赔付金额和日期。"
+        ],
+        "uncertainty": [
+          "该材料明确为合成测试，并非真实公司披露。",
+          "六个月为管理层预计，复产成本、进度及客户流失情况未披露。",
+          "现金支出速度可能变化，保险赔付能否及时覆盖损失未知。",
+          "未提供此前披露，无法判断该事件是否首次公开；减持一半是风险判断，非经验证的最优比例。"
+        ],
+        "action": "REDUCE_HOLDING",
+        "evidence": [
+          {
+            "source_id": "synthetic-risk-skill-r32-20261028",
+            "quote": "A fire has stopped the only manufacturing plant. Management expects no production for six months and has withdrawn its annual sales outlook.",
+            "source_sha256": "01dd91df9419079964870ec97c2a84d7860d75c77c468b4c226fbe3bc0d602ee"
+          },
+          {
+            "source_id": "synthetic-risk-skill-r32-20261028",
+            "quote": "Cash is sufficient for nine months at the current disclosed spending rate.",
+            "source_sha256": "01dd91df9419079964870ec97c2a84d7860d75c77c468b4c226fbe3bc0d602ee"
+          },
+          {
+            "source_id": "synthetic-risk-skill-r32-20261028",
+            "quote": "The insurer has acknowledged the claim but payment amount and date are not confirmed. No alternative production site is currently contracted.",
+            "source_sha256": "01dd91df9419079964870ec97c2a84d7860d75c77c468b4c226fbe3bc0d602ee"
+          }
+        ]
+      }
+    ],
+    "model": "gpt-6.1-sol",
+    "effort": "medium",
+    "executable": false,
+    "orders_created": false,
+    "skill_context_binding": {
+      "version": "us-equity-news-risk-v1",
+      "source_hashes": {
+        "skills/us-equity-news-risk/SOUL.md": "6775681f3b49612a7c50568347e3b9e27597658e5fa40ac02b7f35d9a069893b",
+        "skills/us-equity-news-risk/SKILL.md": "3c4863648f98901c64c6788ad5eb6f34e8fded73b3b76989ec2cb7c79b0a2c78"
+      }
+    },
+    "status": "SUCCEEDED",
+    "attempts": 1,
+    "receipt": {
+      "status": "SUCCEEDED",
+      "started_at": "2026-10-28T10:36:20.611409+00:00",
+      "attempts": 1,
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "version": "source-only-event-review-v1",
+      "skill_context_binding": {
+        "version": "us-equity-news-risk-v1",
+        "source_hashes": {
+          "skills/us-equity-news-risk/SOUL.md": "6775681f3b49612a7c50568347e3b9e27597658e5fa40ac02b7f35d9a069893b",
+          "skills/us-equity-news-risk/SKILL.md": "3c4863648f98901c64c6788ad5eb6f34e8fded73b3b76989ec2cb7c79b0a2c78"
+        }
+      },
+      "schema_version": "SOURCE_ONLY_EVENT_ACTION_ROWS_V1",
+      "schema_sha256": "ab8806cb8d7c511bd61e8bf0469056e3bc4015040bc6d176db47dcd94189cba7",
+      "prompt_sha256": "a5d7c674050fdaed17f48e65ebfc385cf7950822c47f5efc2b719e74ffe24fe8",
+      "background_hashes": {},
+      "source_hashes": {
+        "synthetic-risk-skill-r32-20261028": "01dd91df9419079964870ec97c2a84d7860d75c77c468b4c226fbe3bc0d602ee"
+      },
+      "input_sha256": "d79ce261410763108991899323e7a854a4c9f0409b6e368b239d50c569607aeb",
+      "usage": {
+        "input_tokens": 13002,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 472,
+        "reasoning_output_tokens": 44
+      },
+      "answer_sha256": "3e526cd37d6d21cd5f4b922099fbce6a3bfa2150db1804cd4bd44a1f27169439",
+      "finished_at": "2026-10-28T10:36:38.318905+00:00",
+      "elapsed_seconds": 17.707
+    },
+    "cache_key": "80c25d9ba2158f81e5011d7fb78655d8770d06a4b565408146a6d9030a3fc5d9"
+  },
+  "account_writes": false,
+  "orders_created": false,
+  "automatic_retry": false
+}

@@ -1,3 +1,4 @@
 # Preserve exact bytes of model instructions authenticated by SHA256.
 skills/us-equity-news-risk/SOUL.md -text
 skills/us-equity-news-risk/SKILL.md -text
+tests/fixtures/news_skill_synthetic_r32/*.json -text

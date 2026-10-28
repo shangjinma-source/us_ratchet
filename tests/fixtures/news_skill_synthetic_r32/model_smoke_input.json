@@ -1,0 +1,26 @@
+{
+  "sources": [
+    {
+      "id": "synthetic-risk-skill-r32-20261028",
+      "title": "Synthetic plant disruption integration fixture",
+      "url": "https://example.invalid/skill-integration",
+      "published_at": "2026-10-28T10:36:20.610096+00:00",
+      "observed_at": "2026-10-28T10:36:20.610096+00:00",
+      "security_ids": [
+        "synthetic:factory"
+      ],
+      "tickers": [
+        "SYNTHETIC"
+      ],
+      "text": "Synthetic issuer disclosure for integration testing, not a real company. A fire has stopped the only manufacturing plant. Management expects no production for six months and has withdrawn its annual sales outlook. Cash is sufficient for nine months at the current disclosed spending rate. The insurer has acknowledged the claim but payment amount and date are not confirmed. No alternative production site is currently contracted.",
+      "text_sha256": "01dd91df9419079964870ec97c2a84d7860d75c77c468b4c226fbe3bc0d602ee",
+      "content_kind": "FULL_TEXT"
+    }
+  ],
+  "positions": [
+    {
+      "security_id": "synthetic:factory",
+      "ticker": "SYNTHETIC"
+    }
+  ]
+}
