@@ -46,6 +46,21 @@ class ReferenceTests(unittest.TestCase):
   s=self.locked();self.assertEqual(execution_targets(state=s,effective_targets={'S':3},actual_shares={'S':8},decision_date='2026-10-02'),{'S':3});self.assertEqual(execution_targets(state=s,effective_targets={'S':12},actual_shares={'S':8},decision_date='2026-10-02'),{'S':8})
  def test_mid_recovery_latches(self):
   s=self.locked();e=self.evidence(s['locks']['S']);r=recover(state=s,security_id='S',evidence=e,decision_session=e['completed_through']);self.assertEqual(r['locks'],{});self.assertEqual(r['releases'][0]['recovered_session'],'2026-10-06')
+ def test_fresh_revalidation_does_not_invalidate_unchanged_decision(self):
+  s=self.locked();e=self.evidence(s['locks']['S'],(78,77,76))
+  first=recover(state=s,security_id='S',evidence=e,decision_session=e['completed_through'])
+  fresh=deepcopy(e);fresh['as_of']='2026-10-07T23:00:00Z';fresh['evidence_sha256']='b'*64
+  repeat=recover(state=first,security_id='S',evidence=fresh,decision_session=e['completed_through'])
+  self.assertEqual(first,repeat)
+  fresh['rows'][-1]['close']='75'
+  changed=recover(state=first,security_id='S',evidence=fresh,decision_session=e['completed_through'])
+  self.assertGreater(changed['version'],first['version'])
+  fresh['rows'][-1]['close']='80'
+  released=recover(state=first,security_id='S',evidence=fresh,decision_session=e['completed_through'])
+  self.assertEqual(released['locks'],{})
+  fresh=deepcopy(e);fresh['as_of']='2026-10-07T19:00:00Z'
+  with self.assertRaisesRegex(ValueError,'REFERENCE_FUTURE_CLOSE'):
+   recover(state=first,security_id='S',evidence=fresh,decision_session=e['completed_through'])
  def test_split_no_recovery_projects_new_sid(self):
   s=self.locked();e=self.evidence(s['locks']['S'],(7,));row=e['rows'][0];row.update(security_id='N',unit_id='u2',conversion=dict(kind='REVIEWED_INTEGER_SPLIT',timing='BEFORE_OPEN',old_security_id='S',old_unit_id='u1',new_security_id='N',new_unit_id='u2',ratio='10',evidence_sha256=H))
   r=recover(state=s,security_id='S',evidence=e,decision_session=e['completed_through']);self.assertEqual(execution_targets(state=r,effective_targets={'N':10},actual_shares={'N':0},decision_date='2026-10-05'),{'N':0})

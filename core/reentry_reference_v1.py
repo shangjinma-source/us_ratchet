@@ -2,6 +2,8 @@
 from copy import deepcopy
 from datetime import date,datetime,timezone
 from fractions import Fraction as F
+from hashlib import sha256
+import json
 
 def require(ok,reason):
  if not ok:raise ValueError(reason)
@@ -51,7 +53,14 @@ def recover(*,state,security_id,evidence,decision_session):
   require(row.get('security_id')==sid and row.get('unit_id')==unit and F(row['close'])>0,'REFERENCE_PRICE_UNIT_MISMATCH')
   if first is None and F(row['close'])>=reference:first=row['session_date']
  if not first:
-  result['locks'][security_id].update(current_security_id=sid,current_unit_id=unit,verified_through=evidence['completed_through'],interval_evidence_sha256=evidence['evidence_sha256'])
+  # Revalidation clocks and receipt digests may change without changing the
+  # decision. Keep the first authenticated receipt for identical semantics;
+  # callers still validate and retain this call's fresh source evidence.
+  semantic={key:evidence[key] for key in ('origin_security_id','origin_unit_id','exit_session','completed_through','expected_sessions','rows')}
+  semantic_hash=sha256(json.dumps(semantic,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+  if lock.get('interval_semantics_sha256')==semantic_hash:
+   return result
+  result['locks'][security_id].update(current_security_id=sid,current_unit_id=unit,verified_through=evidence['completed_through'],interval_evidence_sha256=evidence['evidence_sha256'],interval_semantics_sha256=semantic_hash)
   if result!=state:result['version']=state['version']+1
  if first:
   del result['locks'][security_id];result['releases'].append(dict(security_id=security_id,recovered_session=first,evidence_sha256=evidence['evidence_sha256']));result['version']+=1
