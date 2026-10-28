@@ -115,6 +115,7 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
  const card=el('section'),title=el('h3','AI 投资复核'),note=el('p','可按需复核，或开启持仓新事件发现。尚未验证能在价格变动前捕捉消息。原策略继续生效，复核不会下单或修改策略。'),button=el('button',compact?'AI新闻复核':'复核当前建议'),status=el('p'),body=el('div');button.type='button';button.title='按需采集与复核，不持续监控；不会修改正式买卖动作或下单。';
  for(const node of (compact?(manualButton?[button,status]:[status]):[title,note,button,status,body]))card.appendChild(node);container.replaceChildren(card);
  let state={},proposal=null,key='',generation=0,disposed=false,busy=false,timer=null,expiry=null,message='',activeJob=null;
+ let flight=null,flightTimer=null,pendingIntent=null;
  const eventButton=el('button','开启新事件发现'),eventStatus=el('span','新事件发现未开启');eventButton.type='button';card.appendChild(eventButton);card.appendChild(eventStatus);
  if(compact){card.className='daily-news-compact';button.className='daily-news-secondary';eventButton.className='daily-news-secondary';status.className='daily-news-status';eventStatus.className='daily-news-status';}
  let eventEnabled=false,eventTimer=null,eventSeenJob=null,eventGeneration=0;
@@ -122,7 +123,7 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
  async function eventPoll(){
   if(disposed)return;const eventToken=eventGeneration;
   try{const result=await json('/api/news/events/status');if(disposed||eventToken!==eventGeneration)return;eventEnabled=result.enabled===true;eventButton.textContent=eventEnabled?'关闭新事件发现':'开启新事件发现';eventStatus.textContent=eventHealthText(result,eventLabels,now());
-   if(eventEnabled&&result.job_id&&result.job_id!==eventSeenJob&&!busy&&view(state,proposal,now()).ready){const token=generation;const job=await json('/api/news/investment-review/job?job_id='+encodeURIComponent(result.job_id));if(!disposed&&token===generation&&eventToken===eventGeneration&&eventEnabled&&job.status==='COMPLETE'){eventSeenJob=result.job_id;activeJob=result.job_id;await accept(job,token,0);}}
+   if(eventEnabled&&result.job_id&&result.job_id!==eventSeenJob&&!busy&&!flight&&!pendingIntent&&view(state,proposal,now()).ready){const token=generation;const job=await json('/api/news/investment-review/job?job_id='+encodeURIComponent(result.job_id));if(!disposed&&token===generation&&eventToken===eventGeneration&&eventEnabled&&!flight&&!pendingIntent&&job.status==='COMPLETE'){eventSeenJob=result.job_id;activeJob=result.job_id;await accept(job,token,0);}}
   }catch{if(!disposed)eventStatus.textContent='新事件状态暂不可确认';}
   if(!disposed){eventTimer=setTimer(eventPoll,15000);eventTimer?.unref?.();}
  }
@@ -184,14 +185,54 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
   }
   busy=false;proposal=null;const errors={ONE_MINUTE_COOLDOWN:'请间隔一分钟后再复核',DAILY_REVIEW_BUDGET_EXHAUSTED:'本日复核次数已达上限',NO_COMPLETE_CURRENT_SOURCE_BODY:'近期没有可用的完整正文，暂不能复核',REFRESH_ACCOUNT_AND_REVIEW:'账户、目标或消息已变化，请刷新后复核'};message=errors[result.error]||(count>=maxPolls?'等待超时，请稍后重新查看':'本次未形成可用复核，请稍后重试');draw();
  }
+ // Transport lifetime is independent of display invalidation. A cash refresh must
+ // retire old opinions immediately, but must not lose an already submitted job.
+ function transportFailure(){
+  flight=null;pendingIntent=null;busy=false;proposal=null;
+  message='复核连接未确认，原策略未改变；请稍后更新现金并查看建议';draw();
+ }
+ async function receiveFlight(result,current,count){
+  if(disposed||flight!==current)return;
+  if(result.error==='ANALYSIS_ALREADY_RUNNING')current.collision=true;
+  if(['RUNNING','QUEUED','STARTED'].includes(result.status)&&typeof result.job_id==='string'){
+   if(count>=maxPolls){transportFailure();return;}
+   flightTimer=setTimer(async()=>{flightTimer=null;
+    try{await receiveFlight(await json('/api/news/investment-review/job?job_id='+encodeURIComponent(result.job_id)),current,count+1);}
+    catch{if(!disposed&&flight===current)transportFailure();}
+   },pollInterval);return;
+  }
+  flight=null;
+  const queued=pendingIntent;pendingIntent=null;
+  if(queued&&queued.token===generation&&queued.key===key&&view(state,null,now()).ready){
+   await launch({...queued,handoffs:1});return;
+  }
+  if(queued||current.token!==generation||current.key!==key){
+   busy=false;proposal=null;message='建议已变化或暂不可用，请更新现金并查看建议';draw();return;
+  }
+  // A 409 can attach us to an older server job. Allow one handoff only; quota
+  // failures and another collision remain visible rather than retrying forever.
+  if(current.collision&&current.handoffs===0){
+   await launch({...current,collision:false,handoffs:1});return;
+  }
+  await accept(result,current.token,count);
+ }
+ async function launch(intent){
+  if(disposed||flight||intent.token!==generation||intent.key!==key)return;
+  flight=intent;busy=true;message='正在提交复核';draw();
+  const b=binding(state);
+  try{await receiveFlight(await json('/api/news/investment-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expected_revision:b.account_revision,target_id:b.target_id,expected_proposal_id:b.proposal_id})}),intent,0);}
+  catch{if(!disposed&&flight===intent)transportFailure();else if(!disposed&&intent.token===generation){busy=false;proposal=null;message='本次复核已失效，原策略未改变';draw();}}
+ }
  async function start(){
-  if(disposed||busy||!view(state,proposal,now()).ready)return;
-  const token=++generation,b=binding(state);cancel();activeJob=null;busy=true;proposal=null;message='正在提交复核';draw();
-  try{await accept(await json('/api/news/investment-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expected_revision:b.account_revision,target_id:b.target_id,expected_proposal_id:b.proposal_id})}),token,0);}
-  catch{if(!disposed&&token===generation){busy=false;message='复核未完成，原策略未改变';draw();}}
+  if(disposed||!view(state,proposal,now()).ready)return;
+  if(flight&&flight.token===generation&&flight.key===key&&!pendingIntent)return;
+  const token=++generation;cancel();activeJob=null;busy=true;proposal=null;
+  const intent={token,key,handoffs:0,collision:false};
+  if(flight){pendingIntent=intent;message='等待上一轮结束，随后复核最新建议';draw();return;}
+  await launch(intent);
  }
  button.addEventListener('click',start);draw();
- return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();if(eventTimer!==null)clearTimer(eventTimer);eventButton.removeEventListener('click',eventToggle);button.removeEventListener('click',start);},elements:{button,status,body},start,isBusy:()=>busy};
+ return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();pendingIntent=null;activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();pendingIntent=null;if(flightTimer!==null)clearTimer(flightTimer);if(eventTimer!==null)clearTimer(eventTimer);eventButton.removeEventListener('click',eventToggle);button.removeEventListener('click',start);},elements:{button,status,body},start,isBusy:()=>busy};
 }
 const api={eventHealthText,publicationConflictText,riskView,renderRiskPlan,money,eventTiming,renderImpactCell,mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
 })(typeof window!=='undefined'?window:globalThis);

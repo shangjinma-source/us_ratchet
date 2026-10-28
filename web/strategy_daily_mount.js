@@ -106,14 +106,13 @@ function mount(container,dependencies){
  const submit=event=>{
   event.preventDefault();const amount=input.value,state=controller.getState();
   if(capitalLocked||state.busy||running)return;
-  const reviewWasBusy=newsReview.isBusy();
   // A confirmed cash save can succeed before preview/target generation fails.
   // Retry that remaining work without another ledger write or new event ID.
   const retrySaved=state.error&&state.cashSaved&&state.account?.cash_confirmation_valid===true&&
    cashInput(state.account.available_cash)===amount;
   run(()=>retrySaved?controller.refresh():controller.saveBalance({amount,expected_revision:state.account?.revision})).then(()=>{
    const fresh=controller.getState();
-   if(!disposed&&!reviewWasBusy&&!fresh.busy&&!fresh.error&&newsApi.view(fresh,null,now()).ready)void newsReview.start();
+   if(!disposed&&!fresh.busy&&!fresh.error&&newsApi.view(fresh,null,now()).ready)void newsReview.start();
   });
  };
  form.addEventListener('submit',submit);
