@@ -15,50 +15,50 @@ const settle=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 function harness(){
  let server=structuredClone(account),serverTarget=structuredClone(target),writes=0,posts=0,gets=0;
- let saveGate=null,reviewGate=null,getGate=null;const timers=new Map();let tid=0;
+ let saveGate=null,reviewGate=null,getGate=null,lastProposal=null;const timers=new Map();let tid=0;
  const host=new Node('div',doc);
  const instance=mount(host,{now:()=>now,loadAccount:async()=>structuredClone(server),loadTarget:async()=>structuredClone(serverTarget),
  previewDaily:async()=>({...daily('12'),account_revision:server.revision,target_id:serverTarget.target_id,proposal_id:serverTarget.proposal_id}),generateTarget:async()=>structuredClone(serverTarget),
- saveCash:async({amount,expected_revision})=>{assert.equal(expected_revision,server.revision);writes++;if(saveGate)await saveGate.promise;server={...server,revision:'cash-1',available_cash:amount};return structuredClone(server);},
+ saveCash:async({amount,expected_revision})=>{assert.equal(expected_revision,server.revision);writes++;if(saveGate)await saveGate.promise;server={...server,revision:'cash-'+writes,available_cash:amount};return structuredClone(server);},
  setTimer:(f,ms)=>{timers.set(++tid,{f,ms});return tid;},clearTimer:id=>timers.delete(id),
- newsReviewFetch:async(url,options)=>{if(options){posts++;if(reviewGate)await reviewGate.promise;}else{gets++;if(getGate)await getGate.promise;}return {ok:true,json:async()=>({status:'COMPLETE',job_id:'j',proposal:proposal()})};}});
+ newsReviewFetch:async(url,options)=>{if(url==='/api/news/events/status'){assert.equal(options,undefined);return {ok:true,json:async()=>({enabled:false,status:'DISABLED'})};}if(options){posts++;lastProposal=proposal();lastProposal.original_binding.account_revision=server.revision;lastProposal.original_binding.target_id=serverTarget.target_id;lastProposal.original_preview.account_revision=server.revision;lastProposal.original_preview.target_id=serverTarget.target_id;const captured=structuredClone(lastProposal);if(reviewGate)await reviewGate.promise;return {ok:true,json:async()=>({status:'COMPLETE',job_id:'j',proposal:captured})};}gets++;const captured=structuredClone(lastProposal);if(getGate)await getGate.promise;return {ok:true,json:async()=>({status:'COMPLETE',job_id:'j',proposal:captured})};}});
  return {host,instance,timers,get writes(){return writes;},get posts(){return posts;},get gets(){return gets;},setSave:d=>saveGate=d,setReview:d=>reviewGate=d,setGet:d=>getGate=d,
  mutate:kind=>{if(kind==='target')serverTarget={...serverTarget,target_id:'new-target'};else server={...server,revision:kind+'-new',holdings:kind==='fill'?[{security_id:'S',ticker:'S',quantity:2}]:server.holdings};},
- click:()=>flat(host).find(n=>n.textContent==='AI新闻复核').listeners.click[0](),
- opinion:()=>flat(host).some(n=>(n.textContent||'').includes('退出持仓 · 投资效果未验证'))};
+ click:()=>instance.elements.form.listeners.submit[0]({preventDefault(){}}),
+ opinion:()=>flat(host).some(n=>n.textContent==='退出持仓')&&flat(host).some(n=>n.textContent==='未采用')};
 }
 async function ready(h){await h.instance.ready;await h.instance.refresh();}
-async function show(h){h.click();await settle();assert.ok(h.opinion());assert.equal(h.instance.getState().daily.new_orders[0].side,'BUY');}
+async function show(h){h.click();await h.instance.whenIdle();await settle();assert.ok(h.opinion());assert.equal(h.instance.getState().daily.new_orders[0].side,'BUY');}
 function edit(h,amount){h.instance.elements.input.value=amount;for(const f of h.instance.elements.input.listeners.input||[])f();}
 function submit(h){h.instance.elements.form.listeners.submit[0]({preventDefault(){}});}
 (async()=>{
  for(const amount of ['300','50']){
-  const h=harness();await ready(h);await show(h);const gate=deferred();h.setSave(gate);edit(h,amount);submit(h);await settle();
-  assert.equal(h.writes,1);assert.equal(h.opinion(),false,'cash save retires opinion while write pending');assert.equal(h.instance.getState().daily,null);
-  submit(h);assert.equal(h.writes,1);gate.resolve();await h.instance.whenIdle();await settle();
-  assert.equal(h.writes,1);assert.equal(h.instance.elements.input.value,amount);assert.equal(h.instance.getState().daily.account_revision,'cash-1');
-  assert.equal(h.instance.getState().daily.new_orders[0].limit_price,'12');assert.equal(h.instance.getState().daily.new_orders[0].side,'BUY');assert.equal(h.opinion(),false);h.instance.dispose();
+  const h=harness();await ready(h);await show(h);const gate=deferred(),newReview=deferred();h.setSave(gate);h.setReview(newReview);edit(h,amount);submit(h);await settle();
+  assert.equal(h.writes,2);assert.equal(h.opinion(),false,'cash save retires opinion while write pending');assert.equal(h.instance.getState().daily,null);
+  submit(h);assert.equal(h.writes,2);gate.resolve();await h.instance.whenIdle();await settle();
+  assert.equal(h.writes,2);assert.equal(h.instance.elements.input.value,amount);assert.equal(h.instance.getState().daily.account_revision,'cash-2');
+  assert.equal(h.instance.getState().daily.new_orders[0].limit_price,'12');assert.equal(h.instance.getState().daily.new_orders[0].side,'BUY');assert.equal(h.opinion(),false);assert.equal(h.posts,2);newReview.resolve();await settle();assert.equal(h.instance.getState().daily.account_revision,'cash-2');h.instance.dispose();
  }
  {
   const h=harness();await ready(h);await show(h);h.mutate('fill');h.instance.invalidate();assert.equal(h.opinion(),false);assert.equal(h.instance.getState().daily,null);
-  await h.instance.refresh();assert.equal(h.instance.getState().account.holdings[0].quantity,2);assert.equal(h.writes,0);h.instance.dispose();
+  await h.instance.refresh();assert.equal(h.instance.getState().account.holdings[0].quantity,2);assert.equal(h.writes,1);h.instance.dispose();
  }
  for(const change of ['cash','target','fill']){
   const h=harness();await ready(h);const delayed=deferred();h.setReview(delayed);h.click();await settle();assert.equal(h.posts,1);
   h.mutate(change);h.instance.invalidate();await h.instance.refresh();const fresh=structuredClone(h.instance.getState().daily);
-  delayed.resolve();await settle();assert.deepEqual(h.instance.getState().daily,fresh,'late COMPLETE cannot restore preview');assert.equal(h.opinion(),false);assert.equal(h.writes,0);h.instance.dispose();
+  delayed.resolve();await settle();assert.deepEqual(h.instance.getState().daily,fresh,'late COMPLETE cannot restore preview');assert.equal(h.opinion(),false);assert.equal(h.writes,1);h.instance.dispose();
  }
  {
   const h=harness();await ready(h);await show(h);edit(h,'123.45');const delayed=deferred();h.setGet(delayed);
-  const monitor=[...h.timers.values()].find(x=>x.ms===15000);assert.ok(monitor);const pending=monitor.f();await settle();
+  const monitors=[...h.timers.values()].filter(x=>x.ms===15000);const monitor=monitors.at(-1);assert.ok(monitor);const pending=monitor.f();await settle();
   h.mutate('fill');h.instance.invalidate();await h.instance.refresh();delayed.resolve();await pending;await settle();
   assert.equal(h.opinion(),false);assert.equal(h.instance.elements.input.value,'123.45');assert.equal(h.instance.getState().daily.account_revision,'fill-new');
-  assert.equal(h.posts,1);assert.equal(h.gets,1);assert.equal(h.writes,0);h.instance.dispose();
+  assert.equal(h.posts,1);assert.equal(h.gets,1);assert.equal(h.writes,1);h.instance.dispose();
  }
  console.log('PASS: cash increase/decrease, single write, fill invalidation, pending revision/target/fill, late monitor, draft and order isolation');
  {
   const h=harness();await ready(h);await show(h);h.instance.setCapitalBusy(true);
-  try{assert.equal(h.opinion(),false,'capital busy must retire displayed opinion');assert.equal(flat(h.host).find(n=>n.textContent==='AI新闻复核').disabled,true);h.instance.setCapitalBusy(false);assert.equal(h.opinion(),false,'unlock must not restore old opinion');}finally{h.instance.dispose();}
-  const pending=harness();await ready(pending);const gate=deferred();pending.setReview(gate);pending.click();await settle();const original=structuredClone(pending.instance.getState().daily);edit(pending,'123.45');pending.instance.setCapitalBusy(true);gate.resolve();await settle();assert.equal(pending.opinion(),false);assert.deepEqual(pending.instance.getState().daily,original,'late completion during capital lock cannot adopt preview');pending.instance.setCapitalBusy(false);assert.equal(pending.opinion(),false);assert.equal(pending.instance.elements.input.value,'123.45');assert.equal(pending.writes,0);pending.instance.dispose();console.log('PASS: capital lock clears opinion, disables review, rejects late COMPLETE and unlock never resurrects');
+  try{assert.equal(h.opinion(),false,'capital busy must retire displayed opinion');assert.equal(h.instance.elements.save.disabled,true);h.instance.setCapitalBusy(false);assert.equal(h.opinion(),false,'unlock must not restore old opinion');}finally{h.instance.dispose();}
+  const pending=harness();await ready(pending);const gate=deferred();pending.setReview(gate);pending.click();await settle();const original=structuredClone(pending.instance.getState().daily);edit(pending,'123.45');pending.instance.setCapitalBusy(true);gate.resolve();await settle();assert.equal(pending.opinion(),false);assert.deepEqual(pending.instance.getState().daily,original,'late completion during capital lock cannot adopt preview');pending.instance.setCapitalBusy(false);assert.equal(pending.opinion(),false);assert.equal(pending.instance.elements.input.value,'123.45');assert.equal(pending.writes,1);pending.instance.dispose();console.log('PASS: capital lock clears opinion, disables review, rejects late COMPLETE and unlock never resurrects');
  }
 })().catch(e=>{console.error(e);process.exitCode=1;});

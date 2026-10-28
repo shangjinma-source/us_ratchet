@@ -40,7 +40,7 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
   cashWrites++;instance.accountInvalidated();account={...account,revision:'cash-'+cashWrites,available_cash:amount};return {account};
  }};
  const container=new Node('div',doc),timers=new Map();let tick=Date.parse('2026-10-20T15:00:00Z'),timerId=0;
- instance=mount(container,{...httpDependencies(request,()=> 'stable-event',accountController),
+ instance=mount(container,{newsReviewFetch:async()=>({ok:true,json:async()=>({enabled:false,status:'DISABLED'})}),...httpDependencies(request,()=> 'stable-event',accountController),
   now:()=>tick,setTimer:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId;},clearTimer:id=>timers.delete(id),onError:e=>errors.push(e.message),
   onRefreshCompleted:()=>refreshCompleted++,onRecommendedTickers:v=>recommended.push(v),onTargetChanged:(v,options)=>chartChanges.push({v,options})});
  await instance.ready;
@@ -68,17 +68,17 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  assert.equal(cashWrites,1);
  await instance.reloadCash();assert.equal(instance.elements.input.value,'35');
  await instance.refresh();
- assert.equal(timers.size,1);
- const beforeExpiry=requests.length,deadline=[...timers.values()][0];
+ assert.equal([...timers.values()].filter(t=>t.delay!==15000).length,1,'financial expiry remains scheduled separately from news polling');
+ const beforeExpiry=requests.length,deadline=[...timers.values()].find(t=>t.delay!==15000);assert.ok(deadline);
  // Resume beyond expiry before the suspended timeout has had a chance to run.
  tick+=deadline.delay;doc.dispatch('visibilitychange');doc.defaultView.dispatch('focus');doc.defaultView.dispatch('pageshow');
  assert.equal(requests.length,beforeExpiry);assert.match(text(instance.elements.summary),/上一条建议/);
  assert.match(text(instance.elements.summary),/卖出 4.*\$100.25/);
  assert.match(text(instance.elements.summary),/已失效，待刷新/);
  assert.equal(instance.getState().daily.new_orders.length,1);
- assert.equal(timers.size,0);
+ assert.equal([...timers.values()].filter(t=>t.delay!==15000).length,0);
  tick=Date.parse('2026-10-20T15:00:00Z');
- await instance.refresh();assert.equal(timers.size,1);
+ await instance.refresh();assert.equal([...timers.values()].filter(t=>t.delay!==15000).length,1,'financial expiry remains scheduled separately from news polling');
  let resolve;gate=new Promise(r=>resolve=r);
  const pendingRefresh=instance.refresh();
  while(!instance.getState().busy)await new Promise(r=>setImmediate(r));
@@ -87,7 +87,7 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  assert.match(text(instance.elements.summary),/待核验/);
  assert.equal(chartChanges.at(-1).v.targets[0].quantity,null,'chart handoff must preserve an unknown cap target');
  assert.equal(instance.getState().target.targets[0].quantity,21,'saved raw target remains unchanged');
- gate=null;await instance.refresh();assert.equal(timers.size,1);
+ gate=null;await instance.refresh();assert.equal([...timers.values()].filter(t=>t.delay!==15000).length,1,'financial expiry remains scheduled separately from news polling');
  instance.setCapitalBusy(true);assert(instance.elements.save.disabled);assert(instance.elements.input.disabled);
  account={...account,revision:'after-capital',available_cash:'1258023/100'};
  await instance.reloadCash();assert.equal(instance.elements.input.value,'12580.23');assert.equal(cashWrites,1);

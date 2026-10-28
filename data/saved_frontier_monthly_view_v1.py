@@ -11,10 +11,18 @@ import json
 import sqlite3
 import os
 import tempfile
+from functools import lru_cache
 
 from core.saved_monthly_frontier_proposal import build_frontier_proposal
 from core.strategy_account_ledger import canonical, require
 from data.strategy_daily_session_capture import reject_links
+
+
+@lru_cache(maxsize=1)
+def _expected_proposal_bytes(target_bytes):
+    # Pure reconstruction only. Every read still verifies persisted bytes.
+    # Immutable full-content key and bytes result cannot alias caller objects.
+    return canonical(build_frontier_proposal(target=json.loads(target_bytes)))
 
 
 class SavedFrontierProposalStore:
@@ -77,12 +85,12 @@ class SavedFrontierProposalStore:
         return deepcopy(proposal)
 
     def read(self, target):
-        expected = build_frontier_proposal(target=target)
+        expected = _expected_proposal_bytes(canonical(target))
         with closing(self._connect()) as connection:
             row = connection.execute('SELECT document FROM frontier_proposals WHERE target_id=?',
                                      (target['target_id'],)).fetchone()
         require(row is not None, 'FRONTIER_PROPOSAL_REQUIRED')
-        require(bytes(row[0]) == canonical(expected), 'FRONTIER_PROPOSAL_CHANGED')
+        require(bytes(row[0]) == expected, 'FRONTIER_PROPOSAL_CHANGED')
         return json.loads(row[0])
 
 

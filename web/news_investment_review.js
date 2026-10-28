@@ -91,7 +91,7 @@ function renderRiskPlan(container,proposal,sid,now){
 function renderImpactCell(container,sid,reviewState,opened=new Set(),now=Date.now()){
  const doc=container.ownerDocument,el=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;};
  const row=reviewState?.proposal?.rows?.find(r=>r.security_id===sid);
- if(!row){container.appendChild(el('span',reviewState?.busy?'复核中，原策略仍生效':reviewState?.status?.includes('过期')?'复核已过期，待重新复核':'未复核，不代表无风险'));return;}
+ if(!row){container.appendChild(el('span',reviewState?.busy?'复核中，原策略仍生效':reviewState?.status?.includes('过期')?'复核已过期，待更新':'未复核，不代表无风险'));return;}
  if(row.reviewed!==false&&row.action!=='ABSTAIN')container.appendChild(el('span',labels[row.action]||'未识别意见'));
  renderRiskPlan(container,reviewState.proposal,sid,now);
  const old=(row.evidence||[]).some(e=>Number.isFinite(Date.parse(e.published_at))&&(now-Date.parse(e.published_at))/1000>3600);
@@ -110,12 +110,13 @@ function renderImpactCell(container,sid,reviewState,opened=new Set(),now=Date.no
  details.appendChild(el('p',`${t.cached?'复用此前分析':'分析完成'} ${localTime(t.analysis_completed_at)}${t.cached?' · 本次重新校验 '+localTime(t.revalidated_at||reviewState.proposal.review_created_at):''} · 复核有效至 ${localTime(reviewState.proposal.review_valid_until)}`));
  container.appendChild(details);
 }
-function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,pollInterval=2000,maxPolls=180,onComplete=()=>null,compact=false,onReviewChange=()=>{}}={}){
+function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,pollInterval=2000,maxPolls=180,onComplete=()=>null,compact=false,manualButton=true,onReviewChange=()=>{}}={}){
  const doc=container.ownerDocument,el=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;};
  const card=el('section'),title=el('h3','AI 投资复核'),note=el('p','可按需复核，或开启持仓新事件发现。尚未验证能在价格变动前捕捉消息。原策略继续生效，复核不会下单或修改策略。'),button=el('button',compact?'AI新闻复核':'复核当前建议'),status=el('p'),body=el('div');button.type='button';button.title='按需采集与复核，不持续监控；不会修改正式买卖动作或下单。';
- for(const node of (compact?[button,status]:[title,note,button,status,body]))card.appendChild(node);container.replaceChildren(card);
+ for(const node of (compact?(manualButton?[button,status]:[status]):[title,note,button,status,body]))card.appendChild(node);container.replaceChildren(card);
  let state={},proposal=null,key='',generation=0,disposed=false,busy=false,timer=null,expiry=null,message='',activeJob=null;
  const eventButton=el('button','开启新事件发现'),eventStatus=el('span','新事件发现未开启');eventButton.type='button';card.appendChild(eventButton);card.appendChild(eventStatus);
+ if(compact){card.className='daily-news-compact';button.className='daily-news-secondary';eventButton.className='daily-news-secondary';status.className='daily-news-status';eventStatus.className='daily-news-status';}
  let eventEnabled=false,eventTimer=null,eventSeenJob=null,eventGeneration=0;
  const eventLabels={DISABLED:'已关闭',WAITING:'等待检查',NO_NEW_TIMELY_BODY:'未发现及时新稿',SOURCE_OPINION_READY:'已解释新稿，等待开盘复核',SOURCE_OPINION_WAIT_FIRST_OPEN:'源意见已保存，等待首个开盘',ANALYZING_PUBLIC_SOURCES:'正在解释新稿',REVIEW_RUNNING:'正在重新验价复核',REVIEW_COMPLETE:'新事件复核完成',ABSTAIN:'本轮未形成意见',WAIT_SHARED_MODEL_BUDGET:'等待共享预算',WAIT_SOURCE_RECONFIRMATION:'等待来源重新确认',WAIT_PUBLICATION_TIME_CONFLICT:'等待消息时间核验'};
  async function eventPoll(){
@@ -137,7 +138,7 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
 
  function cancel(){if(timer!==null)clearTimer(timer);if(expiry!==null)clearTimer(expiry);timer=expiry=null;}
  function draw(){
-  if(disposed)return;const v=view(state,proposal,now());onReviewChange({proposal:v.valid?structuredClone(proposal):null,status:message||v.status,busy});button.disabled=busy||!v.ready;status.textContent=message||v.status;body.replaceChildren();
+  if(disposed)return;const v=view(state,proposal,now());const displayStatus=compact&&!manualButton?(message||v.status).replace(/请重新复核|待重新复核/g,'待更新'):(message||v.status);onReviewChange({proposal:v.valid?structuredClone(proposal):null,status:displayStatus,busy});button.disabled=busy||!v.ready;status.textContent=(compact&&!manualButton?'AI 新闻：':'')+displayStatus;body.replaceChildren();
   for(const row of (compact?[]:v.rows).slice(0,12)){
    const box=el('div');box.appendChild(el('strong',row.ticker||row.security_id));
    box.appendChild(el('p',`原策略目标 ${row.original_target_quantity??'—'} 股 → AI ${labels[row.action]||'未识别动作'}${row.reviewed===false?'（未准入）':''}`));
@@ -190,7 +191,7 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
   catch{if(!disposed&&token===generation){busy=false;message='复核未完成，原策略未改变';draw();}}
  }
  button.addEventListener('click',start);draw();
- return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();if(eventTimer!==null)clearTimer(eventTimer);eventButton.removeEventListener('click',eventToggle);button.removeEventListener('click',start);},elements:{button,status,body},start};
+ return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();if(eventTimer!==null)clearTimer(eventTimer);eventButton.removeEventListener('click',eventToggle);button.removeEventListener('click',start);},elements:{button,status,body},start,isBusy:()=>busy};
 }
 const api={eventHealthText,publicationConflictText,riskView,renderRiskPlan,money,eventTiming,renderImpactCell,mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
 })(typeof window!=='undefined'?window:globalThis);

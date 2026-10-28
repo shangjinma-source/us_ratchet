@@ -35,12 +35,12 @@ function mount(container,dependencies){
  const titleBar=el('div',undefined,'account-header');titleBar.appendChild(title);
  for(const node of [titleBar,cashPanel,bar,summary,charts])card.appendChild(node);
  container.replaceChildren(card);
- const reviewHost=el('div');titleBar.appendChild(reviewHost);
+ const reviewHost=el('div',undefined,'daily-news-controls');form.appendChild(reviewHost);
  let controller,newsState=null;const openedNews=new Set();
  const newsApi=typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview;
  const newsCell=(cell,sid)=>newsApi.renderImpactCell(cell,sid,newsState,openedNews,now());
  let syncingReview=false,capitalLocked=false;
- const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer,compact:true,onReviewChange:next=>{newsState=next;if(controller)ui.render(summary,controller.getState(),now(),newsCell);},onComplete:proposal=>{
+ const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer,compact:true,manualButton:false,onReviewChange:next=>{newsState=next;if(controller)ui.render(summary,controller.getState(),now(),newsCell);},onComplete:proposal=>{
   if(capitalLocked)throw Error('CAPITAL_UPDATE_IN_PROGRESS');
   if(!proposal.original_preview)throw Error('REVIEW_PREVIEW_MISSING');
   syncingReview=true;
@@ -63,7 +63,7 @@ function mount(container,dependencies){
    if(state.cashSaved&&value!==null&&input.value===value)cashEdited=false;
    if(!cashEdited&&value!==null)input.value=value;
   }
-  save.disabled=state.busy||capitalLocked;input.disabled=state.busy||capitalLocked;
+  save.disabled=state.busy||capitalLocked;save.textContent=state.busy?'正在更新建议…':'更新现金并查看建议';input.disabled=state.busy||capitalLocked;
   if(!syncingReview)newsReview.update({account:state.account,target:state.target,daily:capitalLocked?null:state.daily});
   const displayed=ui.render(summary,state,now(),newsCell);
   const chartTarget=state.target?structuredClone(state.target):null;
@@ -103,12 +103,16 @@ function mount(container,dependencies){
  };
  const submit=event=>{
   event.preventDefault();const amount=input.value,state=controller.getState();
-  if(capitalLocked||state.busy)return;
+  if(capitalLocked||state.busy||running)return;
+  const reviewWasBusy=newsReview.isBusy();
   // A confirmed cash save can succeed before preview/target generation fails.
   // Retry that remaining work without another ledger write or new event ID.
   const retrySaved=state.error&&state.cashSaved&&state.account?.cash_confirmation_valid===true&&
    cashInput(state.account.available_cash)===amount;
-  run(()=>retrySaved?controller.refresh():controller.saveBalance({amount,expected_revision:state.account?.revision}));
+  run(()=>retrySaved?controller.refresh():controller.saveBalance({amount,expected_revision:state.account?.revision})).then(()=>{
+   const fresh=controller.getState();
+   if(!disposed&&!reviewWasBusy&&!fresh.busy&&!fresh.error&&newsApi.view(fresh,null,now()).ready)void newsReview.start();
+  });
  };
  form.addEventListener('submit',submit);
  // Timers may be suspended during sleep or while the tab is hidden.

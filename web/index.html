@@ -304,6 +304,17 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 .news-impact-details summary{cursor:pointer;color:#087f69;font-weight:600}
 .news-impact-details p{margin:7px 0;line-height:1.55}
 .news-impact-details blockquote{margin:8px 0;padding-left:9px;border-left:2px solid #b8d6cd;white-space:normal;overflow-wrap:anywhere}
+
+/* Cash and news actions share one compact row; every news control is type=button. */
+.daily-cash-panel .monthly-cash-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px}
+.daily-cash-panel .monthly-cash-form>label{flex:0 1 200px;min-width:160px;width:auto}
+.daily-cash-panel .monthly-cash-form>label input{width:100%;box-sizing:border-box}
+.daily-news-controls,.daily-news-compact{display:contents}
+.daily-cash-panel .monthly-cash-form button{width:auto;min-height:44px;white-space:nowrap;margin:0}
+.daily-cash-panel .monthly-cash-form .daily-news-secondary{background:#fff;color:#315c4d;border:1px solid #c9d8cd;font-size:13px;font-weight:500;padding:10px 14px}
+.daily-news-status{order:1;flex:1 0 100%;min-width:0;margin:0;font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.daily-news-status:empty{display:none}
+@media(max-width:700px){.daily-cash-panel{padding:16px}.daily-cash-panel .monthly-cash-form>label{flex:1 0 100%;min-width:0}.daily-cash-panel .monthly-cash-form button{flex:1 1 auto}.daily-cash-panel .monthly-cash-form .daily-news-secondary{flex:1 1 calc(50% - 6px)}}
 </style>
 </head>
 <body class="research-collapsed">
@@ -686,8 +697,8 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 <script src="/static/current_quantity_v2_paper.js?v=20261016-buy-sell-retained-v5"></script>
 <script src="/static/strategy_account.js?v=20261024-account-inflight-v5"></script>
 <script src="/static/strategy_daily_controller.js?v=20261028-ai-risk-plan-r29"></script>
-<script src="/static/news_investment_review.js?v=20261028-ai-monitor-health-r33"></script>
-<script src="/static/strategy_daily_mount.js?v=20261028-capital-review-r25"></script>
+<script src="/static/news_investment_review.js?v=20261028-cash-news-r35"></script>
+<script src="/static/strategy_daily_mount.js?v=20261028-cash-news-r35"></script>
 <script src="/static/strategy_target_recovery_v1.js?v=20261026-r1"></script>
 <script src="/static/strategy_advice_review.js?v=20261020-v8"></script>
 <script src="/static/strategy_followup_summary.js?v=20261023-v1"></script>
