@@ -250,8 +250,8 @@ function fixture(month='2026-10'){
   render(container,{account:{revision:'r',holdings:[{security_id:'S',ticker:'SNDK',quantity:14}]},target:null,daily:null,historicalQuotes:{S:quote}},now);
   const texts=node=>[node.textContent||'',...(node.children||[]).flatMap(texts)];
   const output=texts(container).join(' ');
-  assert.match(output,/本月目标/);assert.match(output,/今日有效目标/);assert.match(output,/上一条建议/);
-  assert.match(output,/买入 \$10.00/);assert.match(output,/卖出 \$11.00/);
+  assert.deepEqual(container.children[1].children[0].children.map(n=>n.textContent),['股票','持仓 → 目标','今日建议','原因与 AI 复核']);assert.match(output,/等待有效数据和报价/);
+  assert.doesNotMatch(output,/\$10\.00|\$11\.00/);
   assert(!output.includes('<details'));count++;
  }
  {

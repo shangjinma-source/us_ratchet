@@ -32,7 +32,7 @@ const flat=n=>[n,...n.children.flatMap(flat)];
  assert.ok(flat(host).some(n=>(n.textContent||'').includes('复核完成')),'review survives top draw');
  assert.equal(flat(host).filter(n=>n.tag==='table').length,1);
  assert.equal(flat(host).filter(n=>n.tag==='h3'&&n.textContent==='AI 投资复核').length,0);
- assert.ok(flat(host).some(n=>n.textContent==='AI 风险方案（研究预览）'));
+ assert.ok(flat(host).some(n=>n.textContent==='AI 复核 · 研究预览'));
  assert.ok(flat(host).some(n=>n.textContent==='退出持仓'));
  assert.ok(flat(host).some(n=>n.textContent==='未采用'));
  assert.equal(instance.getState().daily.new_orders[0].side,'BUY','AI EXIT must not become formal SELL');

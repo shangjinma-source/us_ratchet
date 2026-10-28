@@ -57,7 +57,7 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
   promise.then(()=>{if(pending.get(key)===promise)pending.delete(key);},()=>{if(pending.get(key)===promise)pending.delete(key);});
   return promise;
  }
- const model={account:null,target:null,daily:null,historicalQuotes:{},historicalOrders:{},busy:false,error:null,cashSaved:false};
+ const model={account:null,target:null,daily:null,historicalQuotes:{},historicalOrders:{},busy:false,retrying:false,error:null,cashSaved:false};
  const notify=()=>onChange(copy(model));
  function retire(){
   const admitted=order=>(model.daily?.daily_gate?.rows||[]).some(row=>row.security_id===order.security_id&&row.action===order.side&&['BUY','SELL'].includes(row.action));
@@ -94,10 +94,10 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
  }
  async function transact(operation){
   if(model.busy)fail('DAILY_UI_BUSY');
-  const token=++epoch;model.busy=true;model.error=null;retire();notify();
+  const token=++epoch;model.busy=true;model.retrying=false;model.error=null;retire();notify();
   try{return await operation(token);}
   catch(error){if(token===epoch){retire();model.error=error.message;}throw error;}
-  finally{if(token===epoch){model.busy=false;notify();}}
+  finally{if(token===epoch){model.busy=false;model.retrying=false;notify();}}
  }
  async function requestDaily(token){
   guard(token);
@@ -107,7 +107,22 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
    if(!sameProposal(model.target,model.target))fail('DAILY_RESPONSE_BINDING_MISMATCH');
    binding.expected_proposal_id=model.target.proposal_id;
   }
-  const response=await previewDaily(binding);guard(token);
+  let response;
+  try{response=await previewDaily(binding);}
+  catch(error){
+   guard(token);
+   const body=error.responseBody;
+   const retryable=error.responseStatus===409&&body?.reason==='EVIDENCE_UNAVAILABLE'&&body.status==='WAIT'&&
+    Array.isArray(body.new_orders)&&body.new_orders.length===0&&body.orders_created===false&&
+    Object.keys(body.reference_quotes||{}).length===0;
+   if(!retryable)throw error;
+   model.retrying=true;notify();
+   await read(token);guard(token);
+   if(model.account.revision!==binding.expected_revision||model.target?.target_id!==binding.target_id||!sameProposal(model.target,{proposal_id:binding.expected_proposal_id}))fail('SNAPSHOT_CHANGED_DURING_PREVIEW');
+   // Only the read-only suggestion request is repeated, never cash or target writes.
+   response=await previewDaily(binding);
+  }
+  guard(token);
   await read(token);
   if(model.account.revision!==binding.expected_revision||model.target?.target_id!==binding.target_id||!sameProposal(model.target,{proposal_id:binding.expected_proposal_id}))fail('SNAPSHOT_CHANGED_DURING_PREVIEW');
   acceptDaily(response);
@@ -167,11 +182,11 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
   },
   accountInvalidated(){
    if(ownCashStart){retire();notify();return;}
-   ++invalidationGeneration;++epoch;retire();model.busy=false;model.error='DAILY_UI_SNAPSHOT_CHANGED';notify();
+   ++invalidationGeneration;++epoch;retire();model.busy=false;model.retrying=false;model.error='DAILY_UI_SNAPSHOT_CHANGED';notify();
   },
   // Called by account/holding events in the surrounding page. Pending responses
   // become unusable; stale orders are retained only as historical references.
-  invalidate(){++invalidationGeneration;++epoch;retire();model.busy=false;model.error='DAILY_UI_SNAPSHOT_CHANGED';notify();},
+  invalidate(){++invalidationGeneration;++epoch;retire();model.busy=false;model.retrying=false;model.error='DAILY_UI_SNAPSHOT_CHANGED';notify();},
   load(){return schedule('load',async token=>{if(!await recoverPendingTarget(token))await read(token);return copy(model);});},
   refresh(){return schedule('refresh',async token=>{if(!await recoverPendingTarget(token)){if(pendingTargetRequest)await finishTargetRequest(token);else await read(token);}return requestDaily(token);});},
   saveBalance(input){input=copy(input);return schedule('save',async token=>{
@@ -344,7 +359,7 @@ function presentation(model,now=Date.now()){
   if((row.action==='BUY'||row.action==='SELL')&&!row.orders.length)row.action='WAIT';
  }
  const expired=ready&&orders.length>0&&![...rows.values()].some(row=>row.orders.length);
- return {status:expired?'WAIT_FRESH_SIGNAL':bound?daily.status:'WAIT_SIGNAL',detail_status:expired?'WAIT_FRESH_SIGNAL':bound?daily.detail_status:null,reason:expired?null:bound?daily.reason:null,error:model.error,cashSaved:model.cashSaved,rows:[...rows.values()],
+ return {status:expired?'WAIT_FRESH_SIGNAL':bound?daily.status:'WAIT_SIGNAL',detail_status:expired?'WAIT_FRESH_SIGNAL':bound?daily.detail_status:null,reason:expired?null:bound?daily.reason:null,error:model.error,cashSaved:model.cashSaved,retrying:model.retrying,rows:[...rows.values()],
          monthly_target_label:'本月目标',daily_target_label:'今日有效目标'};
 }
 function dollars(value){
@@ -400,30 +415,34 @@ function actionExplanation(row,result,model){
 function render(container,model,now=Date.now(),newsCell=null){
  const result=presentation(model,now),doc=container.ownerDocument;
  const table=doc.createElement('table'),head=doc.createElement('tr');table.className='daily-actions-table';
- for(const text of ['股票','实际持有',result.monthly_target_label,result.daily_target_label,'原 V27 动作','原 V27 限价','原策略原因','AI 风险方案（研究预览）']){
+ for(const text of ['股票','持仓 → 目标','今日建议','原因与 AI 复核']){
   const cell=doc.createElement('th');cell.textContent=text;head.appendChild(cell);
  }
  table.appendChild(head);
  for(const row of result.rows){
   const tr=doc.createElement('tr');
-  const prices=row.orders.map(order=>dollars(order.limit_price)).join('；');
-  const action=row.orders.map(order=>(order.side==='SELL'?'卖出':'买入')+' '+order.quantity+' 股').join('；');
-  const history=row.historical_quote;
-  const savedOrders=row.historical_orders.map(order=>(order.side==='SELL'?'卖出':'买入')+' '+order.quantity+' 股 · '+dollars(order.limit_price)).join('；');
-  const savedQuotes=history?[
-   ['买入',history.buy_limit??history.buy],['卖出',history.sell_limit??history.sell]
-  ].filter(([,value])=>value!==undefined&&value!==null).map(([side,value])=>side+' '+dollars(value)).join('；'):'';
-  const waitingData=(model.daily?.waiting_data||[]).some(item=>item.security_id===row.security_id);
-  const historical=waitingData?'暂无有效买入限价':savedOrders||savedQuotes?'上一条建议（已失效，待刷新）：'+(savedOrders||savedQuotes):'';
-  const cells=[row.ticker||row.security_id,row.held,row.monthly_target??'待核验',row.daily_effective_target??'—',
-   action||({BUY:'条件买入',SELL:'条件卖出',HOLD:row.held===0?'空仓，无需操作':'持有，无需操作',WAIT:'等待'})[row.action]||'等待',prices||historical||'暂无有效建议',actionExplanation(row,result,model)];
-  for(const [index,text] of cells.entries()){
-   const td=doc.createElement('td');td.textContent=String(text);
-   if(index===5&&!prices&&historical){td.className='historical-advice';if(td.style){td.style.fontSize='0.9em';td.style.fontWeight='400';td.style.color='#64748b';}}
-   tr.appendChild(td);
-  }
-  const news=doc.createElement('td');if(newsCell)newsCell(news,row.security_id);else news.textContent='未复核，不代表无风险';tr.appendChild(news);
-  table.appendChild(tr);
+  const make=(tag,text,cls)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=String(text);if(cls)node.className=cls;return node;};
+  tr.appendChild(make('td',row.ticker||row.security_id));
+  const position=make('td',undefined,'daily-position');
+  const target=result.error?null:row.daily_effective_target;
+  position.appendChild(make('strong',row.held+' → '+(target??'待核验')));
+  if(!result.error&&row.monthly_target!==null&&row.monthly_target!==target)
+   position.appendChild(make('small','本月目标 '+row.monthly_target+' 股','daily-secondary'));
+  tr.appendChild(position);
+  const advice=make('td',undefined,'daily-advice');
+  if(row.orders.length){
+   for(const order of row.orders){
+    advice.appendChild(make('strong',(order.side==='SELL'?'卖出':'买入')+' '+order.quantity+' 股'));
+    advice.appendChild(make('small','限价 '+dollars(order.limit_price),'daily-secondary'));
+   }
+  }else advice.appendChild(make('strong',row.action==='HOLD'?'无需操作':'等待'));
+  tr.appendChild(advice);
+  const reason=make('td',undefined,'daily-reason');
+  reason.appendChild(make('div',actionExplanation(row,result,model)));
+  const news=make('div',undefined,'daily-ai-note');
+  news.appendChild(make('small','AI 复核 · 研究预览','daily-secondary'));
+  if(newsCell)newsCell(news,row.security_id);else news.appendChild(make('span','未复核，不代表无风险'));
+  reason.appendChild(news);tr.appendChild(reason);table.appendChild(tr);
  }
  const explanations={
   APPROVED_SERVER_RELEASE_NOT_CONFIGURED:'等待策略正式启用',
@@ -439,7 +458,7 @@ function render(container,model,now=Date.now(),newsCell=null){
   WAIT_FRESH_SIGNAL:'等待最新信号',WAIT_MONTHLY_TARGET:'等待本月目标',
   DAILY_PREVIEW_DISABLED:'每日信号暂未启用',READY:'今日条件买卖建议',WAIT:'等待有效执行条件',CONDITIONAL_PREVIEW_READY:'今日条件买卖建议'
  };
- const status=doc.createElement('p');status.textContent=waitingExplanation(result.error||result.reason)|| (result.error?(result.cashSaved?'现金已保存；建议未更新，请刷新，无需重复保存现金':'状态未确认，请刷新核对后再操作'):
+ const status=doc.createElement('p');status.textContent=result.retrying?'来源暂不可用，正在重试建议…':result.error==='EVIDENCE_UNAVAILABLE'?(result.cashSaved?'现金已保存；行情或公司行动源暂不可用，建议未更新，无需重复保存现金。':'行情或公司行动源暂不可用，建议未更新，请稍后刷新。'):waitingExplanation(result.error||result.reason)|| (result.error?(result.cashSaved?'现金已保存；建议未更新，请刷新，无需重复保存现金':'状态未确认，请刷新核对后再操作'):
   explanations[result.reason]||explanations[result.detail_status]||explanations[result.status]||'等待执行条件满足');
  container.replaceChildren(status,table);return result;
 }

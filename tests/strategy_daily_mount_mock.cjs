@@ -73,8 +73,8 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  // Resume beyond expiry before the suspended timeout has had a chance to run.
  tick+=deadline.delay;doc.dispatch('visibilitychange');doc.defaultView.dispatch('focus');doc.defaultView.dispatch('pageshow');
  assert.equal(requests.length,beforeExpiry);assert.match(text(instance.elements.summary),/上一条建议/);
- assert.match(text(instance.elements.summary),/卖出 4.*\$100.25/);
- assert.match(text(instance.elements.summary),/已失效，待刷新/);
+ assert.doesNotMatch(text(instance.elements.summary),/卖出 4|\$100\.25/);
+ assert.match(text(instance.elements.summary),/上一条建议已失效/);
  assert.equal(instance.getState().daily.new_orders.length,1);
  assert.equal([...timers.values()].filter(t=>t.delay!==15000).length,0);
  tick=Date.parse('2026-10-20T15:00:00Z');
@@ -83,7 +83,7 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  const pendingRefresh=instance.refresh();
  while(!instance.getState().busy)await new Promise(r=>setImmediate(r));
  instance.accountInvalidated();resolve();await pendingRefresh.catch(()=>{});
- assert.equal(instance.getState().daily,null);assert.match(text(container),/上一条建议/);
+ assert.equal(instance.getState().daily,null);assert.match(text(container),/请求使用了旧版本/);assert.doesNotMatch(text(instance.elements.summary),/\$100\.25/);
  assert.match(text(instance.elements.summary),/待核验/);
  assert.equal(chartChanges.at(-1).v.targets[0].quantity,null,'chart handoff must preserve an unknown cap target');
  assert.equal(instance.getState().target.targets[0].quantity,21,'saved raw target remains unchanged');
