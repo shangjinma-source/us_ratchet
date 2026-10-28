@@ -1,0 +1,75 @@
+{
+  "status": "FULL_TWO_WINDOW_INDEPENDENTLY_REVIEWED_COMPARISON",
+  "rows": [
+    {
+      "window": "2021_2023",
+      "arm": "baseline",
+      "ending_equity": 11369.238213823064,
+      "total_return": -0.4315380893088468,
+      "cagr": -0.17200433033625184,
+      "maximum_close_drawdown": 0.7176606835523125,
+      "drawdown_peak": "2021-08-09",
+      "drawdown_trough": "2023-05-03",
+      "assumed_fills": 98,
+      "filtered_buy_orders": 0,
+      "recovery_releases": 0,
+      "remaining_locks": 0
+    },
+    {
+      "window": "2021_2023",
+      "arm": "candidate",
+      "ending_equity": 12502.838283062274,
+      "total_return": -0.3748580858468863,
+      "cagr": -0.14528413348943814,
+      "maximum_close_drawdown": 0.6878682700430829,
+      "drawdown_peak": "2021-08-09",
+      "drawdown_trough": "2023-05-03",
+      "assumed_fills": 90,
+      "filtered_buy_orders": 36,
+      "recovery_releases": 11,
+      "remaining_locks": 5
+    },
+    {
+      "window": "2024_2026",
+      "arm": "baseline",
+      "ending_equity": 63062.43289158249,
+      "total_return": 2.1531216445791244,
+      "cagr": 0.5594499879620451,
+      "maximum_close_drawdown": 0.4338329123421442,
+      "drawdown_peak": "2025-02-14",
+      "drawdown_trough": "2025-04-08",
+      "assumed_fills": 76,
+      "filtered_buy_orders": 0,
+      "recovery_releases": 0,
+      "remaining_locks": 0
+    },
+    {
+      "window": "2024_2026",
+      "arm": "candidate",
+      "ending_equity": 86818.71346310806,
+      "total_return": 3.340935673155403,
+      "cagr": 0.7647861015831785,
+      "maximum_close_drawdown": 0.2582005364485914,
+      "drawdown_peak": "2025-02-14",
+      "drawdown_trough": "2025-04-04",
+      "assumed_fills": 66,
+      "filtered_buy_orders": 8,
+      "recovery_releases": 6,
+      "remaining_locks": 5
+    }
+  ],
+  "source_hashes": {
+    "tmp/reentry_repair_20261029/baseline_2021_2023/book.json": "0c2c3c4f21673e396644a60f8084c5165d1861aaa9d0f5928a67d42db7727c9a",
+    "tmp/reentry_repair_20261029/candidate_2021_2023/book.json": "801a6fa47f5c51f64d69cbc17e354f751dffddadd3c6d7d1f3d0b464125ed8b7",
+    "tmp/reentry_repair_20261029/candidate_2021_2023/independent_result_review.json": "ff6e48fb474528109797dd87d3ce5dbc681c90096cb9964ce17963b3d62a7bda",
+    "tmp/reentry_repair_20261029/baseline_2024_2026/book.json": "769d7bfd69e3fb9c83168adaf0881c351ec2dab1f4d9ecd6dfe3e33573d45f3f",
+    "tmp/reentry_repair_20261029/candidate_2024_2026/book.json": "225cf3a9b19344d71f0ccfebfbfe5ae39a24831bf354138f6ea9d1e8ce7fc8ae",
+    "tmp/reentry_repair_20261029/candidate_2024_2026/independent_result_review.json": "2976cfe71c56b8a56c468d283967d36e91ddd7b90bc7261385b0b37ba5c14b59"
+  },
+  "limitations": [
+    "Research next-open fills; not actual execution",
+    "Conditional nominal history not certified point-in-time",
+    "Historical evidence does not guarantee future performance",
+    "No parameter scan or combined staging"
+  ]
+}

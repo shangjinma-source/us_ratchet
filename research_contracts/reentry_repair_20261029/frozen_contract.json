@@ -1,0 +1,42 @@
+{
+  "schema": "FIXED_REENTRY_REPAIR_RESEARCH_V1",
+  "created_at": "2026-10-28T19:28:00Z",
+  "economic_execution_authorized": false,
+  "windows": [
+    "2021_2023",
+    "2024_2026"
+  ],
+  "new_monthly_search_limit": 67,
+  "candidate_count": 1,
+  "fee_bps": 0,
+  "slippage_bps": 5,
+  "rules": [
+    "Create reference only first original20percent exit intent with actual predecision held>0; failed sale still locks",
+    "Zeroheld risk exit cannot establish or reset reference; original monthly risk always unchanged",
+    "Exit date itself excluded; any later completed nominal close recovered releases permanently",
+    "While absent from candidates defer data review; when BUY proposed replay full exitexclusive..decision interval; incomplete price/action coverage blocks",
+    "Exact reviewed SMCI integer identity split converts reference before effective-date nominal close; ordinary reviewed cash distributions do not adjust reference or credit empty account",
+    "Original branch actual cash/positions select monthly; adjust BUY orders only after originalrisk; never reuse future baseline targets"
+  ],
+  "no_new_run_after_utc": "2026-10-28T21:40:00Z",
+  "stop_utc": "2026-10-28T22:00:00Z",
+  "baseline_requirement": "Existing complete baseline exact replay before candidate; synthetic exact baseline currently passed, full historical replay not yet performed",
+  "resume": "Saved selections, book, audits; no resume implementation authorized. Future restart must reuse exact arguments and account cumulative spent searches; no fresh budget reset",
+  "limitations": [
+    "Conditional historical nominal prices remain uncertified",
+    "Baseline 21 observed lock intervals verified does not guarantee changed branch coverage",
+    "Reference-only cash classification is not economic dividend admission",
+    "No return improvement claim before full independent account and mechanism review"
+  ],
+  "source_hashes": {
+    "tmp/reentry_repair_20261029/reentry_repair.py": "c4b5e8b6e92820d51bc212be7b96469f279a9eb2feceb5cafb32aadadfddf790",
+    "tmp/reentry_repair_20261029/reference_coverage.py": "c7be1a36b56b705ecf8ccad382e944765edfaa0e580e2cf45f8ec436a9c21108",
+    "tmp/reentry_repair_20261029/run_reentry_probe.py": "edb9edb44283782a9833148b534872c2090f9cbd48a487cef07a356b8fa9d353",
+    "tmp/reentry_repair_20261029/nvda_cash_reference/review.json": "45b3bc408307c8731611a679463b793a565665f88d997a68000b928fd9836b24",
+    "tmp/reentry_repair_20261029/nvda_cash_reference/independent_review.json": "23cbfb1baa3c31b7236c81d1bf391c5c9ade28c2f0ca441774c2d9a627197716",
+    "tmp/reentry_repair_20261029/test_cash_reference.py": "352f6fba7fab847203b8fa44da04220b244b9f4da8eeaacf1e991736873d6687",
+    "tmp/reentry_repair_20261029/test_kernel.py": "f98af2ef9ef4e0e5d392e66643c82931336e3b83ef8e7454ee7f15af9f68b696",
+    "tmp/reentry_repair_20261029/test_reentry.py": "a8493e21f773afafae2900bbef2afe14b39a1201db9ac978a2bca49ce0b69dfe",
+    "tmp/reentry_repair_20261029/test_reference_coverage.py": "81b4de445d742af396daf5b795f01c617d53d4a5a88c58ebe727d9ae345204eb"
+  }
+}

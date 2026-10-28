@@ -1,0 +1,21 @@
+{
+  "status": "ROOT_AUTHORIZED_FIXED_TWO_WINDOWS",
+  "authorized_at": "2026-10-28T19:34:33.029670+00:00",
+  "frozen_contract_sha256": "4285115367af8d4d1c59f3673458877ef1271d25d606b7605079c08d33ec44dc",
+  "baseline_exact_review_sha256": "107c2e791b4ef82089aae187f184773a0647d2411fe9cc0110819b03ca724495",
+  "mode": "REENTRY_REPAIR",
+  "runs": [
+    {
+      "window": "2021_2023",
+      "maximum_new_searches": 36,
+      "output": "tmp\\reentry_repair_20261029\\candidate_2021_2023"
+    },
+    {
+      "window": "2024_2026",
+      "maximum_new_searches": 31,
+      "output": "tmp\\reentry_repair_20261029\\candidate_2024_2026"
+    }
+  ],
+  "retry_count": 0,
+  "economic_conclusions_require_independent_review": true
+}

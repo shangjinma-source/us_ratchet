@@ -2,3 +2,6 @@
 skills/us-equity-news-risk/SOUL.md -text
 skills/us-equity-news-risk/SKILL.md -text
 tests/fixtures/news_skill_synthetic_r32/*.json -text
+
+# Frozen research archives must retain their authenticated source bytes.
+research_contracts/reentry_repair_20261029/* -text

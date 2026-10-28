@@ -1,0 +1,23 @@
+{
+  "status": "EXACT_SOURCE_COPY_NOT_RELOCATED_EXECUTION",
+  "original_root": "tmp\\reentry_repair_20261029",
+  "source_hashes": {
+    "tmp/reentry_repair_20261029/reentry_repair.py": "c4b5e8b6e92820d51bc212be7b96469f279a9eb2feceb5cafb32aadadfddf790",
+    "tmp/reentry_repair_20261029/reference_coverage.py": "c7be1a36b56b705ecf8ccad382e944765edfaa0e580e2cf45f8ec436a9c21108",
+    "tmp/reentry_repair_20261029/run_reentry_probe.py": "edb9edb44283782a9833148b534872c2090f9cbd48a487cef07a356b8fa9d353",
+    "tmp/reentry_repair_20261029/independent_reference_review.py": "737ce3a47a18a7ef69b19fe6f7d28be53f6bde1e6e92e680389381fd52946628",
+    "tmp/reentry_repair_20261029/review_run.py": "6bebdde22b73f05196c74e63943b1f9180e9b0a734705af2d4e916bc625b2c0b",
+    "tmp/reentry_repair_20261029/summarize.py": "6ef6b27b6e6ab5b83bb9db851be60b057e1a3dc041ed8e2f032603c05901f5fb",
+    "tmp/reentry_repair_20261029/frozen_contract.json": "4285115367af8d4d1c59f3673458877ef1271d25d606b7605079c08d33ec44dc",
+    "tmp/reentry_repair_20261029/run_authorization.json": "9654eb049b64cd33deb4c124276cfa8ab3efe918b4ce8e8cd16a13740813478e",
+    "tmp/reentry_repair_20261029/comparison.json": "399e4bed20e4d8fa7dd12d40439b031739a80d4eb48f4830c32b290e058b26dd",
+    "tmp/reentry_repair_20261029/comparison.md": "3608bcfff896db4ba4d10f75012e951ac542e704bd647492d5e47b95c75aa3d4",
+    "tmp/reentry_repair_20261029/completion_receipt.json": "375bc5754bd544cf27e804cb36e53f243e53b8743e6deb6fa34be3d177d68d35",
+    "tmp/reentry_repair_20261029/test_reentry.py": "a8493e21f773afafae2900bbef2afe14b39a1201db9ac978a2bca49ce0b69dfe",
+    "tmp/reentry_repair_20261029/test_reference_coverage.py": "81b4de445d742af396daf5b795f01c617d53d4a5a88c58ebe727d9ae345204eb",
+    "tmp/reentry_repair_20261029/test_cash_reference.py": "352f6fba7fab847203b8fa44da04220b244b9f4da8eeaacf1e991736873d6687",
+    "tmp/reentry_repair_20261029/test_kernel.py": "f98af2ef9ef4e0e5d392e66643c82931336e3b83ef8e7454ee7f15af9f68b696",
+    "tmp/reentry_repair_20261029/test_independent_reference_review.py": "ae400b3bad505a62ab5d867dd4c4dc09858346cfb1c0d8743d2aed81160ebac9"
+  },
+  "private_data_copied": false
+}
