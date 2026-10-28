@@ -347,7 +347,7 @@ function presentation(model,now=Date.now()){
   const sourceDeadline=Date.parse(daily.reference_quotes?.[order.security_id]?.reference_valid_until);
   const deadline=Math.min(sourceDeadline,Date.parse(order.reference_valid_until||daily.reference_quotes?.[order.security_id]?.reference_valid_until));
   if(ready&&row.action!=='WAIT'&&Number.isFinite(deadline)&&deadline>now)row.orders.push(copy(order));
-  else row.historical_orders.push({...copy(order),executable:false,label:'上一条建议 · 已失效，待刷新'});
+  else {row.suggestion_stale=true;row.historical_orders.push({...copy(order),executable:false,label:'上一条建议 · 已失效，待刷新'});}
  }
  for(const row of rows.values()){
   // A complete policy map establishes zero for old holdings outside its domain.
@@ -371,6 +371,7 @@ function dollars(value){
 function actionExplanation(row,result,model){
  if(!row.orders.length){
   if(result.error)return waitingExplanation(result.error)||'本次刷新失败，旧建议不可用于挂单。';
+  if(row.suggestion_stale||result.status==='WAIT_FRESH_SIGNAL'||(result.status==='WAIT_SIGNAL'&&model.daily)||(model.busy&&(model.daily||row.historical_orders.length)))return '上一条建议已失效，可点击顶部刷新重新判断；旧建议不可用于挂单。';
   const waitingData=(model.daily?.waiting_data||[]).find(item=>item.security_id===row.security_id);
   if(waitingData){
    const reason=waitingData.data_failure||model.daily?.buy_data_failure;
@@ -390,7 +391,7 @@ function actionExplanation(row,result,model){
   const pending=model.daily?.difference?.binding?.pending_orders||[];
   if(row.reason==='PENDING_RECONCILIATION_REQUIRED'||pending.some(order=>order.security_id===row.security_id))return '已有未成交挂单，等待成交或撤单后更新。';
   if(row.reason==='NO_AVAILABLE_CASH'||[...(model.daily?.waiting_cash||[]),...(model.daily?.difference?.waiting_cash||[])].some(item=>item.security_id===row.security_id))return '可用现金不足，等待资金到账后更新；未成交卖款不计入可用现金。';
-  if(row.historical_orders.length)return '上一条建议已失效，更新现金后重新判断。';
+  if(row.historical_orders.length)return '上一条建议已失效，可点击顶部刷新重新判断；旧建议不可用于挂单。';
   return waitingExplanation(result.error||result.reason)||({DAILY_PACKET_NEEDS_RECOVERY:'今日数据核验异常，暂不建议操作。',WAIT_NEXT_SESSION:'交易时段已结束，等待下一交易日。',WAIT_MONTHLY_TARGET:'等待本月目标配置。'})[result.reason]||'等待有效数据和报价，暂不建议操作。';
  }
  const target=row.daily_effective_target,monthly=row.monthly_target;
