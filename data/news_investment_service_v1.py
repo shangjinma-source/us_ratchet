@@ -259,6 +259,7 @@ class NewsInvestmentService:
                 return build_risk_plan(proposal=proposal, original_preview=fresh, account=account,
                                        now=self.clock().isoformat())
             proposal['risk_plan'] = measured('risk_plan_projection', project_risk_plan)
+            proposal['skill_context_binding'] = deepcopy(answer.get('skill_context_binding'))
             proposal['background_context_binding'] = deepcopy(answer.get('background_context_binding'))
             def final_validation():
                 if getattr(self, 'background_guard', None):
@@ -318,7 +319,7 @@ class NewsInvestmentService:
                 self.validate_event_control(job['event_pending'])
             self.bound_context(job['binding'])
             if job['status'] == 'COMPLETE' and getattr(self, 'background_guard', None):
-                self.background_guard({'background_context_binding': job['proposal'].get('background_context_binding')})
+                self.background_guard({'background_context_binding': job['proposal'].get('background_context_binding'), 'skill_context_binding': job['proposal'].get('skill_context_binding')})
             if job['status'] == 'COMPLETE' and self.clock() >= moment(job['proposal']['review_valid_until']):
                 raise ValueError('REVIEW_EXPIRED')
             risk_plan = job.get('proposal', {}).get('risk_plan', {})

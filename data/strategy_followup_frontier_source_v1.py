@@ -11,11 +11,49 @@ from data.monthly_peak_exit_history import monthly_exit_observations
 from data.strategy_advice_followup_plan_v3 import resolve_policy_binding, FRONTIER_POLICY
 from data.strategy_followup_execution_binding_v1 import validate_execution_shape
 from data.strategy_followup_price_basis_v2 import review_price_basis
-from data.saved_frontier_source_reader_v1 import read_frontier_capture
+from data.strategy_followup_historical_reader_v1 import read_historical_frontier_capture
 from data.strategy_unified_server_preparation_v7 import _read
 
 
-def review_frontier_event(*, root, event):
+LEGACY_SOURCE_REVIEW = 'efc85a1b4d4282342a12bcbdbb19904e1c61b2ecef662ae3b4497dc0e9cd2df9'
+
+
+SCOPED_SOURCE_REVIEW='cf523efbf215dffcbc4a7def9d84d4e6041cdc7bc67e2236fcabaec9859c1e4e'
+SCOPED_LEAF='77658671f1b03d3d26295be50d2ab2dc4c58d8d51bbf3ea194c2c0ed6cf470fe'
+
+def compare_source_review(original, current, historical_source_pin, historical_leaf_pin=None, historical_scope=None):
+    def valid(value):
+        body={key:item for key,item in value.items() if key!='review_id'}
+        return value.get('review_id')==sha256(canonical(body)).hexdigest()
+    require(valid(original) and valid(current),'FOLLOWUP_SOURCE_REVIEW_ID_INVALID')
+    if original==current:return dict(mode='EXACT_CURRENT_INDEPENDENT_REVIEW',current_review_id=current['review_id'])
+    if historical_source_pin==SCOPED_SOURCE_REVIEW:
+        require(historical_leaf_pin==SCOPED_LEAF and isinstance(historical_scope,dict) and
+                bool(historical_scope) and historical_scope==original.get('future_notice_scope') and
+                set(historical_scope)==set(current.get('future_notice_scope',{})),
+                'FOLLOWUP_HISTORICAL_SCOPE_NOT_REPRODUCED')
+        projected=deepcopy(current);projected['future_notice_scope']=deepcopy(historical_scope)
+        projected.pop('review_id');projected['review_id']=sha256(canonical(projected)).hexdigest()
+        require(projected==original,'FOLLOWUP_FRONTIER_SOURCE_REVIEW_CHANGED')
+        return dict(mode='HISTORICAL_LEAF_SCOPE_REPRODUCED_CURRENT_INDEPENDENT_SCOPE_RETAINED',
+                    original_review_id=original['review_id'],current_review_id=current['review_id'],
+                    historical_future_notice_scope=deepcopy(historical_scope),
+                    current_future_notice_scope=deepcopy(current['future_notice_scope']),
+                    historical_source_review_sha256=historical_source_pin,historical_leaf_sha256=historical_leaf_pin,
+                    original_evidence_modified=False)
+    require(historical_source_pin==LEGACY_SOURCE_REVIEW and 'future_notice_scope' not in original and
+            set(current)==set(original)|{'future_notice_scope'} and isinstance(current['future_notice_scope'],dict),
+            'FOLLOWUP_SOURCE_REVIEW_SCHEMA_UNSUPPORTED')
+    projected={key:item for key,item in current.items() if key not in ('review_id','future_notice_scope')}
+    projected['review_id']=sha256(canonical(projected)).hexdigest()
+    require(projected==original,'FOLLOWUP_FRONTIER_SOURCE_REVIEW_CHANGED')
+    return dict(mode='HISTORICAL_LEAF_CURRENT_REVIEW_EXPLICIT_LEGACY_SCHEMA_PROJECTION',
+                original_review_id=original['review_id'],current_review_id=current['review_id'],
+                added_future_notice_scope=deepcopy(current['future_notice_scope']),
+                historical_source_review_sha256=historical_source_pin,original_evidence_modified=False)
+
+
+def review_frontier_event(*, root, event, supplemental_directory=None):
     root=Path(root).resolve();response=event['response'];budget=0
     def read(path):
         nonlocal budget
@@ -74,10 +112,12 @@ def review_frontier_event(*, root, event):
         'FOLLOWUP_FRONTIER_PREPARED_BINDING')
     capture = document('capture')
     capture['files'] = {name: files[name] for name in capture['source_hashes']}
-    checked = read_frontier_capture(root=root, prepared=document('prepared'), capture=capture,
+    checked = read_historical_frontier_capture(root=root, preparation_reference=preparation_ref, archived_files=files, supplemental_directory=supplemental_directory, prepared=document('prepared'), capture=capture,
         state=state, target=target, proposal=proposal, risk_state=document('risk-before'),
         now=datetime.fromisoformat(receipt['valid_from']))
-    require(checked['review'] == document('source-review'), 'FOLLOWUP_FRONTIER_SOURCE_REVIEW_CHANGED')
+    source_review_comparison=compare_source_review(document('source-review'), checked['review'],
+        checked['historical_provenance']['legacy_source_review_sha256'],
+        checked['historical_provenance']['code_sha256']['data/saved_frontier_first_window_v1.py'],checked['historical_scope'])
     inputs = json.loads(files[receipt['normalized_inputs_path']])
     require(inputs == checked['review']['inputs'], 'FOLLOWUP_FRONTIER_INPUT_CHANGED')
     projection = document('risk-projection'); saved = projection['state']
@@ -116,4 +156,5 @@ def review_frontier_event(*, root, event):
     return dict(status='FRONTIER_ARCHIVE_SOURCE_AND_REPLAY_CHECKED', policy_id=policy,
         proposal_id=proposal['proposal_id'], policy_release_sha256=pin,
         price_basis=review_price_basis(inputs, files, monthly=True),
-        capture_admitted=False, account_writes=False, network_calls=0)
+        capture_admitted=False, account_writes=False, network_calls=0,
+        historical_provenance=checked['historical_provenance'],source_review_comparison=source_review_comparison,current_independent_source_review=checked['review'])

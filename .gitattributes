@@ -1,0 +1,3 @@
+# Preserve exact bytes of model instructions authenticated by SHA256.
+skills/us-equity-news-risk/SOUL.md -text
+skills/us-equity-news-risk/SKILL.md -text

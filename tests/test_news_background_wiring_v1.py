@@ -17,6 +17,9 @@ class Wiring(unittest.TestCase):
  def setUp(self):
   guard=patch('subprocess.Popen',side_effect=AssertionError('REAL_PROCESS_FORBIDDEN_IN_BACKGROUND_TEST'));self.no_process=guard.start();self.addCleanup(guard.stop);self.addCleanup(self.no_process.assert_not_called)
  def setup_composed(self,root):
+  import shutil
+  from data.news_risk_skill_v1 import load_risk_skill
+  shutil.copytree(Path(__import__('data.news_risk_skill_v1',fromlist=['x']).__file__).parents[1]/'skills',root/'skills')
   synthetic_package(root)
   account={'revision':'r','events':[]};target={'target_id':'t','proposal_id':'p','payload':{'decision':{'payload':{'input_binding':{'search_arguments':{'metadata':{'S':{'ticker':'SNDK'}}}}}}}}
   monthly=SimpleNamespace(snapshot_operation=nullcontext,accounts=SimpleNamespace(read=lambda:account),current=lambda:target)
@@ -33,7 +36,7 @@ class Wiring(unittest.TestCase):
  def test_both_actual_composition_callbacks_and_pending_rejection(self):
   with TemporaryDirectory() as d:
    positions=[{'security_id':'S','ticker':'SNDK'}]
-   with patch.object(model,'analyze_review',return_value={'status':'SUCCEEDED'}) as manual,patch.object(evmodel,'analyze_event',return_value={'status':'SUCCEEDED'}) as event:
+   with patch.object(model,'analyze_review',return_value={'status':'SUCCEEDED','skill_context_binding':__import__('data.news_risk_skill_v1',fromlist=['load_risk_skill']).load_risk_skill()['binding']}) as manual,patch.object(evmodel,'analyze_event',return_value={'status':'SUCCEEDED','skill_context_binding':__import__('data.news_risk_skill_v1',fromlist=['load_risk_skill']).load_risk_skill()['binding']}) as event:
     service,pipeline=self.setup_composed(Path(d))
     one=service.model([self.source()],positions,Path(d));two=pipeline.analyzer([self.source()],positions,Path(d))
     self.assertEqual(len(manual.call_args.kwargs['background_sources']),2);self.assertEqual(len(event.call_args.kwargs['background_sources']),2)
@@ -45,7 +48,7 @@ class Wiring(unittest.TestCase):
    db.close()
    with patch.object(service,'background_guard',wraps=service.background_guard) as checked:
     self.assertEqual(service.status('j')['status'],'STALE')
-    checked.assert_called_once_with({'background_context_binding':None})
+    checked.assert_called_once_with({'background_context_binding':None,'skill_context_binding':None})
    index=Path(d)/'data/cache/news/background_index_v1.json';index.write_text('{}')
    with self.assertRaisesRegex(ValueError,'INDEX_CHANGED'):service.background_guard(one)
    self.assertFalse(pipeline.valid_event({'answer':one}))
@@ -54,7 +57,7 @@ class Wiring(unittest.TestCase):
    composed,_=self.setup_composed(Path(d));t=service_tests.ServiceTests();t.setUp()
    try:
     binding={'manifest_sha256':json.loads((Path(d)/'data/cache/news/background_index_v1.json').read_text())['manifest_sha256'],'role':'BACKGROUND_NOT_TRIGGER'}
-    t.answer['background_context_binding']=binding;t.service.background_guard=composed.background_guard
+    t.answer['skill_context_binding']=__import__('data.news_risk_skill_v1',fromlist=['load_risk_skill']).load_risk_skill()['binding'];t.answer['background_context_binding']=binding;t.service.background_guard=composed.background_guard
     def corrupt(**kw):(Path(d)/'data/cache/news/background_index_v1.json').write_text('{}');return {'status':'WAIT'}
     t.service.risk_plan_provider=corrupt
     result=t.run_job();self.assertEqual(result['status'],'FAILED');self.assertEqual(result['error'],'BACKGROUND_INDEX_CHANGED');self.assertNotIn('proposal',result)

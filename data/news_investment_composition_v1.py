@@ -23,6 +23,12 @@ def compose(*, root, monthly_view, observed_daily, validate, background_configur
                 raise ValueError('BACKGROUND_INDEX_CHANGED')
             verify_manifest(root, background_configuration)
         validate()
+    from data.news_risk_skill_v1 import load_risk_skill, require_risk_skill
+    skill_binding = load_risk_skill(root)['binding']
+    previous_validate = validate
+    def validate():
+        previous_validate()
+        require_risk_skill(skill_binding, root)
     def context():
         with monthly_view.snapshot_operation():
             validate()
@@ -98,6 +104,21 @@ def compose(*, root, monthly_view, observed_daily, validate, background_configur
             except (ValueError, KeyError, OSError):
                 return False
         pipeline.valid_event = guarded_event
+    prior_context_guard = getattr(service, 'background_guard', None)
+    def skill_guard(answer):
+        validate()
+        require_risk_skill(answer.get('skill_context_binding'), root)
+        if prior_context_guard:
+            prior_context_guard(answer)
+    service.background_guard = skill_guard
+    prior_event_guard = pipeline.valid_event
+    def skill_event_guard(pending):
+        try:
+            skill_guard(pending['answer'])
+            return prior_event_guard(pending)
+        except (ValueError, KeyError, OSError):
+            return False
+    pipeline.valid_event = skill_event_guard
     service.event_guard = pipeline.valid_event
     router = create_router(service=service, root=root, validate=validate)
     router.include_router(create_event_router(pipeline=pipeline, validate=validate))

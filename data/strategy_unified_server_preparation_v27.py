@@ -30,6 +30,7 @@ SOURCES |= {'web/strategy_target_recovery_v1.js', 'api/news_desk_v1.py',
 SOURCES |= {'web/news_investment_review.js', 'api/news_investment_review_v1.py', 'data/news_investment_service_v1.py', 'data/news_investment_composition_v1.py', 'data/news_investment_sources_v1.py', 'data/news_investment_model_v1.py', 'core/news_investment_review_v1.py'}
 SOURCES |= {'data/frontier_monthly_peak_raw_history_v1.py'}
 SOURCES |= {'data/news_background_context_v1.py'}
+SOURCES |= {'data/news_risk_skill_v1.py', 'skills/us-equity-news-risk/SOUL.md', 'skills/us-equity-news-risk/SKILL.md', 'data/strategy_followup_historical_reader_v1.py'}
 SOURCES |= {'data/news_risk_plan_v1.py', 'data/news_risk_execution_bridge_v1.py'}
 SOURCES |= {'data/news_event_model_v1.py', 'data/news_model_coordinator_v1.py', 'data/news_event_pipeline_v1.py', 'api/news_event_pipeline_v1.py', 'data/news_event_calendar_v1.py', 'data/news_event_sources_v1.py'}
 SOURCES |= FIRST_WINDOW_SOURCES | {'data/saved_frontier_rolling_admission_v1.py'}

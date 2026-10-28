@@ -45,4 +45,4 @@ def review(root, *, capture_path):
                 outcome=dict(status='REVIEW_BLOCKED',observation_id=item['observation_id'],reason=str(error))
             rows.append(outcome)
     return dict(status='OFFLINE_REVIEW_NOT_PUBLISHED',observed_at=now.isoformat(),rows=rows,
-        counts=dict(Counter(r['status'] for r in rows)),account_writes=False,network_calls=0,performance_computed=False)
+        source_reviews=audited['rows'],counts=dict(Counter(r['status'] for r in rows)),account_writes=False,network_calls=0,performance_computed=False)

@@ -1,3 +1,4 @@
+from data.news_risk_skill_v1 import load_risk_skill, require_risk_skill
 from data.news_background_context_v1 import attach_background, BACKGROUND_INSTRUCTION
 """Isolated, bounded model adapter. No ledger access, scheduler or trade writes."""
 from datetime import datetime, timezone
@@ -134,8 +135,10 @@ def analyze_review(sources, positions, cache, *, timeout=120, max_chars=120000, 
                 effort='medium', executable=False, orders_created=False)
     if not payload['sources'] or not payload['positions']:
         return dict(base, status='NO_ANALYZABLE_BODY', attempts=0)
+    skill = load_risk_skill()
+    base['skill_context_binding'] = skill['binding']
     payload = attach_background(payload, background_sources)
-    effective_prompt = PROMPT + (BACKGROUND_INSTRUCTION if payload.get('background_sources') else '')
+    effective_prompt = PROMPT + skill['prompt'] + (BACKGROUND_INSTRUCTION if payload.get('background_sources') else '')
     schema_hash = _hash(json.dumps(_schema(), sort_keys=True).encode())
     prompt = effective_prompt+'\nPUBLIC_INPUT\n'+json.dumps(payload, ensure_ascii=False, sort_keys=True)
     if len(prompt) > max_chars:
@@ -143,14 +146,14 @@ def analyze_review(sources, positions, cache, *, timeout=120, max_chars=120000, 
     identity = json.loads(json.dumps(payload))
     for source in identity['sources']:
         source.pop('observed_at', None)
-    key = _hash((VERSION+MODEL+effective_prompt+json.dumps(identity, sort_keys=True, ensure_ascii=False)).encode())
+    key = _hash((VERSION+MODEL+json.dumps(skill['binding'], sort_keys=True)+effective_prompt+json.dumps(identity, sort_keys=True, ensure_ascii=False)).encode())
     folder = Path(cache)/key
     folder.mkdir(parents=True, exist_ok=True)
     receipt_path = folder/'receipt.json'
     deferred_hash = None
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
-        if (receipt.get('status') == 'SUCCEEDED' and receipt.get('schema_sha256') in (None, schema_hash)
+        if (receipt.get('status') == 'SUCCEEDED' and receipt.get('skill_context_binding') == skill['binding'] and receipt.get('schema_sha256') in (None, schema_hash)
                 and (folder/'answer.json').exists()):
             raw = (folder/'answer.json').read_bytes()
             if _hash(raw) == receipt.get('answer_sha256'):
@@ -159,13 +162,14 @@ def analyze_review(sources, positions, cache, *, timeout=120, max_chars=120000, 
                     for evidence in row['evidence']:
                         evidence.pop('source_sha256', None)
                 answer = _validate(answer, payload)
+                require_risk_skill(skill['binding'])
                 return dict(base, status='CACHED', rows=answer['rows'], receipt=receipt, cache_key=key, attempts=0)
         if receipt.get('status') == 'DEFERRED' and receipt.get('attempts') == 0:
             deferred_hash = _hash(receipt_path.read_bytes())
         else:
             return dict(base, status='PREVIOUS_ATTEMPT_NOT_RETRIED', receipt=receipt, cache_key=key, attempts=0)
     receipt = dict(status='CLAIMED', started_at=_now(), attempts=0, model=MODEL, effort='medium',
-                   version=VERSION, schema_version=SCHEMA_VERSION, schema_sha256=schema_hash,
+                   version=VERSION, skill_context_binding=skill['binding'], schema_version=SCHEMA_VERSION, schema_sha256=schema_hash,
                    prompt_sha256=_hash(prompt.encode()), background_hashes={s['id']:s['text_sha256'] for s in payload.get('background_sources',[])}, source_hashes={s['id']:s['text_sha256'] for s in payload['sources']})
     claimed = False
     started = time.monotonic()
@@ -187,7 +191,9 @@ def analyze_review(sources, positions, cache, *, timeout=120, max_chars=120000, 
                 receipt['input_sha256'] = _hash((folder/'input.json').read_bytes())
                 receipt.update(attempts=1, status='STARTED')
                 _save(receipt_path, receipt)
+                require_risk_skill(skill['binding'])
                 answer, usage = _invoke(prompt, folder, timeout)
+                require_risk_skill(skill['binding'])
                 receipt['usage'] = usage
                 _save(folder/'raw_answer.json', answer)
                 answer = _validate(answer, payload)
