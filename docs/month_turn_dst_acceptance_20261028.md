@@ -14,6 +14,8 @@
 
 全部相关任务为Interactive登录；电脑注销、睡眠或任务迟启会影响执行。StartWhenAvailable不能保证赶上窄窗口。验收安排应更新到上述时间，并查看真实运行结果，不修改现有金融任务。官方规则与本地日历一致：[NIST夏令时规则](https://www.nist.gov/pml/time-and-frequency-division/popular-links/daylight-saving-time-dst)、[Nasdaq交易时间和假期](https://www.nasdaq.com/market-activity/stock-market-holiday-schedule)。
 
-另发现06:15任务10/28最近一次返回2是**历史来源重审阻塞**，不是尚未到观察时点：14条已到期观察未采集，117条完成结果保留；无网络和金融账户写入。24份历史建议的旧首窗审核代码pin与已更新live代码不符，旧字节均仍在档案。需隔离按原档案代码和时点重审，不能修改旧pin冒充通过。未重跑任务或修改计划。
+早先06:15任务10/28返回2，确实曾有14条到期观察因历史来源重审阻塞。此问题已于10/28 18:38的有界恢复运行解决：14条发布并回读通过，原117条完整性重验通过，共131条；3次来源请求，账户未改变。历史审核使用原代码及原时点，未修改旧pin。Windows任务“最近退出码2”仍是早先计划运行的记录，不代表恢复运行失败。
 
 本地可核验快照：`tmp/month_turn_dst_audit_20261028/`的`tasks.json`、`audit.json`、`followup_diagnosis.json`。日历pin为`1440d82ecc956baab15df4b49da444e4878459e353cf7c280dd5d3dcf2a109af`；当前任务登记只是本次读取快照，后续变更需重新核验。
+
+2026-10-29凌晨在R35上线后再次只读预检：建议跟踪131条已完成、436条未到观察收盘，0到期积压、0阻塞、0网络请求；月度正式launcher按任务登记的配置与哈希通过，返回WAITING_SESSION_CLOSE，account_writes=false、target_created=false、http_calls=0。未重复执行采集或修改定时任务。证据：`tmp/goal_acceptance_audit_20261029/`；历史恢复独立回读见`tmp/followup_historical_review_20261028/recovery_independent_acceptance.json`。这些结果不替代真实成交、月底发布及新月采用验收。
