@@ -2,7 +2,7 @@
 from copy import copy
 from functools import partial
 from zoneinfo import ZoneInfo
-from data.strategy_halt_market_capture_v1 import HaltMarketCaptureV1
+from data.strategy_halt_gzip_capture_v1 import HaltGzipMarketCaptureV1 as HaltMarketCaptureV1
 from data.strategy_recent_minute_retry_v1 import build_execution_limits
 from data.strategy_halt_aware_pullback_cap_store_v2 import PullbackCapStore
 from data.strategy_account_evidence_provider import StrategyAccountEvidenceProvider

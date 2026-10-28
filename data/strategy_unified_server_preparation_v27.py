@@ -65,6 +65,8 @@ SOURCES |= {
 
 SOURCES |= {'data/official_rss_gzip_transport_v1.py', 'data/strategy_rss_gzip_capture_v1.py', 'data/strategy_monthly_supplement_gzip_v1.py'}
 
+SOURCES |= {'data/strategy_halt_gzip_capture_v1.py'}
+
 def build_unified_server_preparation_v27(*, root, configuration_path, configuration_sha256, clock=None):
     root = Path(root).resolve()
     reference = dict(path=configuration_path, sha256=configuration_sha256)
