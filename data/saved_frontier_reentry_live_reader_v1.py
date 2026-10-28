@@ -281,7 +281,14 @@ class SavedFrontierReentryLiveReader:
             observed_at=reviewed_at.isoformat(), available_at=reviewed_at.isoformat(),
             valid_from=reviewed_at.isoformat(), valid_until=session['close'],
             evidence_id=archive['receipt_sha256'], evidence_archive=archive)
+        commit_context=dict(schema='SERVER_REENTRY_COMMIT_CONTEXT_V1',
+            source_inputs_sha256=sha256(canonical(inputs)).hexdigest(),
+            prepared_exit=deepcopy(prepared_exit),session_contexts=deepcopy(contexts),
+            activation_id=reference_before['activation_id'],
+            committed_risk_sha256=sha256(canonical(updated)).hexdigest(),
+            committed_reference_sha256=sha256(canonical(reference_updated)).hexdigest())
+        commit_context['context_sha256']=sha256(canonical(commit_context)).hexdigest()
         return dict(status='DAILY_SIGNAL_READY', signal=signal, evidence_archive=archive,
                     risk_projection=projection, source_review=source['review'],
                     reference_state=reference_updated, boundary_references=boundary_refs,
-                    reentry_execution_applied=False)
+                    reentry_execution_applied=False, reentry_commit_context=commit_context)
