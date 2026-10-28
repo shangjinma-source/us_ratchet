@@ -460,7 +460,8 @@ function render(container,model,now=Date.now(),newsCell=null){
  };
  const status=doc.createElement('p');status.textContent=result.retrying?'来源暂不可用，正在重试建议…':result.error==='EVIDENCE_UNAVAILABLE'?(result.cashSaved?'现金已保存；行情或公司行动源暂不可用，建议未更新，无需重复保存现金。':'行情或公司行动源暂不可用，建议未更新，请稍后刷新。'):waitingExplanation(result.error||result.reason)|| (result.error?(result.cashSaved?'现金已保存；建议未更新，请刷新，无需重复保存现金':'状态未确认，请刷新核对后再操作'):
   explanations[result.reason]||explanations[result.detail_status]||explanations[result.status]||'等待执行条件满足');
- container.replaceChildren(status,table);return result;
+ if(status.textContent==='今日条件买卖建议')container.replaceChildren(table);
+ else container.replaceChildren(status,table);return result;
 }
 const api={targetRows,waitingExplanation,createController,httpDependencies,fetchTransport,presentation,render,dollars,actionExplanation};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;

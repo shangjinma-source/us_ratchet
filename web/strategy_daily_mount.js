@@ -72,14 +72,16 @@ function mount(container,dependencies){
    chartTarget.targets=ui.targetRows(chartTarget).map(row=>({...row,quantity:quantities.get(row.security_id)??null}));
   }
   const nextChartKey=JSON.stringify([chartTarget?.target_id,chartTarget?.proposal_id,chartTarget?.targets,state.account?.holdings]);
-  if(nextChartKey!==chartKey){
+  const chartsChanged=!state.busy&&nextChartKey!==chartKey;
+  const chartAccountChanged=!state.busy&&state.account?.revision!==accountKey;
+  if(chartsChanged){
    chartKey=nextChartKey;
    const tickers=[...new Set([...ui.targetRows(state.target),...(state.account?.holdings||[])].map(x=>x.ticker).filter(Boolean))];
    safe(()=>onRecommendedTickers(tickers));
    // Caller retains the existing K-line renderer and its own async race guard.
    safe(()=>onTargetChanged(chartTarget,{container:charts,holdings:structuredClone(state.account?.holdings||[])}));
   }
-  if(state.account?.revision!==accountKey){accountKey=state.account?.revision;safe(()=>onAccountChanged(structuredClone(state.account)));}
+  if(chartAccountChanged){accountKey=state.account?.revision;safe(()=>onAccountChanged(structuredClone(state.account)));}
   const finished=wasBusy&&!state.busy;wasBusy=state.busy;
   if(finished)safe(()=>onRefreshCompleted());
   safe(()=>dependencies.onChange?.(structuredClone(state)));

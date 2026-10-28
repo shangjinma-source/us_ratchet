@@ -18,7 +18,7 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  let account={revision:'a',cash_confirmation_valid:true,available_cash:'255864/25',holdings:[{security_id:'S',ticker:'SNDK',quantity:14}]};
  let target={server_month:'2026-10'},cashWrites=0,firstGeneration=true,instance,gate,previewFailure=false;
  let refreshCompleted=0;
- const requests=[],recommended=[],chartChanges=[],errors=[];
+ const requests=[],recommended=[],chartChanges=[],errors=[],busyChartCallbacks=[];
  const request=async(path,body)=>{
   requests.push({path,body});
   if(path==='/api/strategy-account')return {account:structuredClone(account)};
@@ -42,7 +42,7 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  const container=new Node('div',doc),timers=new Map();let tick=Date.parse('2026-10-20T15:00:00Z'),timerId=0;
  instance=mount(container,{newsReviewFetch:async()=>({ok:true,json:async()=>({enabled:false,status:'DISABLED'})}),...httpDependencies(request,()=> 'stable-event',accountController),
   now:()=>tick,setTimer:(fn,delay)=>{timers.set(++timerId,{fn,delay});return timerId;},clearTimer:id=>timers.delete(id),onError:e=>errors.push(e.message),
-  onRefreshCompleted:()=>refreshCompleted++,onRecommendedTickers:v=>recommended.push(v),onTargetChanged:(v,options)=>chartChanges.push({v,options})});
+  onRefreshCompleted:()=>refreshCompleted++,onRecommendedTickers:v=>recommended.push(v),onAccountChanged:()=>{if(instance?.getState().busy)busyChartCallbacks.push("account");},onTargetChanged:(v,options)=>{if(instance?.getState().busy)busyChartCallbacks.push("target");chartChanges.push({v,options});}});
  await instance.ready;
  assert.equal(instance.elements.input.value,'10234.56');
  assert.equal(container.children[0].className,'strategy-monthly-target');
@@ -153,5 +153,5 @@ const text=node=>[node.textContent||'',...node.children.flatMap(text)].join(' ')
  const count=requests.length;instance.dispose();instance.elements.save.click();await instance.whenIdle();
  assert.equal(requests.length,count);assert.equal(timers.size,0);
  assert.equal(doc.listeners.visibilitychange.length,0);assert.equal(doc.defaultView.listeners.focus.length,0);assert.equal(doc.defaultView.listeners.pageshow.length,0);
- console.log('daily mount submit/click/recovery/invalidation/callbacks PASS');
+ assert.deepEqual(busyChartCallbacks,[], 'optional chart callbacks never run during daily transaction');console.log('daily mount submit/click/recovery/invalidation/callbacks PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
