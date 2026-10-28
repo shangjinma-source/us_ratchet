@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.routing import APIRoute
 from core.strategy_account_ledger import require
-from data.strategy_bounded_source_gate_v1 import _read_digest
+from data.strategy_v27_source_digest_v1 import _read_digest
 from data.strategy_daily_session_capture import reject_links, stamp
 from data.strategy_unified_server_preparation_v7 import _read
 from data.strategy_unified_server_preparation_v26 import build_unified_server_preparation_v26
@@ -20,7 +20,7 @@ from api.strategy_frontier_monthly_target_v1 import create_router as monthly_rou
 from api.strategy_frontier_latest_display_charts_v1 import create_router as display_router
 
 POLICY_ID = 'SAVED_FRONTIER_CAP50_EXIT20_V1'
-SOURCES = {'data/saved_frontier_source_review_v1.py', 'data/strategy_unified_server_preparation_v27.py', 'data/saved_frontier_preview_service_v1.py', 'data/saved_frontier_monthly_view_v1.py', 'api/strategy_frontier_daily_preview_v1.py', 'data/strategy_frontier_latest_display_charts_v1.py', 'data/strategy_frontier_target_charts_v1.py', 'data/strategy_observed_frontier_daily_admission_v1.py', 'web/index.html', 'data/saved_frontier_supplement_request_v1.py', 'api/strategy_frontier_monthly_target_v1.py', 'data/saved_frontier_daily_composition_v1.py', 'data/saved_frontier_supplement_prepare_v1.py', 'data/saved_frontier_first_window_v1.py', 'web/strategy_daily_mount.js', 'data/saved_frontier_security_domain_v1.py', 'data/saved_frontier_zero_cash_preview_v1.py', 'core/saved_monthly_frontier_proposal.py', 'data/saved_frontier_capture_review_v1.py', 'data/saved_frontier_buy_data_wait_preview_v1.py', 'web/strategy_monthly_target_charts.js', 'api/strategy_frontier_latest_display_charts_v1.py', 'data/saved_frontier_source_reader_v1.py', 'data/saved_frontier_live_reader_v1.py', 'api/strategy_server_mount_v6.py', 'data/saved_frontier_exit_packet_v1.py', 'web/strategy_daily_controller.js'}
+SOURCES = {'data/strategy_v27_source_digest_v1.py', 'data/saved_frontier_source_review_v1.py', 'data/strategy_unified_server_preparation_v27.py', 'data/saved_frontier_preview_service_v1.py', 'data/saved_frontier_monthly_view_v1.py', 'api/strategy_frontier_daily_preview_v1.py', 'data/strategy_frontier_latest_display_charts_v1.py', 'data/strategy_frontier_target_charts_v1.py', 'data/strategy_observed_frontier_daily_admission_v1.py', 'web/index.html', 'data/saved_frontier_supplement_request_v1.py', 'api/strategy_frontier_monthly_target_v1.py', 'data/saved_frontier_daily_composition_v1.py', 'data/saved_frontier_supplement_prepare_v1.py', 'data/saved_frontier_first_window_v1.py', 'web/strategy_daily_mount.js', 'data/saved_frontier_security_domain_v1.py', 'data/saved_frontier_zero_cash_preview_v1.py', 'core/saved_monthly_frontier_proposal.py', 'data/saved_frontier_capture_review_v1.py', 'data/saved_frontier_buy_data_wait_preview_v1.py', 'web/strategy_monthly_target_charts.js', 'api/strategy_frontier_latest_display_charts_v1.py', 'data/saved_frontier_source_reader_v1.py', 'data/saved_frontier_live_reader_v1.py', 'api/strategy_server_mount_v6.py', 'data/saved_frontier_exit_packet_v1.py', 'web/strategy_daily_controller.js'}
 
 SOURCES |= {'web/strategy_target_recovery_v1.js', 'api/news_desk_v1.py',
             'web/news.html', 'web/news.js', 'data/news_refresh_service.py',
