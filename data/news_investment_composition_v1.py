@@ -23,6 +23,28 @@ def compose(*, root, monthly_view, observed_daily, validate):
             return account, target, names
     service = NewsInvestmentService(cache=root/'data/cache/news', context=context,
                                    preview=observed_daily.preview, validate=validate)
+    from data.news_risk_plan_v1 import build_risk_plan
+    from data.news_risk_execution_bridge_v1 import make_hold_risk_plan_adapter
+
+    def project_risk_plan(*, original, proposal, account, target, now):
+        if original.get('status') != 'HOLD':
+            return build_risk_plan(proposal=proposal, original_preview=original,
+                                   account=account, now=now)
+        generation = service.news_generation()
+
+        def review_unchanged():
+            validate()
+            if service.news_generation() != generation:
+                raise ValueError('NEWS_UPDATED_DURING_EXECUTION_PREVIEW')
+            # The owning service also checks its original pre-analysis news
+            # generation, event control and first-window deadline after return.
+
+        adapter = make_hold_risk_plan_adapter(composition=observed_daily.service,
+            validate=validate, review_guard=review_unchanged)
+        return adapter(original=original, proposal=proposal, account=account,
+                       target=target, now=now)
+
+    service.risk_plan_provider = project_risk_plan
     from data.news_event_pipeline_v1 import EventNewsPipeline
     from data.news_event_calendar_v1 import window
     from api.news_event_pipeline_v1 import create_event_router

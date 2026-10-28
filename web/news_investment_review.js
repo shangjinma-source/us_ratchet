@@ -22,16 +22,56 @@ function view(state,proposal,now){
  const valid=proposal?.status==='REVIEW_PROPOSAL_ONLY'&&proposal.executable===false&&proposal.orders_created===false&&proposal.original_binding?.account_revision===b.account_revision&&proposal.original_binding?.target_id===b.target_id&&(proposal.original_binding?.proposal_id??null)===b.proposal_id&&Date.parse(proposal.review_valid_until)>now;
  return {ready,valid,rows:valid?(proposal.rows||[]):[],status:!proposal?'尚未复核':proposal.status==='WAIT_RECONCILIATION'?'请先核对持仓':valid?'复核完成 · 独立建议，尚未验证投资效果':'复核已过期，请重新复核'};
 }
+function exactAmount(value){
+ if(typeof value!=='string'&&typeof value!=='number')return null;
+ const parts=String(value).split('/');if(parts.length>2||parts.some(x=>!x.trim()))return null;
+ const amount=Number(parts[0])/(parts.length===2?Number(parts[1]):1);return Number.isFinite(amount)?amount:null;
+}
+function money(value){const amount=exactAmount(value);return amount===null?'待核验':'$'+amount.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+const riskReasons={WAIT_NEW_QUOTES_REQUIRED:'等待新报价，暂不提供挂单价格',EXISTING_OPEN_ORDERS:'已有未完成挂单，先核对成交或撤单',WAIT_CASH_NO_SELL_PROCEEDS_ASSUMED:'可用现金不足，未成交卖款不计入',WAIT_PENDING_RECONCILIATION:'已有未完成挂单，先核对成交或撤单',NO_ADMITTED_AI_OPINION:'证据不足，未形成 AI 风险方案',REVIEW_EXPIRED:'方案已过期，请重新复核'};
+function riskView(proposal,sid,now){
+ const reviewRow=proposal?.rows?.find(r=>r.security_id===sid),plan=proposal?.risk_plan;
+ if(!reviewRow)return {status:'WAIT',message:'未复核，不代表无风险',orders:[]};
+ if(reviewRow.action==='ABSTAIN'||reviewRow.reviewed===false)return {status:'ABSTAIN',message:'证据不足，未作判断；原策略见左侧',orders:[]};
+ if(!plan)return {status:'WAIT',message:'尚未生成风险方案报价',orders:[]};
+ const bound=plan.schema==='NEWS_AI_RISK_PLAN_V1'&&plan.review_id===proposal.review_id&&plan.executable===false&&plan.orders_created===false&&plan.account_mutated===false&&['account_revision','target_id','proposal_id'].every(k=>plan.original_binding?.[k]===proposal.original_binding?.[k]);
+ const valid=bound&&Date.parse(proposal.review_valid_until)>now;
+ if(!valid)return {status:'WAIT',message:'方案已过期或绑定不可确认，请重新复核',orders:[]};
+ if(plan.status!=='READY')return {status:plan.status==='ABSTAIN'?'ABSTAIN':'WAIT',message:riskReasons[plan.reason]||'等待方案校验，暂不提供挂单价格',orders:[],reason:plan.reason};
+ if(!Number.isFinite(Date.parse(plan.valid_until))||Date.parse(plan.valid_until)<=now)return {status:'WAIT',message:'方案报价已过期，请重新复核',orders:[]};
+ const row=plan.rows?.find(r=>r.security_id===sid);
+ if(!row||row.action!==reviewRow.action||row.held_quantity!==reviewRow.held_quantity||row.proposed_target_quantity!==reviewRow.proposed_target_quantity||!Number.isInteger(row.planned_target_quantity)||row.planned_target_quantity<0||row.planned_target_quantity>reviewRow.original_target_quantity||row.planned_target_quantity>reviewRow.proposed_target_quantity||row.original_target_quantity!==reviewRow.original_target_quantity)return {status:'WAIT',message:'方案数量待核验',orders:[]};
+ const orders=(plan.candidate_orders||[]).filter(o=>o.security_id===sid);
+ const gap=row.planned_target_quantity-row.held_quantity;
+ const validOrders=orders.every(o=>['BUY','SELL'].includes(o.side)&&Number.isInteger(o.quantity)&&o.quantity>0&&exactAmount(o.limit_price)>0&&(o.side==='BUY'?gap>0:gap<0))&&orders.reduce((total,o)=>total+o.quantity,0)<=Math.abs(gap);
+ const cash=plan.cash;
+ if(!validOrders||!cash||cash.sell_proceeds_assumed!==false||exactAmount(cash.spendable_cash)===null||exactAmount(cash.new_buy_cash_required)===null||exactAmount(cash.spendable_cash)<0||exactAmount(cash.new_buy_cash_required)<0||exactAmount(cash.new_buy_cash_required)>exactAmount(cash.spendable_cash))return {status:'WAIT',message:'方案报价或现金校验未通过',orders:[]};
+ return {status:'READY',orders,row,cash,valid_until:plan.valid_until,waiting_cash:(plan.waiting_cash||[]).filter(r=>r.security_id===sid),constraints:(plan.constraints||[]).filter(r=>r.security_id===sid),message:orders.length?'':gap===0?'本方案无需新增买卖':'等待资金或执行条件，暂无可用委托'};
+}
+function renderRiskPlan(container,proposal,sid,now){
+ const doc=container.ownerDocument,el=(tag,text)=>{const n=doc.createElement(tag);n.textContent=String(text);return n;},v=riskView(proposal,sid,now);
+ const box=el('div','');box.className='news-risk-plan';box.appendChild(el('strong','未采用'));
+ if(v.message)box.appendChild(el('p',v.message));
+ if(v.status==='READY'){
+  for(const order of v.orders)box.appendChild(el('p',`${order.side==='SELL'?'卖出':'买入'} ${order.quantity} 股 · 限价 ${money(order.limit_price)}`));
+  for(const constraint of v.constraints)box.appendChild(el('p',`有 ${constraint.quantity} 股受原策略可买数量限制，未追加买入。`));
+  for(const wait of v.waiting_cash)box.appendChild(el('p',`另有 ${wait.quantity} 股待资金；未成交卖款不计入可用现金。`));
+  box.appendChild(el('p',`方案合计：可用现金 ${money(v.cash.spendable_cash)} · 买入占用 ${money(v.cash.new_buy_cash_required)}；不预支卖款。`));
+  box.appendChild(el('p',`${v.orders.length?'报价':'方案'}有效至 ${localTime(v.valid_until)}${v.orders.length?'；限价不保证成交。':''}`));
+ }
+ container.appendChild(box);return v;
+}
 function renderImpactCell(container,sid,reviewState,opened=new Set(),now=Date.now()){
  const doc=container.ownerDocument,el=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;};
  const row=reviewState?.proposal?.rows?.find(r=>r.security_id===sid);
  if(!row){container.appendChild(el('span',reviewState?.busy?'复核中，原策略仍生效':reviewState?.status?.includes('过期')?'复核已过期，待重新复核':'未复核，不代表无风险'));return;}
- container.appendChild(el('span',row.reviewed===false||row.action==='ABSTAIN'?'证据不足，未作判断':(labels[row.action]||'未识别意见')+' · 投资效果未验证'));
+ if(row.reviewed!==false&&row.action!=='ABSTAIN')container.appendChild(el('span',labels[row.action]||'未识别意见'));
+ renderRiskPlan(container,reviewState.proposal,sid,now);
  const old=(row.evidence||[]).some(e=>Number.isFinite(Date.parse(e.published_at))&&(now-Date.parse(e.published_at))/1000>3600);
  if(reviewState?.proposal?.timeliness?.mode==='EVENT_SOURCE_PREANALYSIS_FINALIZED')container.appendChild(el('p',eventTiming(reviewState.proposal)+' · 未验证提前避跌'));else if(old)container.appendChild(el('p','历史背景，非即时预警'));
  const details=el('details'),summary=el('summary','依据');details.className='news-impact-details';details.open=opened.has(sid);details.addEventListener('toggle',()=>{details.open?opened.add(sid):opened.delete(sid);});details.appendChild(summary);
  details.appendChild(el('p',row.reason||'未提供理由'));
- if(row.reviewed!==false&&row.action!=='ABSTAIN'&&row.proposed_target_quantity!==undefined)details.appendChild(el('p',`复核目标意见：${row.proposed_target_quantity} 股；未替换正式动作和限价。`));
+ if(row.reviewed!==false&&row.action!=='ABSTAIN'&&row.proposed_target_quantity!==undefined)details.appendChild(el('p',`风险目标意见：${row.proposed_target_quantity} 股；原 V27 方案仍单独保留。`));
  for(const [key,label] of [['counterevidence','反证'],['uncertainty','不确定性']])details.appendChild(el('p',label+'：'+(Array.isArray(row[key])&&row[key].length?row[key].join('；'):'未提供，不能视为没有')));
  for(const group of evidenceGroups(Array.isArray(row.evidence)?row.evidence:[])){
   const item=group.item,url=safeUrl(item.url||item.source_url);
@@ -78,6 +118,7 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
    box.appendChild(el('p','反证：'+(Array.isArray(row.counterevidence)?row.counterevidence.join('；'):row.counterevidence||'未提供，不能视为没有反证')));
    box.appendChild(el('p','不确定性：'+((Array.isArray(row.uncertainty)?row.uncertainty.join('；'):row.uncertainty)||'未提供，不能视为没有不确定性')));
    if(row.reviewed!==false&&row.proposed_target_quantity!==undefined)box.appendChild(el('p',`复核建议目标 ${row.proposed_target_quantity} 股（未写入策略）`));
+   renderRiskPlan(box,proposal,row.security_id,now());
    const evidence=Array.isArray(row.evidence)?row.evidence:[];
    for(const group of evidenceGroups(evidence)){
     const item=group.item;
@@ -95,7 +136,7 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
   if(proposal?.timeliness&&typeof proposal.timeliness==='object'){const t=proposal.timeliness;body.appendChild(el('p',`按需采集 · 请求 ${localTime(t.requested_at)} · ${t.cached?'复用此前分析':'分析完成'} ${localTime(t.analysis_completed_at)}${t.cached?' · 本次重新校验 '+localTime(t.revalidated_at||proposal.review_created_at):''}${Number.isFinite(t.total_seconds)?' · 用时 '+Math.round(t.total_seconds)+' 秒':''}`));}
   if(proposal)body.appendChild(el('p',`复核时间 ${localTime(proposal.review_created_at)} · 有效至 ${localTime(proposal.review_valid_until)}`));
   if(expiry!==null)clearTimer(expiry);expiry=null;
-  const wait=Date.parse(proposal?.review_valid_until)-now();if(wait>0){expiry=setTimer(draw,Math.min(wait,2147483647));expiry?.unref?.();}else if(proposal&&timer!==null){clearTimer(timer);timer=null;}
+  const deadlines=[proposal?.review_valid_until,proposal?.risk_plan?.valid_until].map(Date.parse).filter(t=>Number.isFinite(t)&&t>now());const wait=(deadlines.length?Math.min(...deadlines):NaN)-now();if(wait>0){expiry=setTimer(draw,Math.min(wait,2147483647));expiry?.unref?.();}else if(proposal&&Date.parse(proposal.review_valid_until)<=now()&&timer!==null){clearTimer(timer);timer=null;}
  }
  async function json(url,options){const response=await request(url,options);const value=await response.json();if(!response.ok&&!(response.status===409&&value.status==='RUNNING'&&value.job_id)&&response.status!==429)throw Error('REQUEST_FAILED');return value;}
  async function accept(result,token,count){
@@ -124,5 +165,5 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
  button.addEventListener('click',start);draw();
  return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();if(eventTimer!==null)clearTimer(eventTimer);eventButton.removeEventListener('click',eventToggle);button.removeEventListener('click',start);},elements:{button,status,body},start};
 }
-const api={eventTiming,renderImpactCell,mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
+const api={riskView,renderRiskPlan,money,eventTiming,renderImpactCell,mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
 })(typeof window!=='undefined'?window:globalThis);

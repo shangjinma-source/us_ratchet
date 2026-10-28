@@ -1,3 +1,7 @@
+// Optional candidate modules are injected before mount imports its dependencies.
+for(const [env,name] of [['NEWS_CONTROLLER_CANDIDATE','strategy_daily_controller.js'],['NEWS_REVIEW_CANDIDATE','news_investment_review.js']]){
+ if(process.env[env]){const actual=require.resolve('../web/'+name),candidate=require(require('node:path').resolve(process.env[env]));require.cache[actual]={id:actual,filename:actual,loaded:true,exports:candidate};}
+}
 const assert=require('node:assert/strict');
 const ui=require('../web/strategy_daily_controller.js');
 const {mount}=require('../web/strategy_daily_mount.js');
@@ -18,14 +22,14 @@ const flat=n=>[n,...n.children.flatMap(flat)];
  const queued=c.load();assert.throws(()=>c.adoptReviewedPreview(proposal()),/BUSY/);await queued;
  c.adoptReviewedPreview(proposal());assert.equal(c.getState().daily.new_orders[0].limit_price,'11');
  c.invalidate();assert.throws(()=>c.adoptReviewedPreview(proposal()),/BUSY/);
- let timers=new Map(),timerid=0,posts=0,gets=0,notifications=0;const host=new Node('div',doc);
- const instance=mount(host,{...deps(),onChange:()=>notifications++,setTimer:(f,ms)=>{timers.set(++timerid,{f,ms});return timerid;},clearTimer:id=>timers.delete(id),newsReviewFetch:async(url,options)=>{options?posts++:gets++;return {ok:true,json:async()=>({status:'COMPLETE',job_id:'j',proposal:proposal()})};}});
+ let timers=new Map(),timerid=0,posts=0,gets=0,eventGets=0,notifications=0;const host=new Node('div',doc);
+ const instance=mount(host,{...deps(),onChange:()=>notifications++,setTimer:(f,ms)=>{timers.set(++timerid,{f,ms});return timerid;},clearTimer:id=>timers.delete(id),newsReviewFetch:async(url,options)=>{if(url==='/api/news/events/status'){assert.equal(options,undefined);eventGets++;return {ok:true,json:async()=>({enabled:false,status:'DISABLED'})};}options?posts++:gets++;return {ok:true,json:async()=>({status:'COMPLETE',job_id:'j',proposal:proposal()})};}});
  await instance.ready;await instance.refresh();
  const button=flat(host).find(n=>n.textContent==='AI新闻复核');assert.equal(button.disabled,false);
  button.listeners.click[0]();for(let i=0;i<12;i++)await Promise.resolve();
  assert.equal(instance.getState().daily.new_orders[0].limit_price,'11');
  assert.ok(flat(host).some(n=>(n.textContent||'').includes('复核完成')),'review survives top draw');
- const monitor=[...timers.values()].find(x=>x.ms===15000);assert.ok(monitor);
- const priorNotifications=notifications;await monitor.f();assert.equal(notifications,priorNotifications,'same job poll must not notify controller or overwrite top');assert.equal(posts,1);assert.equal(gets,1);assert.equal(instance.getState().daily.new_orders[0].limit_price,'11');
+ const monitors=[...timers.values()].filter(x=>x.ms===15000);assert.ok(monitors.length);assert.equal(eventGets,1);
+ const priorNotifications=notifications;for(const monitor of monitors)await monitor.f();assert.equal(notifications,priorNotifications,'same job poll must not notify controller or overwrite top');assert.equal(posts,1);assert.equal(gets,1);assert.equal(instance.getState().daily.new_orders[0].limit_price,'11');
  instance.dispose();console.log('r20 actual controller+mount+news UI binding/expiry/queued write and handshake: PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});

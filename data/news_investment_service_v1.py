@@ -12,6 +12,7 @@ from time import monotonic
 from uuid import uuid4
 
 from core.news_investment_review_v1 import build_review_proposal, moment
+from data.news_risk_plan_v1 import build_risk_plan
 from data.news_refresh_service import owner_alive, process_identity
 
 _workers = set()
@@ -24,8 +25,9 @@ def digest(value):
 
 class NewsInvestmentService:
     def __init__(self, *, cache, context, preview, validate=lambda: None,
-                 collector=None, model=None, source_builder=None, clock=None):
+                 collector=None, model=None, source_builder=None, clock=None, risk_plan_provider=None):
         self.cache = Path(cache)
+        self.risk_plan_provider = risk_plan_provider
         self.context, self.preview, self.validate = context, preview, validate
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.collector, self.model, self.source_builder = collector, model, source_builder
@@ -247,12 +249,31 @@ class NewsInvestmentService:
                     pre_move_detection_verified=False,
                     note='Publication and discovery delays are measured; reading after a price move is not evidence of avoiding that move.'),
                 original_preview_sha256=digest(fresh), original_preview=deepcopy(fresh))
+            def project_risk_plan():
+                if self.risk_plan_provider is not None:
+                    return self.risk_plan_provider(original=deepcopy(fresh), proposal=deepcopy(proposal),
+                                                   account=deepcopy(account), target=deepcopy(target),
+                                                   now=self.clock().isoformat())
+                return build_risk_plan(proposal=proposal, original_preview=fresh, account=account,
+                                       now=self.clock().isoformat())
+            proposal['risk_plan'] = measured('risk_plan_projection', project_risk_plan)
             def final_validation():
                 if job.get('event_pending'):
                     self.validate_event_control(job['event_pending'])
                 self.bound_context(binding)
                 if self.news_generation() != generation:
                     raise ValueError('NEWS_UPDATED_DURING_ANALYSIS')
+                # Potentially blocking context/source checks happen before the
+                # final clock sample. No quote or total-job deadline is renewed.
+                final_now = self.clock()
+                elapsed = (final_now-moment(job['started_at'])).total_seconds()
+                if not 0 <= elapsed <= 360:
+                    raise ValueError('REVIEW_DEADLINE_EXCEEDED')
+                if final_now >= moment(proposal['review_valid_until']):
+                    raise ValueError('REVIEW_EXPIRED')
+                risk_plan = proposal.get('risk_plan', {})
+                if risk_plan.get('status') == 'READY' and final_now >= moment(risk_plan['valid_until']):
+                    raise ValueError('RISK_PLAN_EXPIRED')
             measured('final_validation', final_validation)
             job.update(status='COMPLETE', proposal=proposal, source_fingerprint=source_result['fingerprint'],
                        news_generation=generation)
@@ -293,6 +314,9 @@ class NewsInvestmentService:
             self.bound_context(job['binding'])
             if job['status'] == 'COMPLETE' and self.clock() >= moment(job['proposal']['review_valid_until']):
                 raise ValueError('REVIEW_EXPIRED')
+            risk_plan = job.get('proposal', {}).get('risk_plan', {})
+            if job['status'] == 'COMPLETE' and risk_plan.get('status') == 'READY' and self.clock() >= moment(risk_plan['valid_until']):
+                raise ValueError('RISK_PLAN_EXPIRED')
             if job['status'] == 'COMPLETE' and self.news_generation() != job['news_generation']:
                 raise ValueError('NEWS_UPDATED')
         except Exception:

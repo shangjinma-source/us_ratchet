@@ -400,7 +400,7 @@ function actionExplanation(row,result,model){
 function render(container,model,now=Date.now(),newsCell=null){
  const result=presentation(model,now),doc=container.ownerDocument;
  const table=doc.createElement('table'),head=doc.createElement('tr');table.className='daily-actions-table';
- for(const text of ['股票','实际持有',result.monthly_target_label,result.daily_target_label,'今日动作','建议限价','原因','新闻影响']){
+ for(const text of ['股票','实际持有',result.monthly_target_label,result.daily_target_label,'原 V27 动作','原 V27 限价','原策略原因','AI 风险方案（研究预览）']){
   const cell=doc.createElement('th');cell.textContent=text;head.appendChild(cell);
  }
  table.appendChild(head);
