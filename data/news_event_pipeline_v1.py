@@ -62,7 +62,7 @@ class EventNewsPipeline:
         elif state.get('status') == 'DISABLED':
             state['status'] = 'WAITING'
         keys = ('enabled', 'status', 'checked_at', 'source_status', 'unsupported_tickers', 'error', 'job_id',
-                'opinion_generated_at', 'opinion_valid_until', 'request_count', 'triggered_sources')
+                'opinion_generated_at', 'opinion_valid_until', 'request_count', 'triggered_sources', 'publication_conflicts')
         worker_alive = bool(self.worker and self.worker.is_alive())
         return dict({key: state[key] for key in keys if key in state}, orders_created=False,
                     automatic_orders=False, worker_alive=worker_alive,
@@ -186,7 +186,10 @@ class EventNewsPipeline:
                 if ticker not in collector.supported:
                     continue
                 try:
+                    initialized = ticker in state.get('discovery_initialized_tickers', [])
                     rows = collector.discover(ticker)
+                    if not initialized:
+                        state.setdefault('discovery_initialized_tickers', []).append(ticker)
                     listed.extend(rows)
                     statuses.append(dict(ticker=ticker, status='LIST_OK', count=len(rows)))
                     for row in rows:
@@ -198,6 +201,12 @@ class EventNewsPipeline:
                         age = (moment(row['discovered_at'])-moment(row['published_at'])).total_seconds()
                         if age < 0:
                             raise ValueError('FUTURE_PUBLICATION_REJECTED')
+                        # Only newly observed SNDK identities after a successful
+                        # initial listing bypass the index-time prefilter. The
+                        # first old list remains baseline; no historical sweep.
+                        if ticker == 'SNDK' and initialized and (prior is None or prior['status'] == 'BODY_FAILED'):
+                            candidates.append((key, row))
+                            continue
                         try:
                             first_window = self.publication_window([row])
                         except (ValueError, KeyError, TypeError):
@@ -222,6 +231,10 @@ class EventNewsPipeline:
                     event = collector.hydrate(row)
                     if moment(event['published_at']) != moment(row['published_at']):
                         raise ValueError('EVENT_PUBLICATION_CHANGED')
+                    body_window = self.publication_window([event])
+                    if self.clock() >= moment(body_window['valid_until']):
+                        state['seen'][key] = dict(status='BODY_WINDOW_EXPIRED', attempts=prior['attempts']+1)
+                        continue
                     event['discovery_delay_seconds'] = (moment(event['discovered_at'])-moment(event['published_at'])).total_seconds()
                     body_key = digest(dict(ticker=row['ticker'], body=event['content_sha256']))
                     if body_key in state['consumed']:
@@ -230,8 +243,15 @@ class EventNewsPipeline:
                     events.append(event)
                     accepted_keys.append((key, body_key))
                     state['seen'][key] = dict(status='BODY_READY', attempts=prior['attempts']+1)
-                except Exception:
-                    state['seen'][key] = dict(status='BODY_FAILED', attempts=prior['attempts']+1)
+                except Exception as error:
+                    if str(error) in ('TIMELY_TRIGGER_PUBLICATION_CONFLICT', 'EVENT_PUBLICATION_CHANGED'):
+                        detail = getattr(error, 'publication_conflict', dict(ticker=row['ticker'], url=row['url'], listing_published_at=row['published_at']))
+                        state['seen'][key] = dict(status='WAIT_PUBLICATION_TIME_CONFLICT', attempts=prior['attempts']+1, publication_conflict=detail)
+                    else:
+                        state['seen'][key] = dict(status='BODY_FAILED', attempts=prior['attempts']+1)
+            listed_keys = {digest({name: row[name] for name in ('ticker', 'url', 'title', 'published_at')}) for row in listed}
+            state['publication_conflicts'] = [value['publication_conflict'] for key, value in state['seen'].items()
+                if key in listed_keys and value.get('status') == 'WAIT_PUBLICATION_TIME_CONFLICT']
             state.update(source_status=statuses, request_count=collector.request_count)
             self.service.bound_context(binding)
             if events:
@@ -305,7 +325,7 @@ class EventNewsPipeline:
                     else:
                         state['status'] = 'WAIT_REVIEW_BUDGET'
             elif not state.get('pending') and not state.get('status', '').startswith('REVIEW_'):
-                state['status'] = 'NO_NEW_TIMELY_BODY'
+                state['status'] = 'WAIT_PUBLICATION_TIME_CONFLICT' if state['publication_conflicts'] else 'NO_NEW_TIMELY_BODY'
         except Exception as error:
             message = str(error)
             if state is not None:

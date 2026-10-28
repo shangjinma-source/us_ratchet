@@ -1,7 +1,6 @@
 const assert=require('node:assert/strict');
 const ui=require(process.env.NEWS_REVIEW_CANDIDATE?require('node:path').resolve(process.env.NEWS_REVIEW_CANDIDATE):'../web/news_investment_review.js');
-class Node{constructor(doc){this.ownerDocument=doc;this.children=[];this.listeners={};}appendChild(n){this.children.push(n);}replaceChildren(...n){this.children=n;}addEventListener(k,f){this.listeners[k]=f;}removeEventListener(k){delete this.listeners[k];}}
-const doc={createElement:()=>new Node(doc)};
+const {Node,doc}=require('./news_mock_dom.cjs');
 const state={account:{revision:'r',holdings:[]},target:{target_id:'t',proposal_id:'p'},daily:{status:'READY',account_revision:'r',target_id:'t',proposal_id:'p',reference_quotes:{A:{sell:10}}}};
 const proposal={status:'REVIEW_PROPOSAL_ONLY',original_binding:{target_id:'t',proposal_id:'p',account_revision:'r'},review_created_at:'2026-10-27T00:00:00Z',review_valid_until:'2026-10-27T00:05:00Z',orders_created:false,executable:false,rows:[{security_id:'A',action:'EXIT',reason:'<script>bad()</script>',original_target_quantity:2,evidence:[{url:'javascript:alert(1)',published_at:'2026-10-26T22:00:00Z',observed_at:'2026-10-27T00:00:00Z',publication_age_seconds:7200,discovery_delay_seconds:7200}]}]};
 (async()=>{

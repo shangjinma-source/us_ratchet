@@ -99,7 +99,10 @@ class EventSources:
                 raise ValueError('SANDISK_LIST_TITLE_MISMATCH')
             event['listing_published_raw'] = row['published_at']
             if moment(event['published_at']) != moment(row['published_at']):
-                raise ValueError('TIMELY_TRIGGER_PUBLICATION_CONFLICT')
+                error = ValueError('TIMELY_TRIGGER_PUBLICATION_CONFLICT')
+                error.publication_conflict = dict(ticker=ticker, url=row['url'],
+                    listing_published_at=row['published_at'], article_published_at=event['published_at'])
+                raise error
         if event['tickers'] != [ticker] or event['url'] != row['url']:
             raise ValueError('EVENT_IDENTITY_MISMATCH')
         event['discovered_at'] = row['discovered_at']

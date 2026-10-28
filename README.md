@@ -1,4 +1,4 @@
-> 2026-10-28 R30：已接入[财报背景](docs/news_background_context_20261028.md)，仅辅助当前新消息的AI研究预览；不自动替换V27。
+> 2026-10-28 R31：已接入[财报背景](docs/news_background_context_20261028.md)，补齐[新公告发现与时间冲突提示](docs/news_event_pipeline_20261028.md)。AI风险方案仍为研究预览，不自动替换V27。
 
 # 美股策略工具 us_ratchet
 
