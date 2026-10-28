@@ -51,6 +51,21 @@ class ProjectionTests(unittest.TestCase):
         self.assertFalse(result['sell_proceeds_assumed']); self.assertFalse(result['executable'])
         self.assertEqual(args, before)
 
+    def test_real_composition_order_provenance_survives_projection(self):
+        args = self.case(); original = args['original_preview']
+        for orders in (original['new_orders'], original['difference']['new_orders']):
+            for order in orders:
+                order.update(source_target_id=original['target_id'], proposal_id=original['proposal_id'])
+        result = project(**args)
+        self.assertEqual([o for o in result['candidate_orders'] if o['side']=='SELL'],
+                         [o for o in original['new_orders'] if o['side']=='SELL'])
+        for order in result['candidate_orders']:
+            self.assertEqual(order['source_target_id'], original['target_id'])
+            self.assertEqual(order['proposal_id'], original['proposal_id'])
+        original['new_orders'][0]['proposal_id'] = 'different-proposal'
+        with self.assertRaisesRegex(ValueError, 'REFERENCE_ORDER_PROVENANCE_CHANGED'):
+            project(**args)
+
     def test_unknown_identity_waits_buys_but_keeps_sell(self):
         args = self.case(); args['scope_proofs'] = []
         result = project(**args)

@@ -34,8 +34,29 @@ def project_reference_preview(*, account, original_preview, reference_state,
         state=account, legacy_shares={}, marks=proof['marks'], limits=proof['limits'],
         target_quantities=targets, now=proof['now'], maximum_mark_age_seconds=age,
         fee_bps=proof['fee_bps'])
-    require(original_check == original['difference'], 'REFERENCE_ORIGINAL_PROOF_CHANGED')
-    require(original_check['new_orders'] == original['new_orders'], 'REFERENCE_ORIGINAL_ORDERS_CHANGED')
+    # The real daily composition annotates the same order objects also held in
+    # difference.new_orders. Authenticate those exact two provenance fields
+    # before comparing the underlying ledger result; never discard other fields.
+    provenance = dict(source_target_id=original['target_id'], proposal_id=original['proposal_id'])
+    tagged = any(set(provenance) & set(order) for order in original['new_orders'])
+
+    def ledger_orders(orders):
+        normalized = deepcopy(orders)
+        for order in normalized:
+            if tagged:
+                require(all(order.get(k) == v for k, v in provenance.items()),
+                        'REFERENCE_ORDER_PROVENANCE_CHANGED')
+                for key in provenance:
+                    del order[key]
+            else:
+                require(not (set(provenance) & set(order)), 'REFERENCE_ORDER_PROVENANCE_CHANGED')
+        return normalized
+
+    normalized_difference = deepcopy(original['difference'])
+    normalized_difference['new_orders'] = ledger_orders(normalized_difference['new_orders'])
+    require(original_check == normalized_difference, 'REFERENCE_ORIGINAL_PROOF_CHANGED')
+    require(original_check['new_orders'] == ledger_orders(original['new_orders']),
+            'REFERENCE_ORIGINAL_ORDERS_CHANGED')
     deadlines = [moment(original['risk_valid_until'])]
     for sid, quote in proof['limits'].items():
         mark = proof['marks'][sid]
@@ -74,6 +95,13 @@ def project_reference_preview(*, account, original_preview, reference_state,
                     'REFERENCE_BUY_TARGET_EXCEEDED')
     require(Fraction(difference['new_buy_cash_required']) <= Fraction(difference['spendable_cash']),
             'REFERENCE_CASH_EXCEEDED')
+    candidate_orders = deepcopy(difference['new_orders'])
+    if tagged:
+        for order in candidate_orders:
+            order.update(provenance)
+    require([o for o in candidate_orders if o['side'] == 'SELL'] ==
+            [o for o in original['new_orders'] if o['side'] == 'SELL'],
+            'REFERENCE_ORIGINAL_SELL_CHANGED')
     lineage = dict(original_preview_sha256=digest(original),
         reference_state_sha256=digest(reference_state), reference_version=reference_state['version'],
         gate_binding_sha256=gate['binding_sha256'], original_binding=binding,
@@ -83,7 +111,7 @@ def project_reference_preview(*, account, original_preview, reference_state,
         generated_at=now, valid_until=min(deadlines).isoformat(),
         original_effective_targets=deepcopy(targets), execution_targets=deepcopy(derived_targets),
         buy_reference_gate=gate, difference=difference,
-        candidate_orders=deepcopy(difference['new_orders']), binding=lineage,
+        candidate_orders=candidate_orders, binding=lineage,
         binding_sha256=digest(lineage), original_sell_orders_preserved=True,
         cash_allocated_after_reference_gate=True, sell_proceeds_assumed=False,
         executable=False, orders_created=False, account_mutated=False,
