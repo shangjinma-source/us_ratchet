@@ -13,7 +13,7 @@ class ResponseTests(unittest.TestCase):
         args = self.case(); projection = fixture.project(**args)
         before = deepcopy(args)
         result = format_reference_advice(original_preview=args['original_preview'],
-                                        projection=projection, account=args['account'])
+                                        projection=projection, account=args['account'], configuration_sha256="c"*64)
         rows = {r['security_id']: r for r in result['daily_gate']['rows']}
         self.assertEqual(result['status'], 'READY')
         self.assertEqual(rows['A']['action'], 'WAIT')
@@ -25,13 +25,13 @@ class ResponseTests(unittest.TestCase):
         self.assertNotIn('difference', result['reference_projection'])
         self.assertEqual(set(result['reference_projection']),
                          {'schema', 'projection_sha256', 'reference_version',
-                          'reference_state_sha256', 'buy_status'})
+                          'reference_state_sha256', 'configuration_sha256', 'buy_status'})
         self.assertEqual(args, before)
 
     def test_unknown_source_keeps_sell_but_no_buy_quote(self):
         args = self.case(); args['scope_proofs'] = []
         result = format_reference_advice(original_preview=args['original_preview'],
-            projection=fixture.project(**args), account=args['account'])
+            projection=fixture.project(**args), account=args['account'], configuration_sha256="c"*64)
         self.assertEqual([o['side'] for o in result['new_orders']], ['SELL'])
         self.assertEqual(set(result['reference_quotes']), {'C'})
 
@@ -40,7 +40,7 @@ class ResponseTests(unittest.TestCase):
         args['original_preview']['proposal_id'] = 'changed'
         with self.assertRaisesRegex(ValueError, 'ORIGINAL_CHANGED'):
             format_reference_advice(original_preview=args['original_preview'],
-                                    projection=projection, account=args['account'])
+                                    projection=projection, account=args['account'], configuration_sha256="c"*64)
 
     def test_all_buys_blocked_is_wait_without_executable_fields(self):
         args = self.case()
@@ -51,7 +51,7 @@ class ResponseTests(unittest.TestCase):
         proof['original_binding'] = dict(account_id=account['account_id'], account_revision=account['revision'],
                                         target_id=original['target_id'], proposal_id=original['proposal_id'])
         result = format_reference_advice(original_preview=original,
-            projection=fixture.project(**args), account=account)
+            projection=fixture.project(**args), account=account, configuration_sha256="c"*64)
         self.assertEqual(result['status'], 'WAIT')
         self.assertEqual(result['new_orders'], [])
         self.assertEqual(result['reference_quotes'], {})

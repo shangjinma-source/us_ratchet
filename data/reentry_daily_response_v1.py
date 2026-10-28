@@ -4,12 +4,13 @@ The owning composition must authenticate sources and check the publication seal
 after this conversion. This module is not mounted in production.
 """
 from copy import deepcopy
-from core.reentry_buy_scope_v1 import digest, require
+from core.reentry_buy_scope_v1 import digest, require, valid_hash
 
 POLICY_ID = 'SAVED_FRONTIER_CAP50_EXIT20_REENTRY_V1'
 
 
-def format_reference_advice(*, original_preview, projection, account):
+def format_reference_advice(*, original_preview, projection, account, configuration_sha256):
+    require(valid_hash(configuration_sha256), 'REFERENCE_RESPONSE_CONFIGURATION_HASH')
     require(original_preview.get('status') == 'READY', 'REFERENCE_RESPONSE_ORIGINAL_NOT_READY')
     require(projection['binding']['original_preview_sha256'] == digest(original_preview),
             'REFERENCE_RESPONSE_ORIGINAL_CHANGED')
@@ -55,6 +56,7 @@ def format_reference_advice(*, original_preview, projection, account):
                       projection_sha256=digest(projection),
                       reference_version=projection['binding']['reference_version'],
                       reference_state_sha256=projection['binding']['reference_state_sha256'],
+                      configuration_sha256=configuration_sha256,
                       buy_status=deepcopy(gate['buy_status'])),
                   requires_publication_check=True, production_released=False)
     require(orders or not result['difference']['new_orders'], 'REFERENCE_RESPONSE_WAIT_ORDERS')
