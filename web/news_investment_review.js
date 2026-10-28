@@ -5,6 +5,27 @@ function binding(state){return {account_revision:state.account?.revision,target_
 function snapshot(state){return JSON.stringify([binding(state),state.account?.holdings,state.account?.available_cash,state.daily]);}
 function safeUrl(value){try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)?u.href:null;}catch{return null;}}
 function localTime(value){const date=new Date(value);return Number.isFinite(date.getTime())?date.toLocaleString('zh-CN',{hour12:false})+'（本地时间）':'未记录';}
+function eventHealthText(result, labels, currentTime){
+ const failed=(Array.isArray(result.source_status)?result.source_status:[]).filter(row=>row?.status!=='LIST_OK');
+ const tickers=[...new Set(failed.map(row=>row?.ticker).filter(value=>typeof value==='string'&&/^[A-Z0-9.^-]{1,16}$/.test(value)))];
+ const checked=Date.parse(result.checked_at),workerErrorAt=Date.parse(result.last_worker_error?.at);
+ const currentError=Number.isFinite(workerErrorAt)&&(!Number.isFinite(checked)||workerErrorAt>=checked);
+ let summary;
+ if(result.enabled!==true)summary='新事件发现已关闭';
+ else if(result.worker_alive===false||result.continuous_monitoring===false)summary='后台未运行，无法持续发现新消息';
+ else if(result.worker_alive!==true||result.continuous_monitoring!==true)summary='后台运行状态未确认';
+ else if(currentError)summary='最近检查失败，无法确认新稿';
+ else if(failed.length)summary=(result.status!=='NO_NEW_TIMELY_BODY'&&labels[result.status]?labels[result.status]+' · ':'')+'来源检查未完成'+(tickers.length?'（'+tickers.join('、')+'）':'')+'，不能确认没有新稿';
+ else summary=labels[result.status]||'等待事件校验';
+ const conflict=publicationConflictText(result);
+ if(conflict&&result.status!=='WAIT_PUBLICATION_TIME_CONFLICT')summary+=' · '+conflict;
+ else if(conflict&&result.enabled===true&&result.worker_alive===true&&result.continuous_monitoring===true&&!currentError&&!failed.length)summary=conflict;
+ summary+=' · 最近检查 '+localTime(result.checked_at);
+ if(Number.isFinite(checked)&&currentTime>=checked)summary+='（距今 '+ageText((currentTime-checked)/1000)+'）';
+ if(result.last_worker_error?.at)summary+=' · 曾发生后台错误 '+localTime(result.last_worker_error.at);
+ if(result.unsupported_tickers?.length)summary+=' · 部分股票尚无来源覆盖';
+ return summary+' · 不自动下单';
+}
 function publicationConflictText(result){
  const rows=Array.isArray(result?.publication_conflicts)?result.publication_conflicts:[];
  if(!rows.length)return result?.status==='WAIT_PUBLICATION_TIME_CONFLICT'?'消息发布时间存在冲突，尚未形成及时 AI 意见':'';
@@ -99,7 +120,7 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
  const eventLabels={DISABLED:'已关闭',WAITING:'等待检查',NO_NEW_TIMELY_BODY:'未发现及时新稿',SOURCE_OPINION_READY:'已解释新稿，等待开盘复核',SOURCE_OPINION_WAIT_FIRST_OPEN:'源意见已保存，等待首个开盘',ANALYZING_PUBLIC_SOURCES:'正在解释新稿',REVIEW_RUNNING:'正在重新验价复核',REVIEW_COMPLETE:'新事件复核完成',ABSTAIN:'本轮未形成意见',WAIT_SHARED_MODEL_BUDGET:'等待共享预算',WAIT_SOURCE_RECONFIRMATION:'等待来源重新确认',WAIT_PUBLICATION_TIME_CONFLICT:'等待消息时间核验'};
  async function eventPoll(){
   if(disposed)return;const eventToken=eventGeneration;
-  try{const result=await json('/api/news/events/status');if(disposed||eventToken!==eventGeneration)return;eventEnabled=result.enabled===true;eventButton.textContent=eventEnabled?'关闭新事件发现':'开启新事件发现';eventStatus.textContent=(result.status==='WAIT_PUBLICATION_TIME_CONFLICT'?'':(eventLabels[result.status]||'等待事件校验'))+(publicationConflictText(result)?(result.status==='WAIT_PUBLICATION_TIME_CONFLICT'?'':' · ')+publicationConflictText(result):'')+(result.unsupported_tickers?.length?' · 部分股票尚无来源覆盖':'')+' · 不自动下单';
+  try{const result=await json('/api/news/events/status');if(disposed||eventToken!==eventGeneration)return;eventEnabled=result.enabled===true;eventButton.textContent=eventEnabled?'关闭新事件发现':'开启新事件发现';eventStatus.textContent=eventHealthText(result,eventLabels,now());
    if(eventEnabled&&result.job_id&&result.job_id!==eventSeenJob&&!busy&&view(state,proposal,now()).ready){const token=generation;const job=await json('/api/news/investment-review/job?job_id='+encodeURIComponent(result.job_id));if(!disposed&&token===generation&&eventToken===eventGeneration&&eventEnabled&&job.status==='COMPLETE'){eventSeenJob=result.job_id;activeJob=result.job_id;await accept(job,token,0);}}
   }catch{if(!disposed)eventStatus.textContent='新事件状态暂不可确认';}
   if(!disposed){eventTimer=setTimer(eventPoll,15000);eventTimer?.unref?.();}
@@ -171,5 +192,5 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
  button.addEventListener('click',start);draw();
  return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();if(eventTimer!==null)clearTimer(eventTimer);eventButton.removeEventListener('click',eventToggle);button.removeEventListener('click',start);},elements:{button,status,body},start};
 }
-const api={publicationConflictText,riskView,renderRiskPlan,money,eventTiming,renderImpactCell,mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
+const api={eventHealthText,publicationConflictText,riskView,renderRiskPlan,money,eventTiming,renderImpactCell,mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
 })(typeof window!=='undefined'?window:globalThis);

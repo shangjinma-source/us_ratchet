@@ -325,7 +325,10 @@ class EventNewsPipeline:
                     else:
                         state['status'] = 'WAIT_REVIEW_BUDGET'
             elif not state.get('pending') and not state.get('status', '').startswith('REVIEW_'):
-                state['status'] = 'WAIT_PUBLICATION_TIME_CONFLICT' if state['publication_conflicts'] else 'NO_NEW_TIMELY_BODY'
+                if any(row['status'] != 'LIST_OK' for row in statuses):
+                    state['status'] = 'WAIT_SOURCE_RECONFIRMATION'
+                else:
+                    state['status'] = 'WAIT_PUBLICATION_TIME_CONFLICT' if state['publication_conflicts'] else 'NO_NEW_TIMELY_BODY'
         except Exception as error:
             message = str(error)
             if state is not None:

@@ -10,7 +10,7 @@ const {Node,doc}=require('./news_mock_dom.cjs');
  const container=new Node(doc),calls=[];
  const mounted=ui.mount(container,{fetch:async(url,options)=>{
   calls.push({url,options});assert.equal(url,'/api/news/events/status');assert.equal(options,undefined);
-  return {ok:true,json:async()=>({enabled:true,status:'SOURCE_OPINION_READY',publication_conflicts:[{ticker:'SNDK'}]})};
+  return {ok:true,json:async()=>({enabled:true,worker_alive:true,continuous_monitoring:true,status:'SOURCE_OPINION_READY',publication_conflicts:[{ticker:'SNDK'}]})};
  },setTimer:()=>1,clearTimer:()=>{}});
  await new Promise(resolve=>setImmediate(resolve));
  const allText=node=>[node.textContent||'',...node.children.map(allText)].join(' ');
