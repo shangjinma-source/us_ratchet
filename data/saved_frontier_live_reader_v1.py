@@ -19,7 +19,7 @@ from data.saved_frontier_exit_packet_v1 import apply_frontier_exit_packet
 from data.strategy_daily_security_domain_v1 import locate_unit_baseline_sources
 from data.strategy_daily_rolling_parent_v3 import pinned
 from data.strategy_daily_session_capture import stamp, reject_links
-from data.strategy_monthly_supplement_capture import capture_supplement
+from data.strategy_monthly_supplement_gzip_v1 import capture_supplement
 from data.strategy_daily_rebound_archive import archive_rebound_evidence
 
 
@@ -120,7 +120,7 @@ class SavedFrontierLiveReader:
 
         reject_links(self.capture_root)
         unchanged()
-        directory = capture_namespace(self.capture_root, started=self.clock(), session=session)
+        directory = capture_namespace(self.capture_root, started=self.clock(), session=session) / 'gzip-v1'
         capture = capture_supplement(directory=directory, request=prepared['request'],
             binding=prepared['binding'], read_binding=read_binding, execute=True, clock=self.clock,
             fetch_daily=self.fetch_daily, fetch_official=self.fetch_official)

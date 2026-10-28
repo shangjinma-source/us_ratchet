@@ -63,6 +63,8 @@ SOURCES |= {
     'scripts/capture_daily_followup_groups_v1.py',
 }
 
+SOURCES |= {'data/official_rss_gzip_transport_v1.py', 'data/strategy_rss_gzip_capture_v1.py', 'data/strategy_monthly_supplement_gzip_v1.py'}
+
 def build_unified_server_preparation_v27(*, root, configuration_path, configuration_sha256, clock=None):
     root = Path(root).resolve()
     reference = dict(path=configuration_path, sha256=configuration_sha256)
@@ -122,7 +124,7 @@ def build_unified_server_preparation_v27(*, root, configuration_path, configurat
         risk_store=previous_reader.risk_store, source_configuration=deepcopy(source_configuration),
         source_pins=deepcopy(config['source_pins']), capture_root=local('capture_root'),
         archive_root=local('archive_root'), release_bytes=release_raw, clock=old.clock,
-        validate_sources=sources_gate, fetch_daily=packet.fetch_daily, fetch_official=packet.fetch_official)
+        validate_sources=sources_gate, fetch_daily=packet.fetch_daily, fetch_official=None)
     daily = SavedFrontierRollingAdmissionV1(monthly=monthly, monthly_view=view,
         reader=reader, clock=old.clock, validate_code=sources_gate,
         policy_execution_enabled=True, policy_id=POLICY_ID)
