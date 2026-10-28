@@ -171,6 +171,30 @@ def reviewed_eca_772_scope(row, *, ticker, issuer_names):
         limitation='Only this reviewed body version and MRNA/SNDK issuer identities; not proof of completion or a general multi-security exemption.')
 
 
+def reviewed_etp_177_scope(row, *, ticker, issuer_names):
+    """Exact full-body-reviewed listing, not an ETP category exemption."""
+    if (row.get('news_category'), row.get('title'), row.get('description_summary')) != (
+        'Trader Alerts - New ETP Listings',
+        'ETP2026-177 -  Nasdaq to Begin Listing Two Franklin Templeton ETFs on Thursday, October 29, 2026',
+        'News Category Alert Markets What You Need To Know Trader Alerts - New ETP Listings #2026-177 The Nasdaq Stock Market'):
+        return None
+    if row.get('link') != 'http://www.nasdaqtrader.com/TraderNews.aspx?id=ETP2026-177' or row.get('description_truncated') is not False:
+        return None
+    normalize = lambda value: re.sub(r'[^a-z0-9]', '', value.casefold())
+    allowed = {'MRNA': {'moderna', 'modernainc'}, 'SNDK': {'sandisk', 'sandiskcorporation'}}
+    names = {normalize(name) for name in issuer_names if type(name) is str}
+    if ticker not in allowed or not names or '' in names or not names <= allowed[ticker]:
+        return None
+    return dict(identifier='ETP2026-177', classification='EXACT_REVIEWED_TWO_OTHER_ETF_NEW_LISTING',
+        official_url='https://www.nasdaqtrader.com/TraderNews.aspx?id=ETP2026-177',
+        reviewed_body_sha256='b2280219ba6d4a45658ceb0432029b4d3848461ce7831234e53e0da318ab1646',
+        listed_tickers=['FBEQ', 'FIBT'], issuer='Franklin Templeton', listing_date='2026-10-29',
+        body_observed_at='2026-10-28T19:20:41.382420+00:00',
+        scope='New ETF listing and valuation dissemination; no target-share consideration or distribution disclosed.',
+        underlying_holdings_certified=False, runtime_full_body_refetched=False,
+        publication_time_modified=False, historical_first_availability_certified=False)
+
+
 def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
     notices = review_notices(raw, ticker=ticker, issuer_names=issuer_names)
     require(feed['channel']['future_publication'] is False and
@@ -190,7 +214,8 @@ def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
                    and row.get('link') == 'http://www.nasdaqtrader.com/TraderNews.aspx?id='+identifier]
         eca_scope = (other_issuer_eca_scope(row, ticker=ticker, issuer_names=issuer_names) or
                      reviewed_eca_776_scope(row, ticker=ticker, issuer_names=issuer_names) or
-                     reviewed_eca_772_scope(row, ticker=ticker, issuer_names=issuer_names))
+                     reviewed_eca_772_scope(row, ticker=ticker, issuer_names=issuer_names) or
+                     reviewed_etp_177_scope(row, ticker=ticker, issuer_names=issuer_names))
         require((len(matches) == 1 or eca_scope is not None) and row.get('description_truncated') is False,
                 'WAIT_KNOWN_ACTION_REVIEW')
         ignored.append(dict(identifier=matches[0] if matches else eca_scope['identifier'],
