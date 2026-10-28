@@ -29,6 +29,7 @@ SOURCES |= {'web/strategy_target_recovery_v1.js', 'api/news_desk_v1.py',
             'data/news_sandisk_capture.py', 'data/news_sandisk_parser.py'}
 SOURCES |= {'web/news_investment_review.js', 'api/news_investment_review_v1.py', 'data/news_investment_service_v1.py', 'data/news_investment_composition_v1.py', 'data/news_investment_sources_v1.py', 'data/news_investment_model_v1.py', 'core/news_investment_review_v1.py'}
 SOURCES |= {'data/frontier_monthly_peak_raw_history_v1.py'}
+SOURCES |= {'data/news_event_model_v1.py', 'data/news_model_coordinator_v1.py', 'data/news_event_pipeline_v1.py', 'api/news_event_pipeline_v1.py', 'data/news_event_calendar_v1.py', 'data/news_event_sources_v1.py'}
 SOURCES |= FIRST_WINDOW_SOURCES | {'data/saved_frontier_rolling_admission_v1.py'}
 SOURCES |= {
     'data/saved_frontier_current_migration_v1.py',

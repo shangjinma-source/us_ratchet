@@ -182,6 +182,11 @@ def mount_strategy_routes(*, app, root, environment):
                 excluded += 1
                 continue
             router.routes.append(route)
+        # Preserve opt-in worker lifecycle while filtering the legacy HTTP route.
+        for handler in prepared['router'].on_startup:
+            router.add_event_handler('startup', handler)
+        for handler in prepared['router'].on_shutdown:
+            router.add_event_handler('shutdown', handler)
         if excluded != 1:
             raise ValueError("UNIFIED_V6_LEGACY_PREVIEW_ROUTE_REQUIRED")
         mode = {

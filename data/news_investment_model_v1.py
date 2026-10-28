@@ -122,49 +122,85 @@ def _validate(answer, payload):
             evidence['source_sha256'] = source['text_sha256']
     return answer
 
-def analyze_review(sources, positions, cache, *, timeout=120, max_chars=60000):
-    """No inference on load: caller must explicitly invoke. Server binds account revision/expiry."""
-    if not 1 <= timeout <= 120 or not type(max_chars) is int or not 1 <= max_chars <= 120000:
+from data.news_model_coordinator_v1 import ModelCoordinator
+SCHEMA_VERSION = 'ACCOUNT_REVIEW_ACTION_ROWS_V1'
+
+def analyze_review(sources, positions, cache, *, timeout=120, max_chars=120000):
+    if not 1 <= timeout <= 120 or type(max_chars) is not int or not 1 <= max_chars <= 120000:
         raise ValueError('BOUNDED_BUDGET_REQUIRED')
     payload, excluded = _project(sources, positions)
-    coverage = {'included_source_ids': [s['id'] for s in payload['sources']], 'excluded': excluded, 'truncated': False}
-    base = {'rows': [], 'model': MODEL, 'effort': 'medium', 'coverage': coverage, 'executable': False}
+    base = dict(schema='ACCOUNT_BOUND_MODEL_OPINION_V1', rows=[], model=MODEL,
+                effort='medium', executable=False, orders_created=False)
     if not payload['sources'] or not payload['positions']:
-        return dict(base, status='NO_ANALYZABLE_BODY' if not payload['sources'] else 'NO_POSITIONS', attempts=0)
-    prompt = PROMPT + '\nPUBLIC_INPUT\n' + json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    coverage['prompt_characters'] = len(prompt)
+        return dict(base, status='NO_ANALYZABLE_BODY', attempts=0)
+    schema_hash = _hash(json.dumps(_schema(), sort_keys=True).encode())
+    prompt = PROMPT+'\nPUBLIC_INPUT\n'+json.dumps(payload, ensure_ascii=False, sort_keys=True)
     if len(prompt) > max_chars:
         return dict(base, status='INPUT_BUDGET_EXCEEDED', attempts=0)
     identity = json.loads(json.dumps(payload))
     for source in identity['sources']:
         source.pop('observed_at', None)
-    key = _hash((VERSION + MODEL + PROMPT + json.dumps(identity, sort_keys=True, ensure_ascii=False)).encode()); folder = Path(cache)/key; folder.mkdir(parents=True, exist_ok=True)
+    key = _hash((VERSION+MODEL+PROMPT+json.dumps(identity, sort_keys=True, ensure_ascii=False)).encode())
+    folder = Path(cache)/key
+    folder.mkdir(parents=True, exist_ok=True)
     receipt_path = folder/'receipt.json'
+    deferred_hash = None
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
-        if receipt.get('status') == 'SUCCEEDED' and (folder/'answer.json').exists():
+        if (receipt.get('status') == 'SUCCEEDED' and receipt.get('schema_sha256') in (None, schema_hash)
+                and (folder/'answer.json').exists()):
             raw = (folder/'answer.json').read_bytes()
             if _hash(raw) == receipt.get('answer_sha256'):
                 answer = json.loads(raw)
-                # Validate original schema before reattaching deterministic source hashes.
                 for row in answer['rows']:
-                    for item in row['evidence']: item.pop('source_sha256', None)
+                    for evidence in row['evidence']:
+                        evidence.pop('source_sha256', None)
                 answer = _validate(answer, payload)
-                return dict(base, status='CACHED', rows=answer['rows'], attempts=0, receipt=receipt, cache_key=key)
-        return dict(base, status='PREVIOUS_ATTEMPT_NOT_RETRIED', attempts=0, receipt=receipt, cache_key=key)
-    receipt = dict(status='STARTED', model=MODEL, effort='medium', version=VERSION, attempts=1, started_at=_now(), prompt_sha256=_hash(prompt.encode()), source_hashes={s['id']:s['text_sha256'] for s in payload['sources']}, source_times={s['id']: {'published_at': s['published_at'], 'observed_at': s['observed_at']} for s in payload['sources']}, usage=None)
-    # Exclusive claim prevents simultaneous callers from doubling a model request.
+                return dict(base, status='CACHED', rows=answer['rows'], receipt=receipt, cache_key=key, attempts=0)
+        if receipt.get('status') == 'DEFERRED' and receipt.get('attempts') == 0:
+            deferred_hash = _hash(receipt_path.read_bytes())
+        else:
+            return dict(base, status='PREVIOUS_ATTEMPT_NOT_RETRIED', receipt=receipt, cache_key=key, attempts=0)
+    receipt = dict(status='CLAIMED', started_at=_now(), attempts=0, model=MODEL, effort='medium',
+                   version=VERSION, schema_version=SCHEMA_VERSION, schema_sha256=schema_hash,
+                   prompt_sha256=_hash(prompt.encode()), source_hashes={s['id']:s['text_sha256'] for s in payload['sources']})
+    claimed = False
+    started = time.monotonic()
+    answer = dict(rows=[])
     try:
-        with receipt_path.open('x', encoding='utf-8') as handle: json.dump(receipt, handle)
-    except FileExistsError:
-        return dict(base, status='RUNNING', attempts=0, cache_key=key)
-    _save(folder/'input.json', payload); receipt['input_sha256'] = _hash((folder/'input.json').read_bytes()); start = time.monotonic()
-    try:
-        answer, usage = _invoke(prompt, folder, timeout); receipt['usage'] = usage; _save(folder/'raw_answer.json', answer)
-        answer = _validate(answer, payload); _save(folder/'answer.json', answer)
-        receipt.update(status='SUCCEEDED', answer_sha256=_hash((folder/'answer.json').read_bytes()))
+        with ModelCoordinator(Path(cache).parent).reserve('investment'):
+            if deferred_hash is not None:
+                if not receipt_path.exists() or _hash(receipt_path.read_bytes()) != deferred_hash:
+                    return dict(base, status='RUNNING', attempts=0, cache_key=key)
+                receipt_path.replace(folder/'deferred_receipt_migrated.json')
+            try:
+                with receipt_path.open('x', encoding='utf-8') as handle:
+                    json.dump(receipt, handle)
+                claimed = True
+            except FileExistsError:
+                return dict(base, status='RUNNING', cache_key=key, attempts=0)
+            try:
+                _save(folder/'input.json', payload)
+                receipt['input_sha256'] = _hash((folder/'input.json').read_bytes())
+                receipt.update(attempts=1, status='STARTED')
+                _save(receipt_path, receipt)
+                answer, usage = _invoke(prompt, folder, timeout)
+                receipt['usage'] = usage
+                _save(folder/'raw_answer.json', answer)
+                answer = _validate(answer, payload)
+                _save(folder/'answer.json', answer)
+                receipt.update(status='SUCCEEDED', answer_sha256=_hash((folder/'answer.json').read_bytes()))
+            except Exception:
+                receipt.update(status='FAILED', error='SOURCE_MODEL_UNAVAILABLE_OR_UNVERIFIED')
+                answer = dict(rows=[])
+            finally:
+                receipt.update(finished_at=_now(), elapsed_seconds=round(time.monotonic()-started, 3))
+                _save(receipt_path, receipt)
     except Exception as error:
-        receipt.update(status='FAILED', error=str(error)); answer = {'rows': []}
-    finally:
-        receipt.update(finished_at=_now(), elapsed_seconds=round(time.monotonic()-start, 3)); _save(receipt_path, receipt)
-    return dict(base, status=receipt['status'], rows=answer['rows'], attempts=1, receipt=receipt, cache_key=key)
+        if not claimed:
+            reason = str(error)
+            return dict(base, status='DEFERRED', attempts=0, cache_key=key,
+                        error=reason if reason.isupper() and len(reason)<100 else 'SOURCE_MODEL_RESERVATION_UNAVAILABLE')
+        return dict(base, status='FAILED', attempts=receipt['attempts'], cache_key=key,
+                    error='SOURCE_MODEL_RECEIPT_UNAVAILABLE')
+    return dict(base, status=receipt['status'], rows=answer['rows'], attempts=receipt['attempts'], receipt=receipt, cache_key=key)

@@ -138,7 +138,10 @@ class NewsRefreshService:
 
     def _run(self):
         from data.news_desk import collect, analyze, save_snapshot
-        snapshot = analyze(collect(self.cache, limit=20), self.cache, limit=4, timeout=180)
+        snapshot = collect(self.cache, limit=20)
+        from data.news_model_coordinator_v1 import ModelCoordinator
+        with ModelCoordinator(self.cache).reserve('refresh', units=4):
+            snapshot = analyze(snapshot, self.cache, limit=4, timeout=180)
         save_snapshot(snapshot, self.cache)
         return snapshot.get('analysis_summary', {}).get('status') in ('ANALYZED', 'CACHED')
 

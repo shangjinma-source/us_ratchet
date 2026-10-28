@@ -58,7 +58,35 @@ class NewsInvestmentService:
         with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro', uri=True)) as connection:
             return connection.execute('SELECT COALESCE(MAX(sequence),0) FROM batches').fetchone()[0]
 
-    def start(self, binding):
+    def validate_event_control(self, pending):
+        guard = getattr(self, 'event_guard', None)
+        if guard is None or not guard(pending):
+            raise ValueError('EVENT_PIPELINE_DISABLED_OR_RESTARTED')
+        if not moment(pending['execution_window']['not_before']) <= self.clock() < moment(pending['opinion_valid_until']):
+            raise ValueError('EVENT_OUTSIDE_FIRST_EXECUTION_WINDOW')
+
+    def start_event(self, binding, pending):
+        self.validate_event_control(pending)
+        from data.news_event_model_v1 import project_event
+        from data.news_investment_model_v1 import _validate
+        if pending['binding'] != binding or self.clock() >= moment(pending['opinion_valid_until']):
+            raise ValueError('EVENT_OPINION_STALE')
+        answer = pending['answer']
+        if answer.get('schema') != 'SOURCE_ONLY_EVENT_OPINION_V1' or answer.get('status') not in ('SUCCEEDED', 'CACHED'):
+            raise ValueError('SOURCE_ONLY_OPINION_REQUIRED')
+        from data.news_investment_sources_v1 import build_sources
+        rebuilt = build_sources(pending['snapshot'], self.cache, pending['positions'], max_chars=110000)
+        if rebuilt['fingerprint'] != pending['source_fingerprint']:
+            raise ValueError('EVENT_SOURCE_CHANGED')
+        payload, _ = project_event(list(rebuilt['sources'].values()), pending['positions'])
+        rows = deepcopy(answer['rows'])
+        for row in rows:
+            for evidence in row['evidence']:
+                evidence.pop('source_sha256', None)
+        _validate(dict(rows=rows), payload)
+        return self.start(binding, event_pending=deepcopy(pending))
+
+    def start(self, binding, *, event_pending=None):
         self.bound_context(binding)
         now = self.clock()
         with closing(self.connection()) as connection, connection:
@@ -84,6 +112,8 @@ class NewsInvestmentService:
             pid, created = process_identity()
             job = dict(job_id=uuid4().hex, status='RUNNING', started_at=now.isoformat(),
                        binding=dict(binding), worker_pid=pid, worker_created_at=created)
+            if event_pending is not None:
+                job['event_pending'] = event_pending
             self.save(connection, job)
             with _workers_lock:
                 _workers.add(job['job_id'])
@@ -127,11 +157,15 @@ class NewsInvestmentService:
             from data.news_investment_model_v1 import analyze_review
             from data.news_investment_sources_v1 import build_sources
             binding = job['binding']
+            if job.get('event_pending'):
+                self.validate_event_control(job['event_pending'])
             account, target, names = measured('initial_bound_context', self.bound_context, binding)
             # News capture does not wait for a potentially slow market preview.
             def parallel_inputs():
                 with ThreadPoolExecutor(max_workers=2) as executor:
-                    capture = executor.submit(measured, 'news_capture', self.collector or collect, self.cache, limit=20)
+                    capture = executor.submit(measured, 'news_capture',
+                                              (lambda *args, **kwargs: deepcopy(job['event_pending']['snapshot'])) if job.get('event_pending') else (self.collector or collect),
+                                              self.cache, limit=20)
                     initial = executor.submit(measured, 'initial_preview', self.preview, **binding)
                     snapshot = capture.result()
                     original = self.normalize_preview(initial.result())
@@ -153,8 +187,20 @@ class NewsInvestmentService:
             model_timeout = min(120, int(remaining_seconds))
             if model_timeout <= 0:
                 raise ValueError('REVIEW_DEADLINE_EXCEEDED')
-            answer = measured('current_analysis_lookup', self.model or analyze_review, list(sources.values()), positions,
-                                                    self.cache/'investment_analysis', timeout=model_timeout, max_chars=120000)
+            def lookup():
+                if job.get('event_pending'):
+                    pending = job['event_pending']
+                    self.validate_event_control(pending)
+                    if self.clock() >= moment(pending['opinion_valid_until']):
+                        raise ValueError('EVENT_OPINION_EXPIRED')
+                    actual_domain = {(row['security_id'], row['ticker']) for row in positions}
+                    opinion_domain = {(row['security_id'], row['ticker']) for row in pending['positions']}
+                    if actual_domain != opinion_domain or source_result['fingerprint'] != pending['source_fingerprint']:
+                        raise ValueError('EVENT_REVIEW_DOMAIN_CHANGED')
+                    return deepcopy(pending['answer'])
+                return (self.model or analyze_review)(list(sources.values()), positions,
+                    self.cache/'investment_analysis', timeout=model_timeout, max_chars=120000)
+            answer = measured('current_analysis_lookup', lookup)
             analysis_attempt_finished = self.clock()
             job['analysis_receipt'] = answer.get('receipt')
             if answer.get('status') not in ('SUCCEEDED', 'CACHED'):
@@ -168,6 +214,8 @@ class NewsInvestmentService:
             if (finished-moment(job['started_at'])).total_seconds() > 360:
                 raise ValueError('REVIEW_DEADLINE_EXCEEDED')
             deadline = min(finished+timedelta(minutes=5), moment(fresh['risk_valid_until']))
+            if job.get('event_pending'):
+                deadline = min(deadline, moment(job['event_pending']['opinion_valid_until']))
             for quote in fresh.get('reference_quotes', {}).values():
                 deadline = min(deadline, moment(quote['reference_valid_until']))
             review = dict(schema='NEWS_INVESTMENT_REVIEW_V1', review_id=job['job_id'],
@@ -184,7 +232,7 @@ class NewsInvestmentService:
             proposal.update(coverage=source_result['coverage'], model=answer.get('model'),
                 timeliness=dict(requested_at=job['started_at'], analysis_started_at=analysis_started.isoformat(),
                     analysis_completed_at=(answer.get('receipt') or {}).get('finished_at', finished.isoformat()),
-                    revalidated_at=finished.isoformat(), cached=answer.get('status')=='CACHED',
+                    revalidated_at=finished.isoformat(), cached=bool(job.get('event_pending')) or answer.get('status')=='CACHED',
                     analysis_seconds=(answer.get('receipt') or {}).get('elapsed_seconds'),
                     current_analysis_lookup_seconds=stages['current_analysis_lookup']['seconds'],
                     current_analysis_attempt_completed_at=analysis_attempt_finished.isoformat(),
@@ -192,11 +240,16 @@ class NewsInvestmentService:
                     original_model_completed_at=(answer.get('receipt') or {}).get('finished_at'),
                     original_model_elapsed_seconds=(answer.get('receipt') or {}).get('elapsed_seconds'),
                     total_seconds=(finished-moment(job['started_at'])).total_seconds(),
-                    mode='ON_DEMAND_FRESH_CAPTURE', continuous_monitoring=False,
+                    mode='EVENT_SOURCE_PREANALYSIS_FINALIZED' if job.get('event_pending') else 'ON_DEMAND_FRESH_CAPTURE', continuous_monitoring=bool(job.get('event_pending')),
+                    source_opinion_generated_at=(answer.get('receipt') or {}).get('finished_at') if job.get('event_pending') else None,
+                    first_execution_window=deepcopy(job['event_pending']['execution_window']) if job.get('event_pending') else None,
+                    source_discovered_at=min(event['discovered_at'] for event in job['event_pending']['snapshot']['events']) if job.get('event_pending') and job['event_pending']['snapshot']['events'] else None,
                     pre_move_detection_verified=False,
                     note='Publication and discovery delays are measured; reading after a price move is not evidence of avoiding that move.'),
                 original_preview_sha256=digest(fresh), original_preview=deepcopy(fresh))
             def final_validation():
+                if job.get('event_pending'):
+                    self.validate_event_control(job['event_pending'])
                 self.bound_context(binding)
                 if self.news_generation() != generation:
                     raise ValueError('NEWS_UPDATED_DURING_ANALYSIS')
@@ -235,6 +288,8 @@ class NewsInvestmentService:
             # Completed proposals still pass every binding/expiry/news check below.
             return {key: job[key] for key in ('status', 'job_id', 'started_at') if key in job}
         try:
+            if job.get('event_pending'):
+                self.validate_event_control(job['event_pending'])
             self.bound_context(job['binding'])
             if job['status'] == 'COMPLETE' and self.clock() >= moment(job['proposal']['review_valid_until']):
                 raise ValueError('REVIEW_EXPIRED')
