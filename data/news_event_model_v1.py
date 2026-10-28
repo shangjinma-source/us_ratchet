@@ -1,3 +1,4 @@
+from data.news_background_context_v1 import attach_background, BACKGROUND_INSTRUCTION
 """Source-only opinions before market open; never a quote-bound trade review."""
 from pathlib import Path
 import json
@@ -34,7 +35,7 @@ def project_event(sources, positions):
     return dict(sources=public_sources, positions=public_positions), []
 
 
-def analyze_event(sources, positions, cache, *, timeout=120, max_chars=120000):
+def analyze_event(sources, positions, cache, *, timeout=120, max_chars=120000, background_sources=None):
     if not 1 <= timeout <= 120 or type(max_chars) is not int or not 1 <= max_chars <= 120000:
         raise ValueError('BOUNDED_BUDGET_REQUIRED')
     payload, _ = project_event(sources, positions)
@@ -42,14 +43,16 @@ def analyze_event(sources, positions, cache, *, timeout=120, max_chars=120000):
                 effort='medium', executable=False, orders_created=False)
     if not payload['sources'] or not payload['positions']:
         return dict(base, status='NO_ANALYZABLE_BODY', attempts=0)
+    payload = attach_background(payload, background_sources)
+    effective_prompt = PROMPT + (BACKGROUND_INSTRUCTION if payload.get('background_sources') else '')
     schema_hash = _hash(json.dumps(_schema(), sort_keys=True).encode())
-    prompt = PROMPT+'\nPUBLIC_INPUT\n'+json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    prompt = effective_prompt+'\nPUBLIC_INPUT\n'+json.dumps(payload, ensure_ascii=False, sort_keys=True)
     if len(prompt) > max_chars:
         return dict(base, status='INPUT_BUDGET_EXCEEDED', attempts=0)
     identity = json.loads(json.dumps(payload))
     for source in identity['sources']:
         source.pop('observed_at', None)
-    key = _hash((VERSION+MODEL+PROMPT+SCHEMA_VERSION+schema_hash+json.dumps(identity, sort_keys=True, ensure_ascii=False)).encode())
+    key = _hash((VERSION+MODEL+effective_prompt+SCHEMA_VERSION+schema_hash+json.dumps(identity, sort_keys=True, ensure_ascii=False)).encode())
     folder = Path(cache)/key
     folder.mkdir(parents=True, exist_ok=True)
     receipt_path = folder/'receipt.json'
@@ -68,7 +71,7 @@ def analyze_event(sources, positions, cache, *, timeout=120, max_chars=120000):
         return dict(base, status='PREVIOUS_ATTEMPT_NOT_RETRIED', receipt=receipt, cache_key=key, attempts=0)
     receipt = dict(status='CLAIMED', started_at=_now(), attempts=0, model=MODEL, effort='medium',
                    version=VERSION, schema_version=SCHEMA_VERSION, schema_sha256=schema_hash,
-                   prompt_sha256=_hash(prompt.encode()), source_hashes={s['id']:s['text_sha256'] for s in payload['sources']})
+                   prompt_sha256=_hash(prompt.encode()), background_hashes={s['id']:s['text_sha256'] for s in payload.get('background_sources',[])}, source_hashes={s['id']:s['text_sha256'] for s in payload['sources']})
     claimed = False
     started = time.monotonic()
     answer = dict(rows=[])

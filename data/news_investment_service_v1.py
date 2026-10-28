@@ -207,6 +207,8 @@ class NewsInvestmentService:
             job['analysis_receipt'] = answer.get('receipt')
             if answer.get('status') not in ('SUCCEEDED', 'CACHED'):
                 raise ValueError('MODEL_REVIEW_UNAVAILABLE')
+            if getattr(self, 'background_guard', None):
+                self.background_guard(answer)
             # No account lock is held during model execution. Re-read and re-quote.
             account, target, names = self.bound_context(binding)
             fresh = self.normalize_preview(measured('post_analysis_preview', self.preview, **binding))
@@ -257,7 +259,10 @@ class NewsInvestmentService:
                 return build_risk_plan(proposal=proposal, original_preview=fresh, account=account,
                                        now=self.clock().isoformat())
             proposal['risk_plan'] = measured('risk_plan_projection', project_risk_plan)
+            proposal['background_context_binding'] = deepcopy(answer.get('background_context_binding'))
             def final_validation():
+                if getattr(self, 'background_guard', None):
+                    self.background_guard(answer)
                 if job.get('event_pending'):
                     self.validate_event_control(job['event_pending'])
                 self.bound_context(binding)
@@ -312,6 +317,8 @@ class NewsInvestmentService:
             if job.get('event_pending'):
                 self.validate_event_control(job['event_pending'])
             self.bound_context(job['binding'])
+            if job['status'] == 'COMPLETE' and getattr(self, 'background_guard', None):
+                self.background_guard({'background_context_binding': job['proposal'].get('background_context_binding')})
             if job['status'] == 'COMPLETE' and self.clock() >= moment(job['proposal']['review_valid_until']):
                 raise ValueError('REVIEW_EXPIRED')
             risk_plan = job.get('proposal', {}).get('risk_plan', {})

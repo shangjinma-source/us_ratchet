@@ -15,7 +15,19 @@ class ModelAdapterTests(unittest.TestCase):
     def setUp(self):
         self.folder=tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
-        self.tmp_path=Path(self.folder.name)
+        self.tmp_path=Path(self.folder.name)/'analysis'
+        self.tmp_path.mkdir()
+        # Adapter tests use an isolated real coordinator with a deterministic
+        # elapsed cooldown. Coordinator policy itself has its own tests.
+        from data.news_investment_model_v1 import ModelCoordinator
+        from datetime import datetime, timezone
+        self.coordinator_tick=0
+        def coordinator(cache):
+            self.coordinator_tick+=61
+            instant=datetime.fromtimestamp(1800000000+self.coordinator_tick,timezone.utc)
+            return ModelCoordinator(cache,clock=lambda:instant)
+        mocked=patch('data.news_investment_model_v1.ModelCoordinator',side_effect=coordinator)
+        mocked.start();self.addCleanup(mocked.stop)
 
     def test_full_input_and_cache_position_binding(self):
         tmp_path=self.tmp_path
@@ -33,7 +45,7 @@ class ModelAdapterTests(unittest.TestCase):
         tmp_path=self.tmp_path
         with patch('data.news_investment_model_v1._invoke') as invoke:
             assert analyze_review([dict(SOURCE,content_kind='RSS_EXCERPT')],[POSITION],tmp_path)['attempts']==0
-            assert analyze_review([dict(SOURCE,text='a'*60000)],[POSITION],tmp_path)['status']=='INPUT_BUDGET_EXCEEDED'
+            assert analyze_review([dict(SOURCE,text='a'*60000)],[POSITION],tmp_path,max_chars=60000)['status']=='INPUT_BUDGET_EXCEEDED'
             invoke.assert_not_called()
 
     def test_bad_quote_failed_without_retry(self):
@@ -49,7 +61,12 @@ class ModelAdapterTests(unittest.TestCase):
     def test_unrelated_source_rejected(self):
         tmp_path=self.tmp_path
         with patch('data.news_investment_model_v1._invoke',return_value=(response(),{})):
-            assert analyze_review([dict(SOURCE,security_ids=['other'])],[POSITION],tmp_path)['receipt']['error']=='SOURCE_SECURITY_NOT_BOUND'
+            result=analyze_review([dict(SOURCE,security_ids=['other'])],[POSITION],tmp_path)
+            assert result['status']=='FAILED' and result['rows']==[]
+            assert result['receipt']['error']=='SOURCE_MODEL_UNAVAILABLE_OR_UNVERIFIED'
+        from data.news_investment_model_v1 import _project,_validate
+        with self.assertRaisesRegex(ValueError,'SOURCE_SECURITY_NOT_BOUND'):
+            _validate(response(),_project([dict(SOURCE,security_ids=['other'])],[POSITION])[0])
 
     def test_exit_allowed_and_invalid_fraction_rejected(self):
         tmp_path=self.tmp_path
@@ -63,7 +80,9 @@ class ModelAdapterTests(unittest.TestCase):
             first=analyze_review([SOURCE],[POSITION],self.tmp_path)
             second=analyze_review([dict(SOURCE,observed_at='2026-10-27T10:02:00Z')],[POSITION],self.tmp_path)
             self.assertEqual(second['status'],'CACHED')
-            self.assertEqual(first['receipt']['source_times'],second['receipt']['source_times'])
+            self.assertEqual(first['receipt'],second['receipt'])
+            saved=json.loads((self.tmp_path/first['cache_key']/'input.json').read_text(encoding='utf-8'))
+            self.assertEqual(saved['sources'][0]['observed_at'],SOURCE['observed_at'])
             self.assertEqual(invoke.call_count,1)
 
     def test_bool_float_string_quantities_rejected(self):

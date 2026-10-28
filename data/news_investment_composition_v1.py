@@ -3,7 +3,26 @@ from data.news_investment_service_v1 import NewsInvestmentService
 from api.news_investment_review_v1 import create_router
 
 
-def compose(*, root, monthly_view, observed_daily, validate):
+def compose(*, root, monthly_view, observed_daily, validate, background_configuration=None):
+    # Optional server-owned index; absent at startup preserves existing behavior.
+    from pathlib import Path
+    import json
+    index_path = Path(root)/'data/cache/news/background_index_v1.json'
+    index_bytes = None
+    if background_configuration is None and index_path.exists():
+        index_bytes = index_path.read_bytes()
+        background_configuration = json.loads(index_bytes)
+    if background_configuration is not None:
+        from copy import deepcopy
+        background_configuration = deepcopy(background_configuration)
+        from data.news_background_context_v1 import verify_manifest, load_background
+        original_validate = validate
+        def validate():
+            original_validate()
+            if index_bytes is not None and index_path.read_bytes() != index_bytes:
+                raise ValueError('BACKGROUND_INDEX_CHANGED')
+            verify_manifest(root, background_configuration)
+        validate()
     def context():
         with monthly_view.snapshot_operation():
             validate()
@@ -50,6 +69,35 @@ def compose(*, root, monthly_view, observed_daily, validate):
     from api.news_event_pipeline_v1 import create_event_router
     pipeline = EventNewsPipeline(service, calendar_window=lambda stamp: window(
         reader=observed_daily.service.reader, discovered_at=stamp))
+    if background_configuration is not None:
+        from data.news_investment_model_v1 import analyze_review
+        from data.news_event_model_v1 import analyze_event
+        context_binding = {'manifest_sha256': background_configuration['manifest_sha256'], 'role': 'BACKGROUND_NOT_TRIGGER'}
+        def context_guard(answer):
+            validate()
+            if answer.get('background_context_binding') != context_binding:
+                raise ValueError('BACKGROUND_CONTEXT_VERSION_CHANGED')
+        service.background_guard = context_guard
+        def account_model(sources, positions, cache, **kwargs):
+            backgrounds = load_background(root, background_configuration, sources, positions, service.clock())
+            answer = analyze_review(sources, positions, cache, background_sources=backgrounds, **kwargs)
+            answer['background_context_binding'] = deepcopy(context_binding)
+            return answer
+        def event_model(sources, positions, cache, **kwargs):
+            backgrounds = load_background(root, background_configuration, sources, positions, service.clock())
+            answer = analyze_event(sources, positions, cache, background_sources=backgrounds, **kwargs)
+            answer['background_context_binding'] = deepcopy(context_binding)
+            return answer
+        service.model = account_model
+        pipeline.analyzer = event_model
+        old_event_guard = pipeline.valid_event
+        def guarded_event(pending):
+            try:
+                context_guard(pending['answer'])
+                return old_event_guard(pending)
+            except (ValueError, KeyError, OSError):
+                return False
+        pipeline.valid_event = guarded_event
     service.event_guard = pipeline.valid_event
     router = create_router(service=service, root=root, validate=validate)
     router.include_router(create_event_router(pipeline=pipeline, validate=validate))
