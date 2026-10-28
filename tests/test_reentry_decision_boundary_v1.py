@@ -37,7 +37,7 @@ class BoundaryTests(unittest.TestCase):
   before=(self.root/'account.sqlite').read_bytes();ref=self.archive.archive_current();verified=self.archive.read_verified(ref)
   b=json.loads(verified['decision_evidence']);self.assertEqual(b['decision_at'],'2026-10-29T14:00:00+00:00');self.assertEqual(b['session_close_at'],'2026-10-28T20:00:00Z')
   snapshot=account_session_snapshot(self.store,account_id='synthetic',session_date=b['session_date'],expected_latest_revision=self.state['revision'],decision_evidence=verified['decision_evidence'],decision_evidence_sha256=verified['decision_evidence_sha256'],security_ids=['A'])
-  self.assertEqual(snapshot['shares'],{'A':4});self.assertEqual(verified['unit_ids'],{'A':'unitA'});self.assertEqual(self.calls,2);self.assertEqual((self.root/'account.sqlite').read_bytes(),before)
+  self.assertEqual(snapshot['shares'],{'A':4});self.assertEqual(verified['unit_ids'],{'A':'unitA'});self.assertEqual(verified['observation']['closes'],{'A':'100'});self.assertEqual(self.calls,2);self.assertEqual((self.root/'account.sqlite').read_bytes(),before)
   self.assertEqual(self.archive.archive_current(),ref)
  def test_missing_intent_not_backfilled(self):
   self.assertEqual(self.archive.read_verified(None)['reason'],'WAIT_ORIGINAL_DECISION_BOUNDARY_MISSING');self.assertEqual(self.calls,0)
