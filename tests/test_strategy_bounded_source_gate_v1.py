@@ -2,7 +2,8 @@ from pathlib import Path
 from hashlib import sha256
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-import unittest,os
+import unittest,os,stat
+from types import SimpleNamespace
 import data.strategy_bounded_source_gate_v1 as module
 ROOT=Path(__file__).resolve().parents[1]
 class BoundedGateTests(unittest.TestCase):
@@ -28,8 +29,8 @@ class BoundedGateTests(unittest.TestCase):
  def test_reparse_and_stream_race_are_refused(self):
   with TemporaryDirectory() as folder:
    root,pins,refs=self.fixture(folder);gate=module.BoundedSourceGateV1(root=root,source_pins=pins,configuration_pins=refs)
-   path=root/next(iter(pins));original=Path.is_symlink
-   with patch.object(Path,'is_symlink',lambda p:True if p==path else original(p)):
+   path=root/next(iter(pins));original=Path.lstat
+   with patch.object(Path,'lstat',lambda p:SimpleNamespace(st_mode=stat.S_IFLNK,st_file_attributes=0) if p==path else original(p)):
     with self.assertRaisesRegex(ValueError,'BOUNDED_SOURCE_LINK_REFUSED'):gate()
    original_fstat=os.fstat;calls=[]
    def mutated(fd):
