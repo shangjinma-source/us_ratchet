@@ -59,6 +59,8 @@ class EventNewsPipeline:
         state = self.load()
         if not state['enabled']:
             state['status'] = 'DISABLED'
+        elif state.get('status') == 'DISABLED':
+            state['status'] = 'WAITING'
         keys = ('enabled', 'status', 'checked_at', 'source_status', 'unsupported_tickers', 'error', 'job_id',
                 'opinion_generated_at', 'opinion_valid_until', 'request_count', 'triggered_sources')
         worker_alive = bool(self.worker and self.worker.is_alive())
@@ -84,9 +86,17 @@ class EventNewsPipeline:
 
     def valid_event(self, pending):
         current = self.load()
-        return (self.valid_generation(pending['control_generation'])
+        if not (self.valid_generation(pending['control_generation'])
                 and current.get('source_generation') == pending['source_generation']
-                and current.get('source_confirmed') is True)
+                and current.get('source_confirmed') is True):
+            return False
+        try:
+            fresh_window = self.publication_window(pending['snapshot']['events'])
+            return (fresh_window == pending['execution_window']
+                    and moment(fresh_window['not_before']) <= self.clock() < moment(fresh_window['valid_until'])
+                    and moment(pending['opinion_valid_until']) == moment(fresh_window['valid_until']))
+        except (ValueError, KeyError, TypeError, OSError):
+            return False
 
     def start_worker(self):
         if self.worker and self.worker.is_alive():
@@ -119,6 +129,22 @@ class EventNewsPipeline:
         binding = dict(expected_revision=account['revision'], target_id=target['target_id'], expected_proposal_id=target['proposal_id'])
         self.service.bound_context(binding)
         return binding, positions
+
+    def publication_window(self, events):
+        """Intersect real first-execution windows; discovery never resets their age."""
+        if self.calendar_window is None:
+            raise ValueError('EVENT_CALENDAR_UNAVAILABLE')
+        windows = [self.calendar_window(event['published_at']) for event in events]
+        if not windows:
+            raise ValueError('EVENT_PUBLICATION_REQUIRED')
+        result = deepcopy(windows[0])
+        opening = max(moment(item['not_before']) for item in windows)
+        closing = min(moment(item['valid_until']) for item in windows)
+        if not opening < closing:
+            raise ValueError('EVENT_PUBLICATION_WINDOWS_DO_NOT_OVERLAP')
+        result.update(not_before=opening.isoformat(), valid_until=closing.isoformat(),
+                      window_anchor='PUBLICATION_TIME_NOT_DISCOVERY', source_windows=windows)
+        return result
 
     def tick(self):
         if not self.lock.acquire(blocking=False):
@@ -166,11 +192,19 @@ class EventNewsPipeline:
                     for row in rows:
                         key = digest({name: row[name] for name in ('ticker', 'url', 'title', 'published_at')})
                         prior = state['seen'].get(key)
-                        if prior and (prior['status'] != 'BODY_FAILED' or prior['attempts'] >= 2):
+                        retryable = {'BODY_FAILED', 'BASELINE_NOT_TIMELY', 'CALENDAR_UNAVAILABLE'}
+                        if prior and (prior['status'] not in retryable or prior['attempts'] >= 2):
                             continue
                         age = (moment(row['discovered_at'])-moment(row['published_at'])).total_seconds()
-                        if not 0 <= age <= 600:
-                            state['seen'][key] = dict(status='BASELINE_NOT_TIMELY', attempts=0)
+                        if age < 0:
+                            raise ValueError('FUTURE_PUBLICATION_REJECTED')
+                        try:
+                            first_window = self.publication_window([row])
+                        except (ValueError, KeyError, TypeError):
+                            state['seen'][key] = dict(status='CALENDAR_UNAVAILABLE', attempts=0)
+                            continue
+                        if moment(row['discovered_at']) >= moment(first_window['valid_until']):
+                            state['seen'][key] = dict(status='BASELINE_WINDOW_EXPIRED', attempts=0)
                             continue
                         candidates.append((key, row))
                 except Exception:
@@ -186,6 +220,9 @@ class EventNewsPipeline:
                 prior = state['seen'].get(key, dict(attempts=0))
                 try:
                     event = collector.hydrate(row)
+                    if moment(event['published_at']) != moment(row['published_at']):
+                        raise ValueError('EVENT_PUBLICATION_CHANGED')
+                    event['discovery_delay_seconds'] = (moment(event['discovered_at'])-moment(event['published_at'])).total_seconds()
                     body_key = digest(dict(ticker=row['ticker'], body=event['content_sha256']))
                     if body_key in state['consumed']:
                         state['seen'][key] = dict(status='BODY_ALREADY_CONSUMED', attempts=prior['attempts']+1)
@@ -202,6 +239,11 @@ class EventNewsPipeline:
                 source_result = self.source_builder(snapshot, self.cache, positions, max_chars=110000)
                 if len(source_result['sources']) != len(events):
                     raise ValueError('COMPLETE_EVENT_SOURCE_REQUIRED')
+                execution_window = self.publication_window(events)
+                valid_until = moment(execution_window['valid_until'])
+                remaining = int((valid_until-self.clock()).total_seconds())
+                if remaining <= 0:
+                    raise ValueError('EVENT_PUBLICATION_WINDOW_EXPIRED')
                 append_observations(self.cache, events)
                 state['pending'] = None
                 state['consumed'].extend(body_key for _, body_key in accepted_keys)
@@ -210,7 +252,7 @@ class EventNewsPipeline:
                 if not self.valid_generation(state['control_generation']):
                     raise ValueError('EVENT_PIPELINE_DISABLED')
                 answer = self.analyzer(list(source_result['sources'].values()), positions,
-                                       self.cache/'event_analysis', timeout=120, max_chars=120000)
+                                       self.cache/'event_analysis', timeout=min(120, remaining), max_chars=120000)
                 self.service.bound_context(binding)
                 if not self.valid_generation(state['control_generation']):
                     raise ValueError('EVENT_PIPELINE_DISABLED')
@@ -224,10 +266,8 @@ class EventNewsPipeline:
                 if answer['status'] not in ('SUCCEEDED', 'CACHED'):
                     raise ValueError('SOURCE_ANALYSIS_FAILED_ABSTAIN')
                 generated = moment(answer['receipt']['finished_at'])
-                if self.calendar_window is None:
-                    raise ValueError('EVENT_CALENDAR_UNAVAILABLE_SOURCE_ONLY')
-                execution_window = self.calendar_window(min(event['discovered_at'] for event in events))
-                valid_until = moment(execution_window['valid_until'])
+                if self.publication_window(events) != execution_window or self.clock() >= valid_until:
+                    raise ValueError('EVENT_PUBLICATION_WINDOW_EXPIRED_OR_CHANGED')
                 state.update(status='SOURCE_OPINION_READY', opinion_generated_at=generated.isoformat(),
                              opinion_valid_until=valid_until.isoformat(), triggered_sources=len(events),
                              pending=dict(snapshot=snapshot, answer=answer, positions=positions,
@@ -236,9 +276,11 @@ class EventNewsPipeline:
                                           opinion_valid_until=valid_until.isoformat(), execution_window=execution_window))
             elif pending:
                 execution_window = pending['execution_window']
-                fresh_window = self.calendar_window(min(event['discovered_at'] for event in pending['snapshot']['events']))
+                fresh_window = self.publication_window(pending['snapshot']['events'])
                 if fresh_window != execution_window or now >= moment(pending['opinion_valid_until']):
-                    state.update(pending=None, status='SOURCE_OPINION_EXPIRED_OR_CALENDAR_CHANGED')
+                    state.update(pending=None, status='SOURCE_OPINION_EXPIRED_OR_CALENDAR_CHANGED',
+                                 source_generation=state.get('source_generation', 0)+1)
+                    self.save(state)  # Invalidate already-started jobs as well as the queued opinion.
                 elif pending.get('job_id'):
                     result = self.service.status(pending['job_id'])
                     state['status'] = 'REVIEW_'+result['status']

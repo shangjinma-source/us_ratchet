@@ -11,6 +11,7 @@ from unittest.mock import patch
 from data.news_event_pipeline_v1 import EventNewsPipeline
 from data.news_model_coordinator_v1 import ModelCoordinator
 from data.news_event_model_v1 import analyze_event, project_event
+from data.news_event_calendar_v1 import window
 
 
 class EventPipelineTests(unittest.TestCase):
@@ -64,10 +65,18 @@ class EventPipelineTests(unittest.TestCase):
             return dict(schema='SOURCE_ONLY_EVENT_OPINION_V1', status='SUCCEEDED', rows=[],
                         receipt=dict(finished_at=self.now.isoformat()))
         self.analyzer = analyze
+        from hashlib import sha256
+        calendar_path = self.cache/'calendar.json'
+        sessions = [dict(date=day, open=day+'T13:30:00Z', close=day+'T20:00:00Z')
+                    for day in ('2026-10-27', '2026-10-28', '2026-10-29')]
+        calendar_path.write_text(json.dumps(dict(schema='FIXED_EXCHANGE_SESSIONS_V1',
+                                                exchange='NASDAQ', sessions=sessions)), encoding='utf-8')
+        reader = SimpleNamespace(root=self.cache, validate=lambda: None,
+                                 source=dict(calendar=dict(path='calendar.json',
+                                                           sha256=sha256(calendar_path.read_bytes()).hexdigest())))
         self.pipeline = EventNewsPipeline(self.service, sources_factory=Sources, analyzer=analyze,
                                          source_builder=build, clock=lambda: self.now,
-                                         calendar_window=lambda stamp: dict(not_before='2026-10-28T13:30:00+00:00',
-                                                                            valid_until='2026-10-28T13:40:00+00:00'))
+                                         calendar_window=lambda stamp: window(reader=reader, discovered_at=stamp))
 
     def test_disabled_has_no_collection_or_inference(self):
         self.assertEqual(self.pipeline.tick()['status'], 'DISABLED')
@@ -159,6 +168,8 @@ class EventPipelineTests(unittest.TestCase):
         self.pipeline.set_enabled(True)
         self.pipeline.tick()
         pending = self.pipeline.load()['pending']
+        self.assertFalse(self.pipeline.valid_event(pending), 'Preopen source opinion is not yet a trading review')
+        self.now = datetime(2026, 10, 28, 13, 30, tzinfo=timezone.utc)
         self.assertTrue(self.pipeline.valid_event(pending))
         self.fail_list = True
         self.now += timedelta(minutes=1)
