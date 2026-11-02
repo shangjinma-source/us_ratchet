@@ -8,6 +8,8 @@ from data.strategy_profiled_ready_release_sized_v1 import validate_ready_release
 
 SOURCES = {
     'data/strategy_sized_read_v1.py',
+    'data/strategy_account_unit_review_compiled_v1.py',
+    'data/strategy_compiled_notice_review_v1.py',
     'data/strategy_monthly_file_sized_v1.py',
     'data/strategy_account_monthly_release_sized_v1.py',
     'data/strategy_account_ready_release_sized_v1.py',

@@ -20,7 +20,7 @@ from data.strategy_account_runtime import ACCOUNT_ID
 from data.strategy_account_runtime_archive import _document, _digest, require_archived_configuration
 from data.strategy_account_monthly_release_sized_v1 import resolve_monthly_runtime
 from data.strategy_account_evidence_provider import StrategyAccountEvidenceProvider
-from data.strategy_account_unit_review import review_interval
+from data.strategy_account_unit_review_compiled_v1 import review_interval
 from data.strategy_account_mark_reference import decode_current_mark
 from data.current_quantity_v2_current_cash_sources import CurrentQuantityV2CurrentCashSources
 
