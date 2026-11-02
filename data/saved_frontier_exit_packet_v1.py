@@ -7,6 +7,7 @@ from copy import deepcopy
 from core.saved_monthly_frontier_proposal import build_frontier_proposal
 from core.strategy_account_ledger import require
 from data.monthly_peak_exit_history import monthly_exit_observations
+from data.monthly_risk_epoch import validate_monthly_epoch
 
 
 def apply_frontier_exit_packet(*, target, proposal, inputs, risk_store, account_id,
@@ -24,8 +25,10 @@ def apply_frontier_exit_packet(*, target, proposal, inputs, risk_store, account_
             require(decision_date == previous['decision_date'], 'FRONTIER_SAME_MONTH_EPOCH_CHANGED')
         else:
             require(authorized_monthly_reset == decision_date and
-                    decision_date[:7] == target['payload']['target_month'],
+                    target['payload']['target_month'] > previous['target_month'],
                     'FRONTIER_MONTHLY_RESET_BINDING')
+            validate_monthly_epoch(decision_date=decision_date,
+                target_month=target['payload']['target_month'], session_dates=inputs['session_dates'])
     require(inputs['base_target']['monthly_decision_date'] == decision_date,
             'FRONTIER_INPUT_EPOCH_MISMATCH')
     require(inputs['base_target']['quantities'] == {
