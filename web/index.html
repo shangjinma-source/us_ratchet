@@ -4998,7 +4998,11 @@ async function refreshAll(initialLoad = false) {
     // Fast account/target/advice reads precede optional network valuation.
     await window.RealStrategyAccount.load();
     if (!window.RealStrategyAccount.getState().loaded) throw new Error('账户读取失败，请重试');
-    try { await window.RealStrategyDaily.refresh(); }
+    const initialDailyState = window.RealStrategyDaily.getState();
+    const reuseInitialPreview = initialLoad && window.RealStrategyDaily.initialPreview === true &&
+      !initialDailyState.busy && initialDailyState.account?.revision === window.RealStrategyAccount.getState().account?.revision &&
+      (initialDailyState.daily || initialDailyState.error === 'FRONTIER_TARGET_MONTH');
+    try { if (!reuseInitialPreview) await window.RealStrategyDaily.refresh(); }
     catch (error) {
       if (!window.StrategyDailyController?.waitingExplanation?.(error.message)) throw error;
       // Expected policy/profile waiting remains visible in the advice panel.
@@ -5047,6 +5051,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!window.StrategyDailyController || !window.StrategyDailyMount?.mount)
     throw new Error('DAILY_COMPONENT_UNAVAILABLE');
   window.RealStrategyDaily = window.StrategyDailyMount.mount($('strategyMonthlyTarget'), {
+    initialPreview: true,
     ...window.StrategyTargetRecoveryV1.dependencies({
       base: window.StrategyDailyController.httpDependencies(
         window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),

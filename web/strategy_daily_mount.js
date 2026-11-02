@@ -14,7 +14,7 @@ function cashInput(value){
 }
 function mount(container,dependencies){
  const {onTargetChanged=()=>{},onRecommendedTickers=()=>{},onAccountChanged=()=>{},
-  onRefreshCompleted=()=>{},onError=()=>{},now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,
+  initialPreview=false,onRefreshCompleted=()=>{},onError=()=>{},now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,
   ...controllerDependencies}=dependencies;
  const doc=container.ownerDocument,el=(tag,text,className)=>{
   const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;
@@ -122,7 +122,7 @@ function mount(container,dependencies){
  doc.defaultView?.addEventListener('focus',resume);
  doc.defaultView?.addEventListener('pageshow',resume);
  draw(controller.getState());
- return {...controller,ready:run(()=>controller.load()),whenIdle:()=>lastWork,
+ return {...controller,initialPreview:initialPreview===true,ready:run(()=>initialPreview===true?controller.refresh():controller.load()),whenIdle:()=>lastWork,
   setCapitalBusy(value){capitalLocked=!!value;draw(controller.getState());},
   async reloadCash(){
    await controller.load();
