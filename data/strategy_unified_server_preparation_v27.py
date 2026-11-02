@@ -19,6 +19,9 @@ from api.strategy_frontier_daily_preview_v1 import create_router as daily_router
 from api.strategy_frontier_monthly_target_v1 import create_router as monthly_router
 from api.strategy_frontier_latest_display_charts_v1 import create_router as display_router
 
+from data.strategy_profiled_release_snapshot_sized_v1 import SOURCES as SIZED_READER_SOURCES
+from data.strategy_sized_snapshot_install_v1 import install_sized_snapshot
+
 POLICY_ID = 'SAVED_FRONTIER_CAP50_EXIT20_V1'
 SOURCES = {'data/strategy_v27_source_digest_v1.py', 'data/saved_frontier_source_review_v1.py', 'data/strategy_unified_server_preparation_v27.py', 'data/saved_frontier_preview_service_v1.py', 'data/saved_frontier_monthly_view_v1.py', 'api/strategy_frontier_daily_preview_v1.py', 'data/strategy_frontier_latest_display_charts_v1.py', 'data/strategy_frontier_target_charts_v1.py', 'data/strategy_observed_frontier_daily_admission_v1.py', 'web/index.html', 'data/saved_frontier_supplement_request_v1.py', 'api/strategy_frontier_monthly_target_v1.py', 'data/saved_frontier_daily_composition_v1.py', 'data/saved_frontier_supplement_prepare_v1.py', 'data/saved_frontier_first_window_v1.py', 'web/strategy_daily_mount.js', 'data/saved_frontier_security_domain_v1.py', 'data/saved_frontier_zero_cash_preview_v1.py', 'core/saved_monthly_frontier_proposal.py', 'data/saved_frontier_capture_review_v1.py', 'data/saved_frontier_buy_data_wait_preview_v1.py', 'web/strategy_monthly_target_charts.js', 'api/strategy_frontier_latest_display_charts_v1.py', 'data/saved_frontier_source_reader_v1.py', 'data/saved_frontier_live_reader_v1.py', 'api/strategy_server_mount_v6.py', 'data/saved_frontier_exit_packet_v1.py', 'web/strategy_daily_controller.js'}
 
@@ -66,13 +69,14 @@ SOURCES |= {
 SOURCES |= {'data/official_rss_gzip_transport_v1.py', 'data/strategy_rss_gzip_capture_v1.py', 'data/strategy_monthly_supplement_gzip_v1.py'}
 
 SOURCES |= {'data/strategy_halt_gzip_capture_v1.py'}
+SOURCES |= SIZED_READER_SOURCES | {'data/strategy_sized_snapshot_install_v1.py'}
 
 def build_unified_server_preparation_v27(*, root, configuration_path, configuration_sha256, clock=None):
     root = Path(root).resolve()
     reference = dict(path=configuration_path, sha256=configuration_sha256)
     raw, config = _read(root, reference)
     require(set(config) == {'schema', 'base_v26', 'release', 'source_pins', 'proposal_database',
-                           'capture_root', 'archive_root', 'display_root'}
+                           'capture_root', 'archive_root', 'display_root', 'snapshot_read_upgrade'}
             and config['schema'] == 'SAVED_FRONTIER_UNIFIED_PREPARATION_V27', 'V27_CONFIGURATION')
     require(set(config['source_pins']) == SOURCES, 'V27_SOURCE_SCOPE')
     release_raw, release = _read(root, config['release'])
@@ -105,6 +109,9 @@ def build_unified_server_preparation_v27(*, root, configuration_path, configurat
     def gate():
         prepared['validate_code']()
         validate()
+    install_sized_snapshot(prepared=prepared, root=root,
+        upgrade_reference=config['snapshot_read_upgrade'],
+        source_pins=config['source_pins'], validate_sources=gate)
     monthly = prepared['monthly']
     old = prepared['observed_daily']
     prior = old.service.service
