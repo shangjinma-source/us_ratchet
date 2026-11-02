@@ -3,6 +3,15 @@ from data.news_investment_service_v1 import NewsInvestmentService
 from api.news_investment_review_v1 import create_router
 
 
+def bind_event_domain_snapshot(pipeline, monthly_view):
+    # One local operation, not a cache: both account/target reads still execute.
+    original_domain = pipeline.domain
+    def domain():
+        with monthly_view.snapshot_operation():
+            return original_domain()
+    pipeline.domain = domain
+
+
 def compose(*, root, monthly_view, observed_daily, validate, background_configuration=None):
     # Optional server-owned index; absent at startup preserves existing behavior.
     from pathlib import Path
@@ -75,6 +84,7 @@ def compose(*, root, monthly_view, observed_daily, validate, background_configur
     from api.news_event_pipeline_v1 import create_event_router
     pipeline = EventNewsPipeline(service, calendar_window=lambda stamp: window(
         reader=observed_daily.service.reader, discovered_at=stamp))
+    bind_event_domain_snapshot(pipeline, monthly_view)
     if background_configuration is not None:
         from data.news_investment_model_v1 import analyze_review
         from data.news_event_model_v1 import analyze_event
