@@ -13,7 +13,7 @@ def save(path,value):path.write_text(json.dumps(value,ensure_ascii=False,indent=
 def read(path):return json.loads(path.read_bytes())
 def connection(root):return sqlite3.connect((root/'data/strategy_account/daily_advice_v1.sqlite3').resolve().as_uri()+'?mode=ro',uri=True)
 def get_json(url):
- started=now();response=requests.get(url,timeout=15);response.raise_for_status()
+ started=now();response=requests.get(url,timeout=60);response.raise_for_status()
  return response.json(),dict(url=url,method='GET',started_at=started,received_at=now(),status=response.status_code,response_sha256=sha256(response.content).hexdigest())
 def prepare(root,out,log):
  out.mkdir(parents=True,exist_ok=False)
