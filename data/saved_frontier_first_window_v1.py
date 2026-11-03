@@ -195,6 +195,29 @@ def reviewed_etp_177_scope(row, *, ticker, issuer_names):
         publication_time_modified=False, historical_first_availability_certified=False)
 
 
+
+def reviewed_dtn_25_scope(row, *, ticker, issuer_names):
+    """Exact body-reviewed SUPN/INDV reuse; only unrelated MRNA/SNDK scope."""
+    expected = ('Data Technical News',
+        'DTN2026-25 - Information for Market Data Redistributors Regarding Symbol Reuse of SUPN',
+        'http://www.nasdaqtrader.com/TraderNews.aspx?id=DTN2026-25')
+    if tuple(row.get(k) for k in ('news_category', 'title', 'link')) != expected or row.get('description_truncated') is not False:
+        return None
+    description = row.get('description_summary')
+    if not isinstance(description, str) or sha256(description.encode()).hexdigest() != '739f0e899944ecfa68a91d66208f1fb79a2e151e210414bc8bc9651e4fc9493b':
+        return None
+    verified = {'MRNA': {'modernainc', 'moderna'}, 'SNDK': {'sandiskcorporation', 'sandisk'}}
+    names = {re.sub(r'[^a-z0-9]', '', name.casefold()) for name in issuer_names if isinstance(name, str)}
+    if ticker not in verified or not names or not names <= verified[ticker]:
+        return None
+    return dict(identifier='DTN2026-25', classification='BODY_REVIEWED_OTHER_ISSUERS_SYMBOL_REUSE',
+        reviewed_body_sha256='6798b6e7f591de637aa49dbb20a055be408d390c708a820b5336955373bbb803',
+        official_url='https://www.nasdaqtrader.com/TraderNews.aspx?id=DTN2026-25',
+        affected_tickers=['SUPN', 'INDV'], effective_date='2026-11-03',
+        scope='Old SUPN history must not carry over; INDV history carries to new SUPN. Neither target issuer is involved.',
+        runtime_full_body_refetched=False, publication_time_modified=False,
+        limitation='Exact reviewed notice and MRNA/SNDK only; not a general symbol-reuse exemption.')
+
 def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
     notices = review_notices(raw, ticker=ticker, issuer_names=issuer_names)
     require(feed['channel']['future_publication'] is False and
@@ -215,7 +238,8 @@ def review_future_notice_scope(raw, *, feed, ticker, issuer_names):
         eca_scope = (other_issuer_eca_scope(row, ticker=ticker, issuer_names=issuer_names) or
                      reviewed_eca_776_scope(row, ticker=ticker, issuer_names=issuer_names) or
                      reviewed_eca_772_scope(row, ticker=ticker, issuer_names=issuer_names) or
-                     reviewed_etp_177_scope(row, ticker=ticker, issuer_names=issuer_names))
+                     reviewed_etp_177_scope(row, ticker=ticker, issuer_names=issuer_names) or
+                     reviewed_dtn_25_scope(row, ticker=ticker, issuer_names=issuer_names))
         require((len(matches) == 1 or eca_scope is not None) and row.get('description_truncated') is False,
                 'WAIT_KNOWN_ACTION_REVIEW')
         ignored.append(dict(identifier=matches[0] if matches else eca_scope['identifier'],
