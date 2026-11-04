@@ -36,6 +36,7 @@ class NativeSplitTransitionTests(unittest.TestCase):
             risk = advance_monthly_exit(state=None, account_id='synthetic-account', decision_date='2026-10-20',
                 session_date='2026-10-20', closes={'A':'100','B':'100','C':'50'},
                 unit_ids={'A':'old','B':'b','C':'c'}, baseline_targets=proposal['payload']['proposed_target_quantities'])['state']
+            risk['target_month'] = '2026-10'
             result = project_native_split(account_after=after, action_id='action', risk_before=risk,
                                           target=target, expected_proposal_id=proposal['proposal_id'])
             projected = result['payload']['risk_projection']

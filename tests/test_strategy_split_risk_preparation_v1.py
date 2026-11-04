@@ -32,6 +32,7 @@ class SplitRiskPreparationTests(unittest.TestCase):
         risk = advance_monthly_exit(state=None, account_id=state['account_id'],
             baseline_targets=proposal['payload']['proposed_target_quantities'],
             **{k:v for k,v in rows[0].items() if k != 'evidence_sha256'})['state']
+        risk['target_month'] = '2026-10'
         self.arguments = dict(destination_path=self.destination, account_after=account, action_id='action',
             risk_before=risk, target=target, expected_proposal_id=proposal['proposal_id'],
             observations=rows, expected_sessions=[r['session_date'] for r in rows])
@@ -54,6 +55,12 @@ class SplitRiskPreparationTests(unittest.TestCase):
     def test_mismatched_original_peak_is_rejected(self):
         self.arguments['risk_before']['peaks']['A'] = '101'
         with self.assertRaisesRegex(ValueError, 'PREFIX_STATE_MISMATCH'): prepare_split_risk(**self.arguments)
+        self.assertFalse(self.destination.exists())
+
+    def test_old_month_risk_cannot_be_bound_to_new_month_target(self):
+        self.arguments['risk_before']['target_month'] = '2026-09'
+        with self.assertRaisesRegex(ValueError, 'RISK_TARGET_MONTH_MISMATCH'):
+            prepare_split_risk(**self.arguments)
         self.assertFalse(self.destination.exists())
 
     def test_failed_build_never_publishes_partial_database(self):

@@ -40,6 +40,17 @@ class SplitLedgerTests(unittest.TestCase):
             self.append(self.split)
         self.assertEqual(before, self.state)
 
+    def test_later_split_uses_fresh_units_and_preserves_chain(self):
+        self.append(self.split)
+        next_split = dict(self.split, event_id='split-two', action_id='next-action', ratio=2,
+            effective_at='2026-12-01T14:30:00Z', broker_confirmed_at='2026-12-01T14:31:00Z',
+            old_unit_id='new', new_unit_id='old')
+        with self.assertRaisesRegex(ValueError, 'UNIT_ID_REUSED'):
+            self.append(next_split)
+        self.append(dict(next_split, new_unit_id='new-two'))
+        self.assertEqual(self.state['shares']['S'], 224)
+        self.assertEqual(replay('isolated', [r['payload'] for r in self.state['events']]), self.state)
+
     def test_bad_ratio_time_and_revision_do_not_mutate(self):
         before = deepcopy(self.state)
         for ratio in (True, 0, 1, '8', '1/8'):

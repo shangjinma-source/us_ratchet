@@ -15,6 +15,8 @@ def project_native_split(*, account_after, action_id, risk_before, target, expec
     proposal = build_frontier_proposal(target=target)
     require(proposal['proposal_id'] == expected_proposal_id, 'SPLIT_STALE_PROPOSAL')
     require(target['payload']['account_id'] == account_after['account_id'], 'SPLIT_TARGET_ACCOUNT_MISMATCH')
+    require(risk_before.get('target_month') == target['payload']['target_month'],
+            'SPLIT_RISK_TARGET_MONTH_MISMATCH')
     projected = project_split_risk(account_after=account_after, action_id=action_id,
         risk_before=risk_before, quantities_before=proposal['payload']['proposed_target_quantities'])
     action = next(row['payload'] for row in account_after['events']

@@ -58,6 +58,8 @@ def apply_event(state, event, *, expected_revision):
     same_security = [split for split in prior_splits if split['security_id'] == sid]
     if same_security:
         ledger.require(same_security[-1]['new_unit_id'] == event['old_unit_id'], 'SPLIT_UNIT_CHAIN_MISMATCH')
+        used_units = {split[key] for split in same_security for key in ('old_unit_id', 'new_unit_id')}
+        ledger.require(event['new_unit_id'] not in used_units, 'SPLIT_UNIT_ID_REUSED')
     ledger.require(not any(order['security_id'] == sid and order['status'] == 'OPEN'
                            for order in state['orders'].values()), 'SPLIT_OPEN_ORDERS_REQUIRE_RECONCILIATION')
     for item in state['events']:
