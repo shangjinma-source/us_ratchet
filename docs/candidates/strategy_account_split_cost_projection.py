@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
-from core.strategy_account_store import StrategyAccountStore
+from core.strategy_account_split_store_v1 import SplitStrategyAccountStore as StrategyAccountStore
 
 
 def require(ok, reason):
@@ -47,6 +47,13 @@ class StrategyAccountService:
             mark=marks[sid];at=datetime.fromisoformat(mark['observed_at'].replace('Z','+00:00'))
             require(at.utcoffset() is not None and 0<=(now-at).total_seconds()<=120,'VALUATION_EXPIRED')
             price=Fraction(mark['price']);require(price>0 and mark['security_id']==sid and mark['currency']=='USD','VALUATION_MARK_INVALID')
+            splits=[row['payload'] for row in state['events']
+                    if row['payload']['kind']=='SPLIT_CONFIRMED' and row['payload']['security_id']==sid]
+            if splits:
+                action=splits[-1]
+                require(mark.get('unit_id')==action['new_unit_id'] and
+                        at>=datetime.fromisoformat(action['effective_at'].replace('Z','+00:00')),
+                        'VALUATION_SPLIT_UNIT_REQUIRES_REVIEW')
             value=price*quantity;total+=value
             rows.append(dict(security_id=sid,ticker=mark['ticker'],quantity=quantity,price=str(price),
                              observed_at=mark['observed_at'],market_value=str(value)))
