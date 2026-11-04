@@ -34,6 +34,10 @@
 
 后续新增`core/strategy_split_risk_projection_v1.py`纯候选投影，绑定账户已记录行动、账户revision、原风险状态与数量摘要；数量乘8、峰值及末次收盘价除8，保留decision_date和exited。4项测试通过：125美元拆后价格不误退出，100美元仍触发真实20%门槛，已退出状态不解除，重复转换及账户/时点错配拒绝。原月度目标及其训练决策哈希不修改；输入数量仍需服务端绑定真实目标/提案。本模块不迁移risk_prices历史、不持久化、不发布目标，不能单独替换生产风险状态。累计23项定向测试。
 
+后续新增`data/strategy_split_native_projection_v1.py`，使用现有完整native frontier验证器读取不可变原月目标并核对expected_proposal_id，分别转换原目标数量及提案数量，生成独立transition_id而不伪造原target_id。限制为同月、先选股后发生的行动；跨月及已按拆后单位生成的目标需要另行处理，不重复转换。
+
+`tests/test_strategy_split_native_transition_v1.py`一项跨模块隔离测试通过：旧SQLite→新格式副本→拆股记录→成本视图→原生目标/提案验证→风险单位投影→拆后风险推进，拒绝旧proposal及篡改目标。用合成10月日期和已签名玩具选股输入；不是SNDK真实到账、真实行情或HTTP验收。累计24项定向测试。该测试未持久化转换后的风险、未构建正式preview、未运行AI；下一步仍为风险历史及全组件一致切换。
+
 ### 当前核心能力实测
 
 离线运行`python -m scripts.audit_split_readiness_v1`：真实账本reducer不支持SPLIT事件，返回EVENT_FIELDS；真实风险核心遇到明确单位变化返回RISK_UNIT_CHANGE_REQUIRES_REVIEW。若上层错误地保留旧单位标签并传入拆股后价格，核心会按跌幅退出。这一分支只说明来源适配层必须正确标记单位，不代表已发现生产来源层会放行该错误。
