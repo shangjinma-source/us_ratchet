@@ -44,3 +44,5 @@ scripts/research/profile_news_context_cprofile_20261105.py -text
 backtest/*_observed.py -text
 
 tests/test_downside_observed_search.py -text
+
+scripts/research/sample_downside_observer_cost_20261105.py -text

@@ -39,3 +39,11 @@ finalize仅证明已观察流结束且未发生预算/校验失败；source_auth
 新增research_exact_fast_search_observed、saved_quantity_candidate_comparison_observed、research_exact_fast_guided_observed三个研究副本，仅变更来源hash注释、可选参数、观察钩子及导入传递。原三份文件未改，头部来源hash逐项核对。tests/test_downside_observed_search.py三项测试通过（根独立运行2.213秒）。测试使用sys.setprofile独立捕获原始evaluate更新visited/cache后的返回序列；原始、无观察器副本、有观察器副本逐字段结果、全部候选访问顺序及计数一致，连续阶段确有新增候选。两阶段异常传播及原搜索预算不足保持未完成均验证。
 
 这些是三股票合成夹具，不代表真实月运行成本或经济收益。原返回字段及REQUIRED_PINS保留仅用于等价验证，绝不能认证新研究副本；后续真实数据sidecar必须另外绑定三个新副本、观察器、输入数据及数学依赖的hash。持股上限仍待用户选择，未启动代表月份或全窗口回测。
+
+## 首个真实月份的有界成本检查
+
+固定最早2020-12-31，训练2020-01-02至2020-12-31、102证券；不是2020年实际账户回测。原8192评估预算及32连续迭代保持。诊断持股上限取完整102域仅避免按未知偏好过滤，不代表采用102只持仓。风险最多64次，合作截止180秒，单次运行68.341秒完成（加载1.262秒），原search_result与历史保存结果完全一致、diff为空。
+
+实际base评估8091，比较阶段97条既有+22条新连续候选；hook8210次，raw去重8113、cap去重7124。风险仅64次，观察状态不完整，finalize拒绝INCOMPLETE_RISK_OBSERVATION_BUDGET。63个正仓样本与现金通过仅是访问前缀，不是最佳候选、不评价收益或全域覆盖。未分别计时risk，不能从68秒估算新增开销或线性推算全量。
+
+结束后1516文件hash重核通过，根再次独立核验。证据tmp/downside_observer_cost_first_month_20261105/{summary.json,saved_result_differences.json,post_run_source_verification.json}，脚本scripts/research/sample_downside_observer_cost_20261105.py。无账户写、模型或生产改动，无第二次运行。当前不足以证明全窗口风险观察预算可承受，完整研究仍需明确持股偏好并设定覆盖预算。
