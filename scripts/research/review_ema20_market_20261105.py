@@ -75,6 +75,59 @@ def independent_signals(artifact):
     return signals, set(month_ends.values()), days
 
 
+def identity_proofs(book, assembled):
+    """Keep old strict proof; add only OFF prior ceiling erased at month reset."""
+    proofs = []
+    for event in assembled.get('actions', []):
+        if event['type'] != 'split_identity':
+            continue
+        one = deepcopy(assembled)
+        one['actions'] = [event]
+        one['provider_actions'] = [event]
+        try:
+            proofs.extend(audit_zero_identity_events(book, one)[2])
+            continue
+        except ValueError as error:
+            require(str(error) == 'ZERO_IDENTITY_TARGET', 'UNSUPPORTED_IDENTITY_PROOF:' + str(error))
+        old, new = event['security_id'], event['new_security_id']
+        index = next(i for i, r in enumerate(book['daily_ledger']) if r['date'] == event['date'])
+        require(index > 0, 'PRIOR_SESSION_REQUIRED')
+        before = book['provider_audit'][index-1]
+        current = book['provider_audit'][index]
+        require(before['risk_overlay']['market_gate']['market_on'] is False, 'PRIOR_CEILING_WAS_MARKET_OFF')
+        selected = current.get('selection')
+        require(selected is not None, 'IDENTITY_NEW_MONTH_SELECTION_REQUIRED')
+        target = finance.review_selection(selected, rerank_enabled=True)['target_quantities']
+        require(not any(target.get(s, 0) for s in (old, new)), 'NEW_SELECTION_IDENTITY_EXCLUDED')
+        previous_state = before['risk_overlay']['state']
+        state = current['risk_overlay']['state']
+        require(state['decision_date'] == selected['raw_selection']['decision_date']
+                and state['decision_date'] != previous_state['decision_date'], 'IDENTITY_MONTH_RESET_REQUIRED')
+        require(not any(s in state[k] for s in (old, new) for k in ('peaks', 'unit_ids', 'last_closes'))
+                and not any(s in state['exited'] for s in (old, new)), 'NO_OLD_UNIT_RISK_MIGRATION')
+        for row, audit in zip(book['daily_ledger'][index-1:], book['provider_audit'][index-1:]):
+            require(not any(row['shares'].get(s, 0) for s in (old, new)), 'IDENTITY_ANY_LATER_EXPOSURE')
+            require(not row.get('distribution_rights') and not row.get('merger_entitlements')
+                    and F(row.get('receivable', '0')) == 0, 'IDENTITY_PENDING_RIGHTS')
+            require(not any(o['security_id'] in (old, new) for o in audit['orders']), 'IDENTITY_PENDING_ORDER')
+            require(not any(audit['target_shares'].get(s, 0) for s in (old, new)), 'IDENTITY_EFFECTIVE_TARGET')
+            if row['date'] >= event['date']:
+                require(not any(audit['monthly_ceiling'].get(s, 0) for s in (old, new)), 'IDENTITY_NEW_OR_LATER_CEILING')
+        for item in book['dividend_ledger']['events'].values():
+            require(item['event']['security_id'] not in (old, new) or F(item['net']) == 0, 'IDENTITY_DIVIDEND_RIGHT')
+        for order in book['order_log']:
+            if order.get('security_id') in (old, new) and order['date'] >= event['date']:
+                require(order.get('event') == 'CORPORATE_ACTION' and order.get('action_details') == event,
+                        'IDENTITY_ACTUAL_LATER_ORDER')
+        proofs.append(dict(event=event, source_hashes={p:sha256((ROOT/p).read_bytes()).hexdigest() for p in event['source_references']},
+            proof='Zero actual exposure/effective target/order/rights; prior OFF ceiling erased by independently verified new monthly selection, no old units migrated or later revived.',
+            prior_row=book['daily_ledger'][index-1], prior_ceiling=before['monthly_ceiling'],
+            prior_effective=before['target_shares'], prior_market_gate=before['risk_overlay']['market_gate'],
+            new_selection_targets=target, new_state=state, event_orders=current['orders'],
+            later_sessions_checked=len(book['daily_ledger'])-index, equity_effect='0'))
+    return proofs
+
+
 def run(output):
     sys.set_int_max_str_digits(100000)
     directory = ROOT/output
@@ -161,7 +214,7 @@ def run(output):
         require(sorted(actual, key=lambda o: o['security_id']) == orders(target), 'ACTUAL_GATED_ORDER')
         checked.append(gate)
 
-    _, _, zero_proofs = audit_zero_identity_events(book, assembled)
+    zero_proofs = identity_proofs(book, assembled)
     namespace = dict(finance.__dict__)
     namespace['_review_risk_orders'] = layered_risk
     source = inspect.getsource(finance.review)
