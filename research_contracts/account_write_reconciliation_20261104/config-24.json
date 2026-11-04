@@ -1,0 +1,18 @@
+{
+  "base_v28": {
+    "path": "research_contracts/account_write_reconciliation_20261104/config-23.json",
+    "sha256": "db38002fed1c005ae34f324bf1b91a72f5b6d47b1f1eb69227b90716cd9b028c"
+  },
+  "schema": "SCHEDULED_EARNINGS_UNIFIED_PREPARATION_V29",
+  "source_pins": {
+    "api/news_scheduled_earnings_v1.py": "4e947709a410f7cdb5d76137ed46316a5312800fadbfa7dfc2fae349dae0eab9",
+    "api/strategy_server_mount_v8.py": "0ad8389d72db7ea943fe2a9cd11ca6fd6cb65193b2c129ce415441903559a04f",
+    "data/news_schedule_binding_v1.py": "c43363dcc0e89871c8732cbae3ba519450887efc384650f98b2f09494a284ae5",
+    "data/news_scheduled_earnings_v1.py": "99b05f91e3bd3c9fe6a27e5c0e2fbfe8e867203957d248e6c9e7850daa6fff4f",
+    "data/news_scheduled_service_v1.py": "e81f36e5641a200736f285fb71159bc542427e7c4290ed8e8677b8b97d45c073",
+    "data/strategy_unified_server_preparation_v29.py": "e9ab69cd04a6b3c55f55d29271696af0992b565c387128a008296005b29061ab",
+    "web/news_scheduled_earnings.js": "1a32d505db6739654740a01012146b16971ec7d8e554b4c8763d8d354dad4261",
+    "data/news_sandisk_wire_v1.py": "a2debe1adf2d88e342bdb91d4a0411c323e1243addd7846460f0a800e4de46cb",
+    "data/news_sandisk_wire_capture_v1.py": "e620e16791863f39067f627da42cb9c1869dc5d4f871b11ca3565dbf4f051eb7"
+  }
+}

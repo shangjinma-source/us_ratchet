@@ -1,0 +1,14 @@
+{
+  "base_v7": {
+    "path": "research_contracts/account_write_reconciliation_20261104/config-03.json",
+    "sha256": "8a9764058960e826e492d06ea9884f6c0623ef0f8d287bb7f8e19f24acdbd224"
+  },
+  "schema": "OBSERVED_UNIFIED_PREPARATION_V8",
+  "source_pins": {
+    "api/strategy_advice_observations_v1.py": "e2635724fba30ba9ac988c341cc75f1972808f4ea4dac0ef9e211820c5d4b779",
+    "data/strategy_daily_advice_journal_v1.py": "8cffced0e1d4aabc42dfab327fbd135334b11d751f4b3254aef1ad251b5b40c5",
+    "data/strategy_observed_daily_admission_v1.py": "bae8365dd1cf69de0eb0b678434667aeee49f625174daa11bebe0ba91d11d2e1",
+    "data/strategy_unified_server_preparation_v8.py": "e584f66677d346dd82720aee75d4428ad3d0ba78a531e2325ca93d9943196b4b",
+    "web/strategy_advice_review.js": "3622cb23f1d542a4ca938bedea21b0ba395e0497f3123ea5c41478d4d72d468c"
+  }
+}

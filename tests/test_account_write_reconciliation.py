@@ -1,5 +1,4 @@
-"""Candidate HTTP recovery using temporary ledgers; no production writes."""
-import importlib.util
+"""Account HTTP recovery using temporary ledgers; no production writes."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -9,10 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from core.strategy_account_store import StrategyAccountStore
 
-spec = importlib.util.spec_from_file_location('account_write_candidate',
-    Path(__file__).resolve().parents[1]/'docs/candidates/strategy_account_write_reconciliation.py')
-candidate = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(candidate)
+import api.strategy_account as candidate
 
 
 class AccountWriteReconciliationTests(unittest.TestCase):

@@ -22,6 +22,10 @@ def token(value, reason):
     require(isinstance(value,str) and re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}',value),reason)
 
 
+class WriteOutcomeUncertain(RuntimeError):
+    """A write may be durable although its response could not be produced."""
+
+
 class StrategyAccountService:
     def __init__(self, *, database_path, account_id, resolver, clock=None, valuation_provider=None):
         self.store=StrategyAccountStore(database_path,clock=clock)
@@ -105,12 +109,16 @@ class StrategyAccountService:
 
     def read(self):return self.project(self.store.read())
 
+    def committed_projection(self,state):
+        try:return self.project(state)
+        except Exception as error:raise WriteOutcomeUncertain() from error
+
     def initialize(self,body):
         require(isinstance(body,dict) and set(body)=={'event_id'},'BODY_FIELDS')
         token(body['event_id'],'EVENT_ID_REQUIRED')
         try:state=self.store.initialize(self.account_id,operation_id=body['event_id'])
         except FileExistsError:state=self.store.initialize(self.account_id,operation_id=body['event_id'])
-        return self.project(state)
+        return self.committed_projection(state)
 
     def append(self,body):
         require(isinstance(body,dict) and set(body)=={'expected_revision','event'},'BODY_FIELDS')
@@ -143,7 +151,7 @@ class StrategyAccountService:
                         require(old['security_id']==identity.get('security_id'),'IDENTITY_MAPPING_CHANGED')
             event.update(security_id=identity['security_id'],identity_evidence=identity)
         updated,effect=self.store.append(event,expected_revision=body['expected_revision'])
-        return dict(self.project(updated),effect=effect)
+        return dict(self.committed_projection(updated),effect=effect)
 
 
 def create_router(*,database_path,account_id,resolver,clock=None,valuation_provider=None):
@@ -166,6 +174,10 @@ def create_router(*,database_path,account_id,resolver,clock=None,valuation_provi
             else:result=await run_in_threadpool(operation)
             return JSONResponse(result,headers={'Cache-Control':'no-store'})
         except Exception as error:
+            if write and (isinstance(error,WriteOutcomeUncertain) or not isinstance(error,ValueError)):
+                return JSONResponse(dict(status='BLOCKED',reason='RECONCILE_REQUIRED',
+                    write_may_have_occurred=True,reconcile_before_retry=True),
+                    status_code=503,headers={'Cache-Control':'no-store'})
             reason=str(error) if isinstance(error,ValueError) and re.fullmatch('[A-Z][A-Z0-9_]{0,79}',str(error)) else 'REQUEST_REJECTED'
             code=409 if reason in {'STALE_REVISION','EVENT_ID_CONFLICT','INITIALIZATION_CONFLICT','IDENTITY_MAPPING_CHANGED'} else 422
             return JSONResponse(dict(status='BLOCKED',reason=reason),status_code=code,headers={'Cache-Control':'no-store'})

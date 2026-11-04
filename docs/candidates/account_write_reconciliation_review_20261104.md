@@ -11,3 +11,5 @@
 尚未部署：活动V30沿base引用向下24层，账户源码pin位于V6配置 `research_contracts/unified_server_identity_closure_20261021_v10_v5/server-level-4.json`；该层还有preparation及daily_configuration等引用，不能仅改最外层hash。下一步需检查这些引用的源码约束，准备独立完整配置链及回退材料，验证正式组合后统一切换。当前生产文件、活动配置、服务和真实账本均保持原样。
 
 本轮仍属于修复准备，不宣称线上缺口已消除。前面的只读预览测试不覆盖此类写入后响应失败；修复部署后还应核对正式路由、源码pins和新闻任务生命周期。
+
+后续状态：同日已完成正式配置链和部署，见 `docs/account_write_reconciliation_deployment_20261104.md`。上文保留为部署前研究记录；测试现在直接导入正式账户模块。
