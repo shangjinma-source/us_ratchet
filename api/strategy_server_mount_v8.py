@@ -22,7 +22,10 @@ def mount_strategy_routes(*, app, root, environment):
     path, digest = reference
     _, configuration = _read(root, dict(path=path, sha256=digest))
     schema = configuration.get('schema')
-    if schema == 'BOUND_UI_SNAPSHOT_UNIFIED_PREPARATION_V30':
+    if schema == 'BATCH_DISPLAY_UNIFIED_PREPARATION_V31':
+        from data.strategy_unified_server_preparation_v31 import build_unified_server_preparation_v31 as build
+        mode = 'UNIFIED_V31'
+    elif schema == 'BOUND_UI_SNAPSHOT_UNIFIED_PREPARATION_V30':
         from data.strategy_unified_server_preparation_v30 import build_unified_server_preparation_v30 as build
         mode = 'UNIFIED_V30'
     elif schema == 'SCHEDULED_EARNINGS_UNIFIED_PREPARATION_V29':

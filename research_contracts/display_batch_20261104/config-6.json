@@ -1,0 +1,11 @@
+{
+  "base_v8": {
+    "path": "research_contracts/display_batch_20261104/config-5.json",
+    "sha256": "aab2d543650ddd665d64328a34ac4daa91c9f3a7036ca769b674ab904177cc69"
+  },
+  "schema": "SNAPSHOT_VALUATION_UNIFIED_PREPARATION_V9",
+  "source_pins": {
+    "data/strategy_saved_target_valuation_v1.py": "92cf6385d533108078eb30dabb1f29716fb9071ac6780210aa523f6a1c8f2fb0",
+    "data/strategy_unified_server_preparation_v9.py": "c46993f3b90aedb06d996fc003e99e1e89b198c759d28279fca63bfd44c89965"
+  }
+}

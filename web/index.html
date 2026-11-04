@@ -688,7 +688,8 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script src="/static/strategy_monthly_target_charts.js?v=20261025-cap-target-v8"></script>
+<script src="/static/strategy_display_batch_fetch.js?v=20261104-batch-v1"></script>
+<script src="/static/strategy_monthly_target_charts.js?v=20261104-batch-v1"></script>
 <script src="/static/selected_stock_charts.js?v=20261025-cap-target-v13"></script>
 <script src="/static/current_research_intraday.js?v=20261015-source-freshness-v2"></script>
 <script src="/static/current_research_paper_performance.js?v=20261015-v1"></script>
@@ -5041,7 +5042,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   arrangePanels();
   try {
   if (!window.StrategyAccountUI?.mount) throw new Error('ACCOUNT_COMPONENT_UNAVAILABLE');
-  if (window.StrategyMonthlyTargetCharts && window.SelectedStockCharts) window.RealStrategyMonthlyCharts = window.StrategyMonthlyTargetCharts.mount({container:$('strategyMonthlyCharts'),latestDisplayEnabled:true});
+  if (window.StrategyMonthlyTargetCharts && window.SelectedStockCharts) window.RealStrategyMonthlyCharts = window.StrategyMonthlyTargetCharts.mount({container:$('strategyMonthlyCharts'),latestDisplayEnabled:true,fetchImpl:window.StrategyDisplayBatchFetch.wrap(window.fetch.bind(window))});
   window.RealStrategyAccount = window.StrategyAccountUI.mount({
     container: $('realStrategyAccount'), fetchImpl: window.fetch.bind(window), initialValuation: false, automaticValuationEnabled: false,
     pendingFillStore: window.StrategyAccountUI.browserPendingFillStore?.(window.localStorage, 'us-ratchet-pending-real-fill-v1'),

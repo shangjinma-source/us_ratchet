@@ -37,7 +37,7 @@ function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.Sele
  }
  function setTarget(target){
   savedTarget=target?structuredClone(target):null;
-  const nextKey=target?JSON.stringify([target.target_id,target.proposal_id,target.targets,account?.holdings||[]]):null;
+  const nextKey=target?JSON.stringify([target.target_id,target.proposal_id,target.targets,account?.revision,account?.holdings||[]]):null;
   if(nextKey!==null&&nextKey===selectionKey)return;
   clear();if(!target){showHoldings();return;}
   targetId=target.target_id;selectionKey=nextKey;const current=generation;

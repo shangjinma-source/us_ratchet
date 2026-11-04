@@ -1,0 +1,40 @@
+{
+  "base_v24": {
+    "path": "research_contracts/display_batch_20261104/config-21.json",
+    "sha256": "d9d663075abdd8026eb7883369fb762903278f2ee4677b614c6b9eea61ff57e7"
+  },
+  "initial_risk_epoch": {
+    "archive_root": "data/cache/strategy_daily/completed_selection_close_v25_r2",
+    "authorized": true
+  },
+  "schema": "COMPLETED_SELECTION_CLOSE_PREPARATION_V25",
+  "source_pins": {
+    "backtest/current_quantity_v2_risk_overlays.py": "2723e827646bca919b251ddea80caf7edda0333fd3aa1b11abbe32e679677118",
+    "core/strategy_account_difference.py": "5cb507936442fd0f3ed95765193c623718dc2ec9a54b7bf1ab4a35db22a33fbe",
+    "core/strategy_account_ledger.py": "83f0f2a8a3726cd4cdb1387b4fadbd051f95da11c48790deec5bb6c695382591",
+    "data/current_quantity_v2_paper_action_sources.py": "b4be5cccbc4c759d3f7ecb7a28a3a994f24f212929149f866eb48d551e88238f",
+    "data/monthly_cap_exit_reader_v4.py": "9a3deff61c3c1b24b561f05859db5c6d959ea67fca1ec0a4d575071643a9bb57",
+    "data/monthly_risk_epoch.py": "ca377b868b2b5cfd9064ad2c87b008b96e0452c8662d0b3486e2e9dfad21b11f",
+    "data/strategy_account_identity.py": "9a7f387024c916cfc639d0cbe172771d443f255aae02df8e3d30414a598bc376",
+    "data/strategy_account_notice_review.py": "e7d1b7b7b7698a4f7e92535dea45b8a45962b25b45a4acc2b5789f6b83a6dd61",
+    "data/strategy_daily_domain_packet_reader_v3.py": "9506d025fb8049bf392b33f8fbabd4848c55e81151806925d6432c14c3fac313",
+    "data/strategy_daily_evidence_adapter.py": "0aad2531588163d29a10f5aa2de021221b6a765f0920c4445c2829cd645cd9e3",
+    "data/strategy_daily_evidence_rebind.py": "0de5a7621a1e6bf47445c203277786d56f61ed6b4ef64d0abb3852781cacb5bd",
+    "data/strategy_daily_first_window_v6.py": "bfe5624ecb06135f14ff8e106689f554e521014a183d9b80f0fd12f855219076",
+    "data/strategy_daily_first_window_v7.py": "ec2bd45b31a34c94c180f6dbdc5863968d409df34dbf04d09d46d5ef95b54796",
+    "data/strategy_daily_rolling_parent_v3.py": "6ce9220532274832cf3ad237a59317f2718ad7c87da2263dca5f6eb2924c2e75",
+    "data/strategy_daily_security_domain_v1.py": "b619a9dff5dc37840ee5b9c33fb97030154330fb5b30f81340f08ad1077e3923",
+    "data/strategy_daily_session_capture.py": "d29dc5f64793fbf8b4b07d8f2a33ef68c243a86a4fea2ee6159063b041ca323c",
+    "data/strategy_monthly_risk_capture_v2.py": "8233c3cd683473da2da9fe93dfbaec3e5a878292a8239bc5b0339f71595d88f8",
+    "data/strategy_monthly_risk_history_v2.py": "90eb58bed264fb89ec2ad4197a3c40859dd2dd71fc4120078b50846bad93a76d",
+    "data/strategy_monthly_risk_security_domain_v1.py": "50e57eac686dc84694a501f8bd56fcfeab57856087014924e298baa8fc18b7a3",
+    "data/strategy_monthly_supplement_capture_v2.py": "56990a9d321a9ca6677684e468b3b423a1a30ad57f3a6d4eff64b011fb664a29",
+    "data/strategy_monthly_supplement_reader_v2.py": "120df6fe14725e2fd20c66079673e454cf7ef932c112f799f16b319cce21f68a",
+    "data/strategy_unified_server_preparation_v25.py": "5555e8dad6898cd6ef97f49e9fb6639916cc1fe9cc366f83cc56bb74d372d36b",
+    "scripts/current_research_official_alert_capture.py": "105cde07551eb99c107d3f99d6637e41a8ffcbc12f12d75e22322c326a0b2e27"
+  },
+  "supplement_authorization": {
+    "path": "research_contracts/completed_selection_close_20261024_v25_r2/supplement-authorization.json",
+    "sha256": "2f0da3c3fa2064b1725896c83e35ea36c2acf86b0a560efc14a3f59f30c48ecb"
+  }
+}

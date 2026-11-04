@@ -1,0 +1,12 @@
+{
+  "schema": "DAILY_EXPLANATIONS_UNIFIED_PREPARATION_V21",
+  "base_v20": {
+    "path": "research_contracts/display_batch_20261104/config-17.json",
+    "sha256": "29259a732e0d22caa32ac0add6296d24bad872acf0129faf141637157ae3d590"
+  },
+  "source_pins": {
+    "data/strategy_daily_explanations_v1.py": "4ee2b3819849f5feaf120224edb65f8fc4efd5978c880e544f33f2174a5d531f",
+    "data/strategy_unified_server_preparation_v21.py": "c3d119f7d74559d7ba6ab7b2437e2d3f1bc89885655096c4c12ec121d3d91983"
+  },
+  "archive_root": "data/strategy_account/dynamic_daily_policy_reviewed_v1"
+}
