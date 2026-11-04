@@ -1,5 +1,8 @@
 from copy import deepcopy
 import unittest
+from core.strategy_account_ledger import canonical
+from core.strategy_account_split_v1 import moment
+from data.current_quantity_v2_paper_action_sources import PaperActionEvidenceSources
 from data.strategy_split_account_preview_v1 import preview_split_account
 from test_split_bundle_decision_handoff import SplitBundleDecisionHandoffTests
 
@@ -21,6 +24,18 @@ class SplitPreviewTests(unittest.TestCase):
         self.arguments.update(state=self.state, action_id=f.base.arguments['action']['action_id'],
             target=f.base.arguments['target'], expected_proposal_id=f.base.arguments['expected_proposal_id'],
             risk_before=f.base.arguments['risk_before'])
+        securities={sid:dict(ticker=sid) for sid in prices['marks']}
+        at=int(moment(f.base.arguments['action']['effective_at']).timestamp())
+        def daily(ticker,start,end):
+            events={'splits':{str(at):dict(date=at,numerator=8,denominator=1,splitRatio='8:1')}} if ticker=='A' else {}
+            return dict(status=200,body=canonical(dict(chart=dict(error=None,result=[dict(
+                meta=dict(symbol=ticker,currency='USD',instrumentType='EQUITY'),events=events)]))))
+        rss=b'<rss><channel><title>Nasdaq</title></channel></rss>'
+        source=PaperActionEvidenceSources(fetch=daily,rss_fetch=lambda:dict(status=200,body=rss),clock=f.base.clock)
+        package=source.capture(dict(account_id=self.state['account_id'],state_revision=self.state['revision'],
+            window_start='2026-10-19T20:00:00Z',observed_floor='2026-10-19T20:00:00Z',
+            securities=securities,current_target_quantities={}))
+        self.arguments.update(securities=securities,action_package=package)
 
     def test_real_split_ledger_reaches_cash_limited_difference_without_mutation(self):
         before = self.fixture.store.read()
@@ -29,6 +44,7 @@ class SplitPreviewTests(unittest.TestCase):
         self.assertEqual(difference['strategy_equity'], '2400')
         self.assertEqual(difference['binding']['strategy_shares']['A'],112)
         self.assertFalse(result['executable'])
+        self.assertEqual(result['action_review']['matches'][0]['action_id'],self.arguments['action_id'])
         self.assertEqual(self.fixture.store.read(),before)
 
     def test_old_unit_and_pre_action_quote_rejected(self):
