@@ -1,0 +1,11 @@
+# 新成员身份未决对7月31日资格的有界影响
+
+只读本地原文，使用正式monthly_training模块_daily解析真实原始日线，无网络、选股或生产修改。SPCX截至7/31有效收盘34条，HONA供应商原日线33条；按既有regular-way审查剔除HONAV的9条when-issued后HONA只有24条。即使把HONA全部33条算入，也远不足既定253条。因此这两只单独的加入/不加入不改变7/31可投资股票集合，没必要为了排除明显短历史股票无限查NDX成员通知。
+
+既有代码data/current_quantity_v2_monthly_training.py要求有来源且known_asof<=决策日的INSUFFICIENT_253_SESSION_PREDECISION_HISTORY证据；缺失须仅在首个行情之前，不能将散落缺bar偷换为短历史。scripts/return_priority_current_rebased_training.py要求253共同训练会话。此轮仅验证不可满足253的必要条件，没有生成或认证新7/31manifest。
+
+本地tmp/old_window_regular_way_20261026/review.json明确HONA regular-way始于6/29、43849R105、不得继承HON价格；tmp/current_quantity_prepared_20261014_v2.json两股均accepted=false/complete_253_closes=false/identity=null。未发现已准入的合法前身价格转换；不能给SPCX拼接私人公司估值，不能给HONA拼接母公司历史。
+
+范围限制：这只能降低“两个新增股票是否有资格买入”的优先级，不证明其他旧成员没有被移除，也不认证7/31完整成员。持仓中的HON分拆权益仍须按真实公司行动计入，不因子股选股资格不足而忽略。下一步应优先旧成员可投资域变化与EA成交/并购会计。
+
+精确原始源hash和计数：tmp/post_july_inventory_20261104/short_history_impact.json。原始源分别data/cache/research/current_raw_capture_20261014_v1/{SPCX,HONA}.response.bin。无新下载。
