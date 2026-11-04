@@ -8,6 +8,8 @@ EMA20主线已进入经济运行，非仅计划。E1每日恢复两窗于01:39�
 
 长期成长支线本地TTM核查收束：两个历史截面203类证券中，同申报版本收入/毛利/OCF候选分别1/0/1及8/5/8，完整原文TTM认证均0。只做低成本资料可行性，不下载、不选股、不回测，不影响EMA主线。详见`candidates/early_compounder_ttm_feasibility_20261105.md`。
 
+随后限定五家公司跨申报桥：本地12字段中11个去年YTD比较值一致，7条年度+YTD条件算式；补充最多10个官方网页请求操作后，GILD/REGN两条年度OCF得到原申报文字支持，但没有取得原HTML/context，CHTR/ZS接受时间仍缺。完整PIT TTM仍未认证，不扩域、不回测。本轮取证停止，详见`candidates/early_compounder_five_ttm_bridge_20261105.md`及`candidates/early_compounder_five_annual_fetch_20261105.md`；工具提取文本hash不冒充SEC原HTMLhash。
+
 ## 实际部署
 
 8010正式入口仍使用V27交易规则，组合服务为V32。活动配置为`research_contracts/news_calendar_selection_20261105/config-29.json`。本次验证PID21628，当前建议READY、账户及11月目标与部署前相同，新闻worker存活；没有制造成交或下单。
