@@ -21,6 +21,12 @@ import test_saved_frontier_isolated_pipeline as fixture
 
 class FrontierFillCashHandoffTests(unittest.TestCase):
     def test_sell_requires_cash_confirmation_and_refresh_does_not_repeat_fill(self):
+        self.check_sell_cash_handoff(sold_quantity=3)
+
+    def test_partial_sell_preserves_remainder_and_duplicate_fill_is_idempotent(self):
+        self.check_sell_cash_handoff(sold_quantity=2)
+
+    def check_sell_cash_handoff(self, *, sold_quantity):
         with TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / 'tmp') as directory:
             case = fixture.IsolatedFrontierPipelineTests().case(directory, cash='0', cancel=True)
             case['accounts'].clock = lambda: case['clock'][0]
@@ -67,12 +73,14 @@ class FrontierFillCashHandoffTests(unittest.TestCase):
                 self.assertEqual([(o['security_id'], o['side'], o['quantity']) for o in orders], [('D', 'SELL', 3)])
                 identity = dict(security_id='D', ticker='D', source_references=['ledger-identity.json'],
                     source_hashes={'ledger-identity.json': fixture.digest(case['files']['ledger-identity.json'])})
-                case['accounts'].append(dict(event_id='synthetic-sell', kind='DIRECT_FILL',
-                    security_id='D', side='SELL', quantity=3, price='50', fees='0',
-                    executed_at=case['clock'][0].isoformat(), identity_evidence=identity),
-                    expected_revision=before['revision'])
+                fill = dict(event_id='synthetic-sell', kind='DIRECT_FILL',
+                    security_id='D', side='SELL', quantity=sold_quantity, price='50', fees='0',
+                    executed_at=case['clock'][0].isoformat(), identity_evidence=identity)
+                case['accounts'].append(fill, expected_revision=before['revision'])
                 sold = case['accounts'].read()
-                self.assertEqual(sold['shares'].get('D', 0), 0)
+                self.assertEqual(sold['shares'].get('D', 0), 3-sold_quantity)
+                case['accounts'].append(fill, expected_revision=before['revision'])
+                self.assertEqual(case['accounts'].read(), sold)
                 self.assertFalse(sold['cash_confirmation_valid'])
                 with self.assertRaisesRegex(ValueError, 'STALE_REVISION'):
                     preview(before['revision'])
@@ -80,7 +88,7 @@ class FrontierFillCashHandoffTests(unittest.TestCase):
                     preview()
 
                 case['accounts'].append(dict(event_id='synthetic-cash-after-sale', kind='CASH_CONFIRM',
-                    amount='150', cash_basis='TOTAL_UNINVESTED'), expected_revision=sold['revision'])
+                    amount=str(sold_quantity*50), cash_basis='TOTAL_UNINVESTED'), expected_revision=sold['revision'])
                 confirmed = case['accounts'].read()
                 first = preview()
                 case['clock'][0] += timedelta(minutes=1)
@@ -90,8 +98,14 @@ class FrontierFillCashHandoffTests(unittest.TestCase):
                 self.assertEqual(actions(first), actions(repeated))
                 self.assertEqual(first['status'], 'READY')
                 self.assertTrue(first['new_orders'])
-                self.assertTrue(all(o['side'] == 'BUY' and o['security_id'] == 'B' for o in first['new_orders']))
-                self.assertLessEqual(-sum((Fraction(o['estimated_cash_change']) for o in first['new_orders']), Fraction(0)), 150)
+                buys = [o for o in first['new_orders'] if o['side'] == 'BUY']
+                sells = [o for o in first['new_orders'] if o['side'] == 'SELL']
+                self.assertTrue(buys)
+                self.assertTrue(all(o['security_id'] == 'B' for o in buys))
+                self.assertEqual([(o['security_id'], o['quantity']) for o in sells],
+                                 [('D', 3-sold_quantity)] if sold_quantity < 3 else [])
+                # Unfilled remaining sales cannot finance the next buy order.
+                self.assertLessEqual(-sum((Fraction(o['estimated_cash_change']) for o in buys), Fraction(0)), sold_quantity*50)
                 self.assertTrue(all(o['proposal_id'] == case['proposal']['proposal_id'] for o in first['new_orders']))
                 self.assertEqual(case['accounts'].read(), confirmed)
                 self.assertEqual(case['target'], original_target)
