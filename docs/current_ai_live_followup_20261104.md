@@ -19,3 +19,7 @@ FAILED终态已增加严格字段白名单快速返回，不返回proposal、bin
 部署和回退字节位于 `tmp/news_failed_status_deployment_20261104`，同任务比较见 `failed_status_comparison.json`。回退只能恢复源码和活动配置，禁止覆盖真实账户快照。
 
 完整部署复核为DEPLOYED_API_VERIFIED：静态资源与本地字节相同，全部活动配置引用及source pins匹配，账户和月目标完整内容与重启前相同，新闻worker正常。当前建议GET返回READY但耗时53.387秒，目标GET9.629秒，说明主建议读取仍慢；未把失败状态提速扩展成主按钮或完整AI链路已提速。此项为API验证，浏览器点击另验收。
+
+## 账户版本变化的进一步核对
+
+完整账本重放通过；该AI任务绑定第74条现金确认后的revision。第75条CASH_CONFIRM于22:49:11收到，位于本次AI运行区间内，与第74条金额及现金口径均相同。相关证据 `tmp/live_ai_followup_20261104/cash_revision_correlation.json`。这说明重复确认同一余额可以使正在进行的复核失效，不需要假设发生了交易或实际入金。后续评估同余额且现金确认仍有效、持仓版本一致时只刷新建议的安全路径；不得跳过成交后重确认、真实金额变化、并发版本检查或新月目标生成。

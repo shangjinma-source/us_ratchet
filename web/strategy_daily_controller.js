@@ -8,6 +8,26 @@ const sameProposal=(a,b)=>a?.proposal_id===undefined&&b?.proposal_id===undefined
 const allowed=new Set(['READY','WAIT','DAILY_PREVIEW_DISABLED','WAIT_POLICY_RELEASE','WAIT_SIGNAL',
  'WAIT_FRESH_SIGNAL','WAIT_MONTHLY_TARGET','WAIT_PENDING_RECONCILIATION',
  'WAIT_EXECUTION_ELIGIBILITY','HOLD','CONDITIONAL_PREVIEW_READY']);
+// Preserve the account form's exact decimal grammar; server fractions are separate.
+function confirmedCashUnchanged(account,value){
+ let text=String(value).trim();
+ if(/^[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?$/.test(text))text=text.replace(/,/g,'');
+ if(!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text))return false;
+ const rational=value=>{
+  const text=String(value);
+  if(/^(?:0|[1-9]\d*)\/[1-9]\d*$/.test(text))return text.split('/').map(BigInt);
+  if(!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text))return null;
+  const [whole,part='']=text.split('.');return [BigInt(whole+part),10n**BigInt(part.length)];
+ };
+ const equal=(a,b)=>{const x=rational(a),y=rational(b);return !!x&&!!y&&x[0]*y[1]===y[0]*x[1];};
+ const last=account?.cash_summary?.last_confirmation;
+ return account?.cash_confirmation_valid===true&&account.execution_ready===true&&
+  Number.isSafeInteger(account.holdings_revision)&&account.holdings_revision>=0&&
+  account.cash_confirmed_for_holdings_revision===account.holdings_revision&&
+  account.cash_basis==='AVAILABLE_AFTER_RESERVATIONS'&&last?.cash_basis===account.cash_basis&&
+  equal(text,account.available_cash)&&equal(account.cash,account.available_cash)&&
+  equal(last.amount,account.cash)&&equal(account.cash_summary.recorded_fill_cash_delta_since_confirmation,'0');
+}
 function waitingExplanation(reason){
  if(reason==='FRONTIER_TARGET_MONTH')return '本月目标尚未生成；请核对当前可用现金，点击“更新现金并查看建议”生成本月目标。';
  if(reason==='WAIT_KNOWN_ACTION_REVIEW')return '公司行动或相关公告尚待核验，本次未生成新建议；旧价格不可用于挂单。';
@@ -35,7 +55,7 @@ function targetRows(target){
 }
 function createController({loadAccount,loadTarget,saveCash,generateTarget,previewDaily,loadCurrentAdvice=null,recoverTarget=null,verifiedSnapshot=false,onChange=()=>{},now=()=>Date.now()}){
  if(loadCurrentAdvice&&!verifiedSnapshot)fail('VERIFIED_SNAPSHOT_REQUIRED');
- let prefetchedDaily=null;
+ let prefetchedDaily=null,cashSaveUncertain=false;
  let epoch=0,ownCashStart=false,pendingTargetRequest=null,invalidationGeneration=0;
  let workTail=Promise.resolve(),writeBarrier=0,lastWrite=null;
  const pendingReads=new Map(),pendingSaves=new Map();
@@ -241,15 +261,22 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
    model.cashSaved=false;
    const previous=model.account.revision;
    if(input.expected_revision!==undefined&&input.expected_revision!==previous)fail('CASH_INPUT_SNAPSHOT_CHANGED');
+   let updated;
+   if(!cashSaveUncertain&&confirmedCashUnchanged(accountBeforeSave,input.amount)){
+    updated=accountBeforeSave;
+   }else{
    let pending;
+   cashSaveUncertain=true;
    // Existing account.confirmCash synchronously invalidates before its first
    // await. Ignore only that call-stack notification, never later fill events.
    ownCashStart=true;
    try{pending=saveCash({...copy(input),expected_revision:previous,cash_basis:'AVAILABLE_AFTER_RESERVATIONS'});}
    finally{ownCashStart=false;}
-   const updated=await pending;
+   updated=await pending;
+   }
    guard(token);
    if(!updated?.revision)fail('CASH_SAVE_REVISION_REQUIRED');
+   cashSaveUncertain=false;
    model.cashSaved=true;
    const savedRevision=updated.revision;
    const serverMonth=await read(token,true,savedRevision);
@@ -501,7 +528,7 @@ function render(container,model,now=Date.now(),newsCell=null){
   WAIT_FRESH_SIGNAL:'等待最新信号',WAIT_MONTHLY_TARGET:'等待本月目标',
   DAILY_PREVIEW_DISABLED:'每日信号暂未启用',READY:'今日条件买卖建议',WAIT:'等待有效执行条件',CONDITIONAL_PREVIEW_READY:'今日条件买卖建议'
  };
- const status=doc.createElement('p');status.textContent=result.retrying?'来源暂不可用，正在重试建议…':result.error==='EVIDENCE_UNAVAILABLE'?(result.cashSaved?'现金已保存；行情或公司行动源暂不可用，建议未更新，无需重复保存现金。':'行情或公司行动源暂不可用，建议未更新，请稍后刷新。'):waitingExplanation(result.error||result.reason)|| (result.error?(result.cashSaved?'现金已保存；建议未更新，请刷新，无需重复保存现金':'状态未确认，请刷新核对后再操作'):
+ const status=doc.createElement('p');status.textContent=result.retrying?'来源暂不可用，正在重试建议…':result.error==='EVIDENCE_UNAVAILABLE'?(result.cashSaved?'现金余额已确认；行情或公司行动源暂不可用，建议未更新，无需重复保存现金。':'行情或公司行动源暂不可用，建议未更新，请稍后刷新。'):waitingExplanation(result.error||result.reason)|| (result.error?(result.cashSaved?'现金余额已确认；建议未更新，请刷新，无需重复保存现金':'状态未确认，请刷新核对后再操作'):
   explanations[result.reason]||explanations[result.detail_status]||explanations[result.status]||'等待执行条件满足');
  if(status.textContent==='今日条件买卖建议')container.replaceChildren(table);
  else container.replaceChildren(status,table);return result;

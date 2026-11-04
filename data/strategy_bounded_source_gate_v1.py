@@ -5,6 +5,7 @@ that one call are deduplicated; accounts, targets, policy and signals are never 
 """
 from hashlib import sha256
 import os
+import stat
 from pathlib import Path,PurePosixPath
 import re
 from types import MappingProxyType
@@ -15,7 +16,14 @@ MAXIMUM_SOURCE_BYTES=32*1024*1024
 
 def _no_links(path):
     for item in (path,*path.parents):
-        require(not item.is_symlink() and not (item.exists() and getattr(item.lstat(),'st_file_attributes',0)&0x400),'BOUNDED_SOURCE_LINK_REFUSED')
+        try:
+            metadata=item.lstat()
+        except FileNotFoundError:
+            # Preserve the later file check; still inspect every ancestor.
+            continue
+        require(not stat.S_ISLNK(metadata.st_mode) and
+                not getattr(metadata,'st_file_attributes',0)&0x400,
+                'BOUNDED_SOURCE_LINK_REFUSED')
 
 def _signature(stat):
     # Windows path stat and fstat disagree on ctime; compare identity/size/mtime.

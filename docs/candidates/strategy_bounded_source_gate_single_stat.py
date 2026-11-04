@@ -17,12 +17,12 @@ MAXIMUM_SOURCE_BYTES=32*1024*1024
 def _no_links(path):
     for item in (path,*path.parents):
         try:
-            metadata = item.lstat()
+            metadata=item.lstat()
         except FileNotFoundError:
-            # The bounded reader below rejects missing files; never reuse data.
+            # Preserve the later file check; still inspect every ancestor.
             continue
         require(not stat.S_ISLNK(metadata.st_mode) and
-                not (getattr(metadata, 'st_file_attributes', 0) & 0x400),
+                not getattr(metadata,'st_file_attributes',0)&0x400,
                 'BOUNDED_SOURCE_LINK_REFUSED')
 
 def _signature(stat):

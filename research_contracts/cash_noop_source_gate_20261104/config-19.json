@@ -1,0 +1,11 @@
+{
+  "archive_root": "data/strategy_account/completed_selection_close_v26_evidence",
+  "base_v25": {
+    "path": "research_contracts/cash_noop_source_gate_20261104/config-18.json",
+    "sha256": "0966da442c80b7fa5cabaeed8f22cd40e8b4e9b5e1588c26707c497080079b83"
+  },
+  "schema": "FOLLOWUP_COMPATIBLE_EPOCH_PREPARATION_V26",
+  "source_pins": {
+    "data/strategy_unified_server_preparation_v26.py": "d509719b393c409d0616f9853f2b7bc3d84aebefa728e2447709ceeada52d887"
+  }
+}

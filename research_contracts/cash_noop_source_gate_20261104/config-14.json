@@ -1,0 +1,12 @@
+{
+  "schema": "DAILY_EXPLANATIONS_UNIFIED_PREPARATION_V21",
+  "base_v20": {
+    "path": "research_contracts/cash_noop_source_gate_20261104/config-13.json",
+    "sha256": "4a6be1a3a2af9c3445700c613dae18223d463bbf3b0168d6362659c72297dd44"
+  },
+  "source_pins": {
+    "data/strategy_daily_explanations_v1.py": "4ee2b3819849f5feaf120224edb65f8fc4efd5978c880e544f33f2174a5d531f",
+    "data/strategy_unified_server_preparation_v21.py": "c3d119f7d74559d7ba6ab7b2437e2d3f1bc89885655096c4c12ec121d3d91983"
+  },
+  "archive_root": "data/strategy_account/dynamic_daily_policy_reviewed_v1"
+}

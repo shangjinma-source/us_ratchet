@@ -1,0 +1,11 @@
+{
+  "base_v6": {
+    "path": "research_contracts/cash_noop_source_gate_20261104/config-0.json",
+    "sha256": "9c6ae9fbb0dc931f6c6b85a8da3452ea19edc27204532a1de8d224cf93c07c21"
+  },
+  "publication_calendar": {
+    "path": "research_contracts/daily_calendar_2026_extension_v1/calendar.candidate.json",
+    "sha256": "1440d82ecc956baab15df4b49da444e4878459e353cf7c280dd5d3dcf2a109af"
+  },
+  "schema": "SESSION_GUARDED_UNIFIED_PREPARATION_V7"
+}
