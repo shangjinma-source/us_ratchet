@@ -55,13 +55,19 @@ def preview_split_account(*, state, action_id, target, expected_proposal_id,
     require(set(securities) == set(marks), 'SPLIT_PREVIEW_ACTION_DOMAIN')
     action_review = review_recorded_splits(state=state, securities=securities,
         action_package=action_package, now=now)
+    targets = risk_result['effective_target_quantities']
+    pending = [order for order in state['orders'].values() if order['status'] == 'OPEN']
+    needed = {sid for mapping in (state['shares'], targets) for sid, quantity in mapping.items() if quantity}
+    needed.update(order['security_id'] for order in pending if order['remaining_quantity'])
+    require(needed <= set(marks) and needed <= set(limits), 'SPLIT_PREVIEW_REQUIRED_QUOTES_MISSING')
     difference = build_strategy_difference(account_id=state['account_id'],
         account_revision=state['revision'], holdings_revision=state['holdings_revision'],
         cash_confirmed_for_holdings_revision=state['cash_confirmed_for_holdings_revision'],
         cash_balance=state['total_uninvested_cash'], cash_basis='TOTAL_UNINVESTED',
         strategy_shares=state['shares'], legacy_shares={},
-        pending_orders=[order for order in state['orders'].values() if order['status'] == 'OPEN'],
-        marks=marks, limits=limits, target_quantities=risk_result['effective_target_quantities'],
+        pending_orders=pending,
+        marks={sid:marks[sid] for sid in needed}, limits={sid:limits[sid] for sid in needed},
+        target_quantities=targets,
         now=now, maximum_mark_age_seconds=maximum_mark_age_seconds, fee_bps=fee_bps)
     return dict(schema='SPLIT_ACCOUNT_ARITHMETIC_PREVIEW_V1', transition=transition,
                 candidate_difference=difference, action_review=action_review,
