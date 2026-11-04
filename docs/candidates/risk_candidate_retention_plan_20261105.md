@@ -33,3 +33,9 @@
 新增backtest/downside_candidate_observer_research.py，max_holdings与风险计算预算均须显式传入。复用原50%裁剪、12情景精确评分、252日严格下行矩比较；验证同日收益与12情景一致。10项夹具测试通过，覆盖增长第二名留存、裁剪后名次反转、跨阶段去重、精确边界、现金、预算及异常不可逆失败。现金fallback独立于搜索观察计数。
 
 finalize仅证明已观察流结束且未发生预算/校验失败；source_authenticated与search_coverage_verified均为false，不能视作完整搜索或来源认证。尚未接入两层搜索、尚未验证访问顺序/预算/原结果不变，尚无代表月成本及账户收益证据。不得据10项测试宣称策略进步。当前仅合成夹具使用显式持股上限，没有替用户选择实际上限。
+
+## 两层隔离接线已验证
+
+新增research_exact_fast_search_observed、saved_quantity_candidate_comparison_observed、research_exact_fast_guided_observed三个研究副本，仅变更来源hash注释、可选参数、观察钩子及导入传递。原三份文件未改，头部来源hash逐项核对。tests/test_downside_observed_search.py三项测试通过（根独立运行2.213秒）。测试使用sys.setprofile独立捕获原始evaluate更新visited/cache后的返回序列；原始、无观察器副本、有观察器副本逐字段结果、全部候选访问顺序及计数一致，连续阶段确有新增候选。两阶段异常传播及原搜索预算不足保持未完成均验证。
+
+这些是三股票合成夹具，不代表真实月运行成本或经济收益。原返回字段及REQUIRED_PINS保留仅用于等价验证，绝不能认证新研究副本；后续真实数据sidecar必须另外绑定三个新副本、观察器、输入数据及数学依赖的hash。持股上限仍待用户选择，未启动代表月份或全窗口回测。
