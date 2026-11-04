@@ -37,3 +37,22 @@ COMPLETE→显示约10.21秒也不能全称前端轮询：`status()` 对COMPLETE
 可验证方案：先用隔离真实router和计数provider证明嵌套调用只读一次、并发锁等待单独归类、异常仍释放，再在下一次本来就授权的复核中收一次完整链时间。不是为了测量重新调用模型。若provider耗时占主导，优先在该操作内消除确证的重复source验证；若锁等待主导，再针对实际锁持有者缩短不必要工作。缺这一步证据，当前不承诺节省39.5秒，也不提出多项微调或单独重启。
 
 本轮只有可核验的瓶颈边界与一个测量方向，尚无新的提速部署成果。
+
+## 一次V32隔离实测（随后完成）
+
+独立计时工具与3项真实RollingMonthlyRuntimeRouter夹具通过：嵌套provider只调用一次、并发等待与provider分别记录、异常释放和原lock/provider恢复。代理保留acquire参数/结果，失败acquire不计held；聚合只用最外层，避免重复计算嵌套持有时间。
+
+初次沿旧脚本V29构建器约1秒即被V29_CONFIGURATION拒绝，未执行context；失败日志保留。核实实际活动文件虽然名为config-29.json，内容schema为V32后，按根授权修正为正式V32构建器，构建前核配置字节hash与schema，只运行一次新诊断。
+
+| V32独立进程一次测量 | 秒 |
+|---|---:|
+| 服务构建 | 191.9754 |
+| 一次service.context | 9.25085 |
+| 唯一snapshot_provider调用 | 8.27208 |
+| 最外层RLock等待 | 0.0000011 |
+
+provider约占context的89.4%。此进程没有生产竞争者，**不能用微秒锁等待证明实际服务器不存在锁竞争，也不能用8.27秒解释旧39.53秒全部差额**。只能确认在当前活动配置下，独立完整发布快照获取仍有可观成本；初始共享scope已生效，不能再通过同一步去重节约一遍。
+
+实际账户/目标完整内容前后相等，活动配置字节前后相等，线程集合前后相等；没有执行startup hooks、新闻worker或模型。原进程自然退出0，未重启或重复构建。证据：`tmp/news_context_boundary_profile_v32_20261105/report.json`及同名前缀stdout/stderr日志；旧失败日志仍在 `tmp/news_context_boundary_profile_20261105.stderr.log`。计时脚本为 `scripts/research/profile_news_context_boundaries_20261105.py`，代理为 `snapshot_timing_probe_20261105.py`。
+
+没有新的生产提速结论；下一次授权的正常端到端操作仍需区分真实锁持有者与快照provider耗时，不能据此删掉独立绑定校验或增加跨请求缓存。
