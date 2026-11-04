@@ -4,12 +4,10 @@ from hashlib import sha256
 import json
 from pathlib import Path
 from time import monotonic
-from urllib.parse import urlsplit
 import requests
 
 from data.news_issuer_source import API, candidate_headlines, parse_issuer_story
-from data.news_sandisk_capture import LIST_URL
-from data.news_sandisk_parser import official, parse_release
+from data.news_sandisk_wire_v1 import headlines as wire_headlines, parse_story as wire_story
 
 
 def moment(value):
@@ -31,8 +29,7 @@ class EventSources:
         self.receipts = []
 
     def fetch(self, url, *, params=None, ticker):
-        allowed = (ticker == 'MRNA' and url in (API+'getHeadlines.json', API+'getStory.json')) or (
-            ticker == 'SNDK' and (url == LIST_URL or (official(url) and '/press-releases/' in urlsplit(url).path)))
+        allowed = ticker in self.supported and url in (API+'getHeadlines.json', API+'getStory.json')
         if not allowed or self.request_count >= 4 or monotonic()-self.started >= 55:
             raise ValueError('EVENT_SOURCE_REQUEST_BUDGET_OR_DOMAIN')
         self.request_count += 1
@@ -47,7 +44,7 @@ class EventSources:
             digest = sha256(raw).hexdigest()
             directory = self.cache/'raw'
             directory.mkdir(parents=True, exist_ok=True)
-            filename = ('issuer-'+digest+'.json') if ticker == 'MRNA' else ('sandisk-'+digest+'.raw')
+            filename = ('issuer-'+digest+'.json') if ticker == 'MRNA' else ('wire-'+digest+'.json')
             (directory/filename).write_bytes(raw)
             receipt = dict(source=ticker, url=url, params=params or {}, status=response.status_code,
                            requested_at=requested, fetched_at=self.clock().isoformat(), sha256=digest, bytes=len(raw))
@@ -67,18 +64,13 @@ class EventSources:
             result = [dict(ticker=ticker, url=row['storyurl'], title=row['headline'], published_at=row['datetime'],
                            original=row, discovered_at=receipt['fetched_at']) for row in rows]
         elif ticker == 'SNDK':
-            raw, receipt = self.fetch(LIST_URL, ticker=ticker)
-            rows = json.loads(raw).get('docs')
-            if not isinstance(rows, list) or len(rows) > 5:
-                raise ValueError('SANDISK_LIST_SCHEMA')
-            result = []
+            params=dict(topics='SNDK',src='bwi',start=(now-timedelta(days=90)).date().isoformat(),end=now.date().isoformat(),summary='true')
+            raw,receipt=self.fetch(API+'getHeadlines.json',params=params,ticker=ticker)
+            rows=wire_headlines(json.loads(raw));seen=set();result=[]
             for row in rows:
-                if (row.get('documentType') != ['Press Release'] or not official(row.get('url', '')) or
-                        '/press-releases/' not in urlsplit(row['url']).path or
-                        not isinstance(row.get('title'), list) or len(row['title']) != 1):
-                    raise ValueError('SANDISK_LIST_IDENTITY')
-                result.append(dict(ticker=ticker, url=row['url'], title=row['title'][0],
-                                   published_at=row['documentTypeDate'], original=row, discovered_at=receipt['fetched_at']))
+                if row['permalink'] in seen:continue
+                seen.add(row['permalink'])
+                result.append(dict(ticker=ticker,url=row['storyurl'],title=row['headline'],published_at=row['datetime'],original=row,discovered_at=receipt['fetched_at']))
         else:
             raise ValueError('UNSUPPORTED_ISSUER_SOURCE')
         for row in result:
@@ -92,17 +84,13 @@ class EventSources:
             raw, receipt = self.fetch(API+'getStory.json', ticker=ticker,
                                       params=dict(storyId=str(row['original']['newsid']), newslang='en'))
             event = parse_issuer_story(row['original'], json.loads(raw), receipt['fetched_at'])
+        elif ticker == 'SNDK':
+            raw,receipt=self.fetch(API+'getStory.json',ticker=ticker,params=dict(storyId=str(row['original']['newsid']),newslang='en'))
+            event=wire_story(row['original'],json.loads(raw),receipt['fetched_at'])
+            if event['title']!=row['title'] or moment(event['published_at'])!=moment(row['published_at']):
+                raise ValueError('EVENT_PUBLICATION_CHANGED')
         else:
-            raw, receipt = self.fetch(row['url'], ticker=ticker)
-            event = parse_release(raw, row['url'], receipt['fetched_at'])['event']
-            if event['title'] != row['title']:
-                raise ValueError('SANDISK_LIST_TITLE_MISMATCH')
-            event['listing_published_raw'] = row['published_at']
-            if moment(event['published_at']) != moment(row['published_at']):
-                error = ValueError('TIMELY_TRIGGER_PUBLICATION_CONFLICT')
-                error.publication_conflict = dict(ticker=ticker, url=row['url'],
-                    listing_published_at=row['published_at'], article_published_at=event['published_at'])
-                raise error
+            raise ValueError('UNSUPPORTED_ISSUER_SOURCE')
         if event['tickers'] != [ticker] or event['url'] != row['url']:
             raise ValueError('EVENT_IDENTITY_MISMATCH')
         event['discovered_at'] = row['discovered_at']

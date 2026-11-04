@@ -37,6 +37,20 @@ def recover(event, receipts, cache):
                 parsed=parse_issuer_story(headline,doc,receipt['fetched_at'])
                 body=text(doc['qmcistory']['qmnews']['qmstory']['qmtext'])
                 recovered.append((parsed,body,receipt['sha256']))
+    elif kind=='SANDISK_DISTRIBUTED_BODY' and event.get('tickers')==['SNDK']:
+        from data.news_sandisk_wire_v1 import headlines as wire_headlines, parse_story
+        recovered=[]
+        for listing in receipts:
+            if listing.get('url')!=API+'getHeadlines.json' or listing.get('status')!=200 or listing.get('params',{}).get('topics')!='SNDK':continue
+            rows=wire_headlines(json.loads(raw_bytes(cache,listing,'wire-','.json')))
+            for headline in rows:
+                if headline['storyurl']!=event['url'] or headline['headline']!=event['title']:continue
+                for receipt in receipts:
+                    if receipt.get('url')!=API+'getStory.json' or receipt.get('status')!=200 or str(receipt.get('params',{}).get('storyId'))!=str(headline['newsid']):continue
+                    if receipt['fetched_at']!=event['collected_at']:continue
+                    document=json.loads(raw_bytes(cache,receipt,'wire-','.json'))
+                    parsed=parse_story(headline,document,receipt['fetched_at'])
+                    recovered.append((parsed,text(document['qmcistory']['qmnews']['qmstory']['qmtext']),receipt['sha256']))
     elif kind=='OFFICIAL_RELEASE_BODY' and event.get('tickers')==['SNDK']:
         from bs4 import BeautifulSoup
         recovered=[]

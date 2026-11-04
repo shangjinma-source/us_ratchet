@@ -132,3 +132,12 @@ FAQ第15–16问确认：11月9日登记后至11月19日发股前，权益随期
 2项新测试通过（其中一个覆盖两种初始化状态）：discover→hydrate保留20:05 UTC发布时间和真实采集时间；未知地址拒绝；使用真实EventNewsPipeline但隔离账户/合成公告，首次启动的旧公告进入BASELINE_WINDOW_EXPIRED，已初始化后换来源的新URL旧公告进入BODY_WINDOW_EXPIRED，两者均不调用模型、不启动交易复核。原事件流水线15项回归通过。按需news_desk候选通过原desk及provenance共11项回归（隔离模块替换，只在测试进程生效）。
 
 下一步统一部署desk、EventSources、sources恢复器和新增依赖的源码pins；然后验证实际worker、按需采集及账户/目标未变。线上切换前仍不得声称时间冲突已消除。跨来源保留历史记录，不以新的采集时间重开发布窗口。
+
+
+## 2026-11-04 SNDK分发源正式部署验收
+
+已同步部署news_desk、EventSources、完整原文恢复器及V29新增依赖pins，活动配置为wire_ai_runtime_20261104_v29_r1（交易策略仍为V27）。8010进程34792正常启动；账户、11月目标、静态资源和财报日历GET通过，三层源码配置hash核对一致，完整账户和目标与部署前相同。目标GET本次10.155秒，仅为单次观测，不代表完整现金/AI链路耗时。
+
+实际worker在2026-11-04 16:04:35北京时间开始的新轮完成后：MRNA/SNDK列表均成功，各4条；4次请求；publication_conflicts为空，状态NO_NEW_TIMELY_BODY，worker_alive=true且无worker错误。隔离部署后的状态记录显示两条BODY_WINDOW_EXPIRED，job_id为空、pending为空。历史冲突记录保留，不重写旧时间、不因换来源把旧财报当作新事件。实际API及状态证据仅本地tmp/wire_ai_deployment_20261104。
+
+本轮45项回归通过：完整sources恢复5、wire解析4、wire采集4、定时wire接线2、事件流水线15、desk13、V29准备2。按需与定时路径均已接线；真实按需按钮到模型、盘中完整建议及收益/回撤增量仍未据此验收。未写真实现金、制造成交或下单；拆股统一激活仍未完成，候选代码不等于生产支持。
