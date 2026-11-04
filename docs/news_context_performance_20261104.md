@@ -38,3 +38,11 @@
 
 本地回退/验收目录tmp/scoped_ai_deployment_20261104。回退只恢复previous__三份源码和previous_active.json，不恢复账户数据库。当前仍待：盘中现金按钮到AI结果的完整耗时/有效期验收、真实成交承接、新闻策略经济效果；不自动制造成交。
 
+
+## 已失效结果轮询的提前拒绝候选
+
+生产 GET 已有 COMPLETE 历史任务、未创建新任务或调用模型，返回 STALE 仍耗时 11.366 秒（tmp/news_context_profile_20261104/status_baseline.json）。status 在读取账户/目标之后才判断结果期限，导致明显已过期的结果也重复执行完整历史校验。
+
+候选 docs/candidates/news_investment_service_status_preflight.py 对 COMPLETE 先检查复核期限、READY风险方案期限、新闻generation；任一失效立即返回原有 STALE/REFRESH_ACCOUNT_AND_REVIEW，不提供proposal。原完整context/background及其后的时效、风险期限、新闻generation检查保持，防止校验途中失效。RUNNING和失败任务语义不变。
+
+5项测试通过（tests/test_news_status_preflight_candidate.py）：已过期、新闻已变跳过context；有效结果仍检查账户；context耗时造成过期仍拒收；context期间新闻更新仍拒收。候选未部署，不能将该早退宣称为有效复核或AI计算提速。后续合入正式源码配置并测量同一历史任务GET，生产工作台目前继续使用6b46774。
