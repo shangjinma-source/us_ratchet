@@ -1,5 +1,13 @@
 # 真实事件验收清单
 
+## 2026-11-04现金提速正式配置部署通过
+
+新建独立cash_read_runtime_20261104_v27_r1及v28_r1配置，仅更新controller的批准hash和V28对新V27配置的引用；22层base配置检查显示该脚本只在V27层绑定，不改旧配置或放松校验。132项候选源码hash通过后按正式api.server入口重启8010，当前PID31092。
+
+部署后GET账户200/0.177秒、月目标200/11.580秒、静态脚本200/0.176秒；脚本与候选字节一致，真实账户及月目标与部署前完整快照相同，活动配置引用hash与132项源码pins均通过。部署报告`tmp/cash_read_deployment_20261104/verification.json`；回退仅使用同目录previous_active.json及previous_controller.js，禁止恢复账户快照。前端45场景、mount及news cash/fill invalidation通过，候选专用48场景此前通过。
+
+现在减少现金保存前一次目标读取已正式部署。用户需刷新已打开页面；本次只读验收未实际点击现金、未生成preview或AI，不能宣称端到端节约11秒已实测。日历候选仍未挂载。前一次部署失误的记录保留。
+
 ## 2026-11-04更正：现金提速部署已撤回，源码校验恢复
 
 上一轮仅核对静态文件HTTP200不足以证明部署成功。现金前端脚本属于V27 source_pins；直接修改后月目标GET实际返回422/V27_SOURCE_CHANGED。已将`web/strategy_daily_controller.js`恢复到活动配置批准的精确字节（SHA256 9e189495cd6ccde85a5b89a8577fedcc830d65fe907cf9241472075beea12c63），未更改任何校验门槛。

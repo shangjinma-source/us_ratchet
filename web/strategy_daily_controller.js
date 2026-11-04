@@ -197,7 +197,13 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
     return requestDaily(token);
    }
    if(pendingTargetRequest)fail('TARGET_WRITE_RECONCILIATION_REQUIRED');
-   await read(token);
+   // Cash confirmation needs a fresh account revision, not a pre-save target.
+   // Read the target after saving, then again after preview to retain both
+   // month rollover handling and concurrent target/proposal change detection.
+   const accountBeforeSave=await loadAccount();
+   guard(token);
+   if(!accountBeforeSave?.revision)fail('ACCOUNT_REQUIRED');
+   model.account=copy(accountBeforeSave);
    model.cashSaved=false;
    const previous=model.account.revision;
    if(input.expected_revision!==undefined&&input.expected_revision!==previous)fail('CASH_INPUT_SNAPSHOT_CHANGED');
