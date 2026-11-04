@@ -338,6 +338,17 @@ class NewsInvestmentService:
             # Completed proposals still pass every binding/expiry/news check below.
             return {key: job[key] for key in ('status', 'job_id', 'started_at') if key in job}
         try:
+            # Reject already-invalid opinions before expensive snapshot reads.
+            # Repeat these checks below: context validation can itself take time.
+            if job['status'] == 'COMPLETE':
+                proposal = job['proposal']
+                if self.clock() >= moment(proposal['review_valid_until']):
+                    raise ValueError('REVIEW_EXPIRED')
+                plan = proposal.get('risk_plan', {})
+                if plan.get('status') == 'READY' and self.clock() >= moment(plan['valid_until']):
+                    raise ValueError('RISK_PLAN_EXPIRED')
+                if self.news_generation() != job['news_generation']:
+                    raise ValueError('NEWS_UPDATED')
             if job.get('event_pending'):
                 self.validate_event_control(job['event_pending'])
             self.bound_context(job['binding'])

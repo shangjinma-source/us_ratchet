@@ -46,3 +46,14 @@
 候选 docs/candidates/news_investment_service_status_preflight.py 对 COMPLETE 先检查复核期限、READY风险方案期限、新闻generation；任一失效立即返回原有 STALE/REFRESH_ACCOUNT_AND_REVIEW，不提供proposal。原完整context/background及其后的时效、风险期限、新闻generation检查保持，防止校验途中失效。RUNNING和失败任务语义不变。
 
 5项测试通过（tests/test_news_status_preflight_candidate.py）：已过期、新闻已变跳过context；有效结果仍检查账户；context耗时造成过期仍拒收；context期间新闻更新仍拒收。候选未部署，不能将该早退宣称为有效复核或AI计算提速。后续合入正式源码配置并测量同一历史任务GET，生产工作台目前继续使用6b46774。
+
+## 2026-11-04 失效 AI 结果提前拒绝已部署
+
+正式 service.status 对 COMPLETE 结果先检查复核期限、READY 风险期限与新闻 generation；明确失效立即返回 STALE，不返回 proposal。完整账户/目标/背景校验后仍重复检查时效与新闻变化，未削弱有效结果校验。生产 13 项回归与候选 5 项边界测试通过。
+
+独立 status_ai_runtime_20261104_v27_r1/v28_r1/v29_r1 配置已部署，8010 PID7740。账户200/0.164秒、月目标200/10.167秒、静态脚本200/0.300秒；配置及源码hash通过，账户与目标完整快照未变，新闻worker存活且无worker错误。SNDK发布时间冲突仍未解决。
+
+生产已有过期 COMPLETE 任务 GET 返回 STALE 且无 proposal，耗时0.278秒；前次同类历史任务GET为11.366秒。不是AI推理、盘中有效建议或端到端现金操作的性能验证。本次没有启动模型或写现金、成交。证据与源码/活动配置回退材料位于tmp/status_ai_deployment_20261104；禁止恢复账户数据库快照。
+
+性能微调本轮收束，后续优先整体验收现金→当前建议→AI有效结果及真实成交承接，不继续无界新增微型优化。当前仍缺盘中完整链的最新部署验收和用户真实成交事件，Goal未完成。
+
