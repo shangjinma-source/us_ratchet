@@ -46,3 +46,9 @@ backtest/*_observed.py -text
 tests/test_downside_observed_search.py -text
 
 scripts/research/sample_downside_observer_cost_20261105.py -text
+
+backtest/downside_daily_integer_candidate.py -text
+
+scripts/research/sample_downside_integer_cost_20261105.py -text
+
+tests/test_downside_daily_integer_candidate.py -text

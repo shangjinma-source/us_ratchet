@@ -47,3 +47,9 @@ finalize仅证明已观察流结束且未发生预算/校验失败；source_auth
 实际base评估8091，比较阶段97条既有+22条新连续候选；hook8210次，raw去重8113、cap去重7124。风险仅64次，观察状态不完整，finalize拒绝INCOMPLETE_RISK_OBSERVATION_BUDGET。63个正仓样本与现金通过仅是访问前缀，不是最佳候选、不评价收益或全域覆盖。未分别计时risk，不能从68秒估算新增开销或线性推算全量。
 
 结束后1516文件hash重核通过，根再次独立核验。证据tmp/downside_observer_cost_first_month_20261105/{summary.json,saved_result_differences.json,post_run_source_verification.json}，脚本scripts/research/sample_downside_observer_cost_20261105.py。无账户写、模型或生产改动，无第二次运行。当前不足以证明全窗口风险观察预算可承受，完整研究仍需明确持股偏好并设定覆盖预算。
+
+## 精确日收益算术加速候选（未接观察器）
+
+新增downside_daily_integer_candidate.py：按同一月每日日收益系数取共同分母，候选只做整数加权后构造Fraction；下行矩及阈值不变。调用者仍须认证日期/证券/来源，本纯算术组件不做来源准入。固定最早月份已存best_by_k按k排序裁剪去重前64篮子（不同于前次64个搜索访问前缀），两轮交替原/候选，32256个日收益Fraction逐值完全相等。原1.348/1.326秒、候选0.412/0.437秒，约3.15倍仅指加权算术；构造0.147秒，整数及容器约15.77MB，最大分母4677bit。
+
+两项边界测试通过，完整成本检查5.39秒，无搜索/账户回测。下游classify用合成负1%参考验证同值，不是QQQ风险筛选或经济收益。未分别证明小篮子、全102域或完整回测速度。尚未接入观察器，原生产和冻结脚本未改。证据tmp/downside_integer_cost_20261105/result.json，源文件hash完成后根再次核验。
