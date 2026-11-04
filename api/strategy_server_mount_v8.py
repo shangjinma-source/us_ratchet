@@ -21,11 +21,16 @@ def mount_strategy_routes(*, app, root, environment):
         return previous_mount.mount_strategy_routes(app=app, root=root, environment=environment)
     path, digest = reference
     _, configuration = _read(root, dict(path=path, sha256=digest))
-    if configuration.get('schema') != 'SCHEDULED_EARNINGS_UNIFIED_PREPARATION_V29':
+    schema = configuration.get('schema')
+    if schema == 'BOUND_UI_SNAPSHOT_UNIFIED_PREPARATION_V30':
+        from data.strategy_unified_server_preparation_v30 import build_unified_server_preparation_v30 as build
+        mode = 'UNIFIED_V30'
+    elif schema == 'SCHEDULED_EARNINGS_UNIFIED_PREPARATION_V29':
+        from data.strategy_unified_server_preparation_v29 import build_unified_server_preparation_v29 as build
+        mode = 'UNIFIED_V29'
+    else:
         return previous_mount.mount_strategy_routes(app=app, root=root, environment=environment)
-    from data.strategy_unified_server_preparation_v29 import build_unified_server_preparation_v29
-    prepared = build_unified_server_preparation_v29(root=root, configuration_path=path,
-        configuration_sha256=digest)
+    prepared = build(root=root, configuration_path=path, configuration_sha256=digest)
     router = prepared['router']
     keys = {(route.path, method) for route in app.routes
             if hasattr(route, 'methods') for method in route.methods}
@@ -40,4 +45,4 @@ def mount_strategy_routes(*, app, root, environment):
         raise ValueError('STRATEGY_ACTIVE_MANIFEST_CHANGED_DURING_STARTUP')
     prepared['validate_code']()
     app.include_router(router)
-    return {'mode': 'UNIFIED_V29', 'policy_approved_by_mount': False}
+    return {'mode': mode, 'policy_approved_by_mount': False}

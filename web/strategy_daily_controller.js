@@ -33,7 +33,7 @@ function targetRows(target){
  if(!sameProposal(target,target)||!Array.isArray(rows)||rows.some(row=>!row||typeof row.security_id!=='string'||!row.security_id||typeof row.ticker!=='string'||!row.ticker||!Number.isSafeInteger(row.quantity)||row.quantity<0)||new Set(rows.map(row=>row.security_id)).size!==rows.length)fail('DAILY_RESPONSE_BINDING_MISMATCH');
  return rows;
 }
-function createController({loadAccount,loadTarget,saveCash,generateTarget,previewDaily,recoverTarget=null,onChange=()=>{},now=()=>Date.now()}){
+function createController({loadAccount,loadTarget,saveCash,generateTarget,previewDaily,recoverTarget=null,verifiedSnapshot=false,onChange=()=>{},now=()=>Date.now()}){
  let epoch=0,ownCashStart=false,pendingTargetRequest=null,invalidationGeneration=0;
  let workTail=Promise.resolve(),writeBarrier=0,lastWrite=null;
  const pendingReads=new Map(),pendingSaves=new Map();
@@ -125,7 +125,15 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
    response=await previewDaily(binding);
   }
   guard(token);
-  await read(token);
+  if(verifiedSnapshot){
+   const snapshot=response?.verified_snapshot;
+   if(!snapshot||snapshot.schema!=='BOUND_PREVIEW_SNAPSHOT_V1'||!Number.isFinite(Date.parse(snapshot.checked_at)))fail('DAILY_SNAPSHOT_REQUIRED');
+   const account=snapshot.account,target=snapshot.target;
+   if(account?.revision!==binding.expected_revision||target?.target_id!==binding.target_id||!sameProposal(target,{proposal_id:binding.expected_proposal_id})||!target?.server_month)fail('DAILY_RESPONSE_BINDING_MISMATCH');
+   if(target.server_month!==model.target.server_month)fail('SNAPSHOT_CHANGED_DURING_PREVIEW');
+   targetRows(target);
+   model.account=copy(account);model.target=copy(target);
+  }else await read(token);
   if(model.account.revision!==binding.expected_revision||model.target?.target_id!==binding.target_id||!sameProposal(model.target,{proposal_id:binding.expected_proposal_id}))fail('SNAPSHOT_CHANGED_DURING_PREVIEW');
   acceptDaily(response);
   return copy(model);

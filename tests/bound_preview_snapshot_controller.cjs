@@ -49,5 +49,29 @@ async function scenario({verifiedSnapshot=true,mutate=()=>{},during=()=>{}}={}){
   const displayed=ui.presentation(result.state,now);
   assert.equal(displayed.rows[0].orders.length,seconds>0?1:0,'expired network arrival cannot show an executable order');
  }
- console.log('PASS: bound snapshot, legacy fallback, 8 invalid responses, concurrent invalidation; no account writes');
+ // Cash writes use the same verified transport; retrying a missing snapshot
+ // must refresh advice without repeating a committed balance event.
+ let balance={revision:'r',available_cash:'100',cash_confirmation_valid:true,holdings:[]};
+ const target={target_id:'t',proposal_id:'a'.repeat(64),server_month:'2026-11',target_month:'2026-11',targets:[],proposal_targets:[]};
+ let writes=0,missing=false,reads=0;
+ const controller=ui.createController({verifiedSnapshot:true,now:()=>now,
+  loadAccount:async()=>clone(balance),loadTarget:async()=>{reads++;return clone(target);},
+  saveCash:async input=>{assert.equal(input.expected_revision,balance.revision);writes++;balance={...balance,revision:'cash'+writes,available_cash:input.amount};return clone(balance);},
+  generateTarget:async()=>{throw Error('UNEXPECTED_RESELECTION');},
+  previewDaily:async input=>{
+   assert.equal(input.expected_revision,balance.revision);
+   const response={status:'WAIT',account_revision:balance.revision,target_id:'t',proposal_id:target.proposal_id,new_orders:[],reference_quotes:{}};
+   if(!missing)response.verified_snapshot={schema:'BOUND_PREVIEW_SNAPSHOT_V1',account:clone(balance),target:clone(target),checked_at:new Date(now).toISOString()};
+   return response;
+  }});
+ for(const amount of ['300','50']){
+  const before=reads;await controller.saveBalance({amount});
+  assert.equal(controller.getState().account.available_cash,amount);
+  assert.equal(reads,before+1,'one post-save target read, no post-preview target GET');
+ }
+ assert.equal(writes,2);
+ missing=true;await assert.rejects(controller.saveBalance({amount:'60'}),/DAILY_SNAPSHOT_REQUIRED/);
+ assert.equal(controller.getState().cashSaved,true);assert.equal(writes,3);
+ missing=false;await controller.refresh();assert.equal(writes,3);assert.equal(controller.getState().account.available_cash,'60');
+ console.log('PASS: bound snapshot, legacy fallback, 8 invalid responses, concurrent invalidation, cash increase/decrease and retry; no real account writes');
 })().catch(error=>{console.error(error);process.exitCode=1;});

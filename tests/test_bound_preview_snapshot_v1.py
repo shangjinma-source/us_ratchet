@@ -9,10 +9,12 @@ import unittest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from api.strategy_account import StrategyAccountService
+from api.strategy_account import create_router as account_router
 from api.strategy_frontier_daily_preview_v1 import create_router
 from data.strategy_bound_preview_snapshot_v1 import BoundPreviewSnapshotV1
 from data.strategy_observed_frontier_daily_admission_v1 import ObservedFrontierDailyAdmission
 from data.saved_frontier_monthly_view_v1 import SavedFrontierProposalStore
+from data.strategy_unified_server_preparation_v30 import attach_bound_snapshot
 from test_saved_monthly_frontier_proposal import native_fixture
 
 
@@ -129,6 +131,40 @@ class BoundSnapshotTests(unittest.TestCase):
     def test_clock_reverses_during_projection(self):
         self.hook = lambda: setattr(self, 'now', self.now-timedelta(seconds=1))
         self.assert_refused()
+
+    def test_formal_attachment_preserves_account_routes_and_news_observer(self):
+        from fastapi import APIRouter
+        lifecycle = []
+        router = APIRouter(on_startup=[lambda: lifecycle.append('start')],
+                          on_shutdown=[lambda: lifecycle.append('stop')])
+        router.include_router(account_router(database_path=self.account.store.path,
+            account_id=self.account.account_id, resolver=lambda ticker: None, clock=lambda: self.now))
+        observer = self.service.observed
+        router.include_router(create_router(service=observer))
+        prepared = attach_bound_snapshot(prepared=dict(router=router, observed_daily=observer),
+            validate_sources=lambda: None)
+        self.assertIs(prepared['observed_daily'], observer)
+        app = FastAPI()
+        app.include_router(prepared['router'])
+        with TestClient(app) as client:
+            self.assertEqual(lifecycle, ['start'])
+            before = client.get('/api/strategy-account').json()
+            response = client.post('/api/strategy-daily-v3/preview', json=self.binding)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['verified_snapshot']['account'], before['account'])
+            self.assertEqual(client.get('/api/strategy-account').json(), before)
+        self.assertEqual(lifecycle, ['start', 'stop'])
+
+    def test_attachment_rejects_different_account_database(self):
+        from fastapi import APIRouter
+        router = APIRouter()
+        router.include_router(account_router(database_path=self.account.store.path.with_name('other.sqlite3'),
+            account_id=self.account.account_id, resolver=lambda ticker: None))
+        observer = self.service.observed
+        router.include_router(create_router(service=observer))
+        with self.assertRaisesRegex(ValueError, 'V30_ACCOUNT_DATABASE_MISMATCH'):
+            attach_bound_snapshot(prepared=dict(router=router, observed_daily=observer),
+                validate_sources=lambda: None)
 
 
 if __name__ == '__main__':

@@ -10,13 +10,15 @@ from core.strategy_account_difference import require, timestamp
 
 
 class BoundPreviewSnapshotV1:
-    def __init__(self, *, observed, project_account):
+    def __init__(self, *, observed, project_account, validate_sources=None):
         self.observed = observed
         self.monthly = observed.monthly
         self.project_account = project_account
+        self.validate_sources = validate_sources or observed.validate_sources
 
     def preview(self, *, expected_revision, target_id, expected_proposal_id):
         with self.monthly.snapshot_operation():
+            self.validate_sources()
             state = deepcopy(self.monthly.accounts.read())
             target = deepcopy(self.monthly.current())
             require(state is not None and state['revision'] == expected_revision,
@@ -42,7 +44,7 @@ class BoundPreviewSnapshotV1:
                 'EXPLICIT_RECONFIGURE' if prior == month else None))
             # Projection may take time or allow concurrent database writers.
             # Recheck after projection and journal work, not just before preview.
-            self.observed.validate_sources()
+            self.validate_sources()
             require(self.monthly.accounts.read() == state and
                     self.monthly.current() == target and self.monthly._month() == month,
                     'SNAPSHOT_CHANGED_DURING_PREVIEW')

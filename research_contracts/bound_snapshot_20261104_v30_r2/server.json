@@ -1,0 +1,14 @@
+{
+  "schema": "BOUND_UI_SNAPSHOT_UNIFIED_PREPARATION_V30",
+  "base_v29": {
+    "path": "research_contracts/bound_snapshot_20261104_v29_r1/server.json",
+    "sha256": "38eb66bdfd9347552884e71e7619c061bdee46c6c9c8fa995464859fcacaf125"
+  },
+  "source_pins": {
+    "web/index.html": "1814ef84efaeffb2ad1942f7e698451172e9f6d4ebfed61065cccfb2fc0ab945",
+    "data/strategy_bound_preview_snapshot_v1.py": "3fbc94eded9d4343346ccd8c0f14838cc9d987c9595f206fcf53fb52203a029d",
+    "data/strategy_unified_server_preparation_v30.py": "9ba55203c70e15cbbdaa9beecb5d8a3a2081f546ab9306f4400854cb9d2dfd73",
+    "web/strategy_daily_controller.js": "1b051e140449f223cf59549d1c0a7ac61d4f80dac50907628bbee5c3f80f3b9e",
+    "api/strategy_server_mount_v8.py": "0ad8389d72db7ea943fe2a9cd11ca6fd6cb65193b2c129ce415441903559a04f"
+  }
+}

@@ -5052,7 +5052,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!window.StrategyDailyController || !window.StrategyDailyMount?.mount)
     throw new Error('DAILY_COMPONENT_UNAVAILABLE');
   window.RealStrategyDaily = window.StrategyDailyMount.mount($('strategyMonthlyTarget'), {
-    initialPreview: true,
+    initialPreview: true, verifiedSnapshot: true,
     ...window.StrategyTargetRecoveryV1.dependencies({
       base: window.StrategyDailyController.httpDependencies(
         window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),
