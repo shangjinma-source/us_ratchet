@@ -27,7 +27,8 @@ def digest(value):
 
 class NewsInvestmentService:
     def __init__(self, *, cache, context, preview, validate=lambda: None,
-                 collector=None, model=None, source_builder=None, clock=None, risk_plan_provider=None):
+                 collector=None, model=None, source_builder=None, clock=None, risk_plan_provider=None, input_operation=None):
+        self.input_operation = input_operation
         self.cache = Path(cache)
         self.risk_plan_provider = risk_plan_provider
         self.context, self.preview, self.validate = context, preview, validate
@@ -163,18 +164,29 @@ class NewsInvestmentService:
             binding = job['binding']
             if job.get('event_pending'):
                 self.validate_event_control(job['event_pending'])
-            account, target, names = measured('initial_bound_context', self.bound_context, binding)
+            if self.input_operation is None:
+                account, target, names = measured('initial_bound_context', self.bound_context, binding)
+            def strategy_inputs():
+                if self.input_operation is None:
+                    return account, target, names, measured('initial_preview', self.preview, **binding)
+                # The snapshot scope belongs to this worker thread, not the
+                # caller: preview reenters the same monthly lock on this thread.
+                # Release it before model execution; never cache across analysis.
+                with self.input_operation():
+                    state, goal, identities = measured('initial_bound_context', self.bound_context, binding)
+                    preview = measured('initial_preview', self.preview, **binding)
+                    return state, goal, identities, preview
             # News capture does not wait for a potentially slow market preview.
             def parallel_inputs():
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     capture = executor.submit(measured, 'news_capture',
                                               (lambda *args, **kwargs: deepcopy(job['event_pending']['snapshot'])) if job.get('event_pending') else (self.collector or collect),
                                               self.cache, limit=20)
-                    initial = executor.submit(measured, 'initial_preview', self.preview, **binding)
+                    initial = executor.submit(strategy_inputs)
                     snapshot = capture.result()
-                    original = self.normalize_preview(initial.result())
-                    return snapshot, original
-            snapshot, original = measured('parallel_capture_preview', parallel_inputs)
+                    state, goal, identities, preview = initial.result()
+                    return snapshot, state, goal, identities, self.normalize_preview(preview)
+            snapshot, account, target, names, original = measured('parallel_capture_preview', parallel_inputs)
             self.bound_context(binding)
             quantities = original['effective_target_quantities']
             positions = [dict(security_id=sid, ticker=names.get(sid, ''),

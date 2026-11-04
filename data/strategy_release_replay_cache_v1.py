@@ -3,6 +3,7 @@
 Not installed in production. Callers must include every non-file input in the
 key and route every file dependency through ReadDependencies.read.
 """
+import stat
 from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
@@ -20,9 +21,16 @@ class ReadDependencies:
     def checked_read(root, path, digest, limit):
         root = Path(root)
         target = root / path
-        require(not any(item.is_symlink() or
-            (item.exists() and getattr(item.lstat(), 'st_file_attributes', 0) & 0x400)
-            for item in (target, *target.parents)), 'REPLAY_DEPENDENCY_LINK_REFUSED')
+        # One lstat per path component; still check every component on every read.
+        for item in (target, *target.parents):
+            try:
+                metadata = item.lstat()
+            except FileNotFoundError:
+                # The original reader below rejects missing or invalid sources.
+                continue
+            require(not stat.S_ISLNK(metadata.st_mode) and
+                    not (getattr(metadata, 'st_file_attributes', 0) & 0x400),
+                    'REPLAY_DEPENDENCY_LINK_REFUSED')
         reader = MonthlyFileConfiguration(root=root, path=path,
             sha256_value=digest, clock=None)
         return reader._read(path, digest, limit)

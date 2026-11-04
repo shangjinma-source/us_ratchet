@@ -102,5 +102,27 @@ class ScopedInputTests(fixtures.ServiceTests):
         self.assertIsNone(router._active_snapshot)
         self.assertGreater(router._snapshot_provider.call_count, 2)
 
+
+import test_news_scheduled_service_integration as calendar_fixtures
+
+class ScopedCalendarTests(calendar_fixtures.ScheduledServiceIntegrationTests):
+    def setUp(self):
+        with patch.object(calendar_fixtures, 'module', candidate):
+            super().setUp()
+        self.depth = 0
+        @contextmanager
+        def operation():
+            self.depth += 1
+            try:
+                yield
+            finally:
+                self.depth -= 1
+        self.base.service.input_operation = operation
+        original_model = self.model.side_effect
+        def model(*args, **kwargs):
+            self.assertEqual(self.depth, 0)
+            return original_model(*args, **kwargs)
+        self.model.side_effect = model
+
 if __name__ == '__main__':
     unittest.main()
