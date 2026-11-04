@@ -98,3 +98,13 @@ FAQ第15–16问确认：11月9日登记后至11月19日发股前，权益随期
 5项隔离集成测试使用真实账户/目标/风险store与准备包，覆盖一致时三库写入仍阻塞、新现金确认拒收旧包、新目标拒收、风险推进拒收、manifest摘要错误且锁释放。没有使用真实账户运行该流程，工作台未改动。
 
 仍未完成最终路由切换或旧进程退役。准备包在调用方进行最终发布前仍须保证不可变并重新核验；不能把该上下文跨网络/模型调用持有，也不能仅凭退出成功视为已激活。下一步统一运行时版本引用与失败恢复，不再重复实现单库组件。
+
+## SNDK 财报分发源时间核对取得新证据
+
+发行人IR页 https://investor.sandisk.com/news-releases/news-release-details/sandisk-reports-fiscal-first-quarter-2027-financial-results 的检索标题显示16:05，正文明确电话会为16:30 Eastern，并直接链接 https://www.businesswire.com/news/home/20261029487384/en/ 。本地直接抓IR返回403；未绕过限制。Business Wire本页在web工具不可读。
+
+转用已有公开QuoteMedia传输入口做2次独立请求（不写生产新闻状态）：getHeadlines.json topics=SNDK src=bwi返回对应发布；getStory.json取得完整正文。列表datetime与正文datetime均为2026-10-29T16:05:00-04:00，即20:05 UTC。storyid、标题、分发商及正文中的Business Wire permalink与发行人IR引用一致，校验成功。原始响应和请求收据留本地tmp/sndk_ir_publication_20261104，comparison.json保存结果。
+
+结论：已取得该发行人财报的可读取分发时间20:05 UTC；旧新闻室正文20:30 UTC恰对应电话会时点，不能通过统一加减7小时“修复”列表。当前证据不证明全球最早公开时间、不证明工具在10月29日事前读到，不应把11月4日补采当作新触发。
+
+下一步实现有固定发行人/Business Wire来源与证券域验证的独立列表正文适配，保留原始pub/discovery时间并防重复；不直接修改旧证据时间，不全局取消冲突门槛。生产仍保留原冲突状态，尚未切换新来源。
