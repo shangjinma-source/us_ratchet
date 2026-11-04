@@ -38,6 +38,10 @@
 
 `tests/test_strategy_split_native_transition_v1.py`一项跨模块隔离测试通过：旧SQLite→新格式副本→拆股记录→成本视图→原生目标/提案验证→风险单位投影→拆后风险推进，拒绝旧proposal及篡改目标。用合成10月日期和已签名玩具选股输入；不是SNDK真实到账、真实行情或HTTP验收。累计24项定向测试。该测试未持久化转换后的风险、未构建正式preview、未运行AI；下一步仍为风险历史及全组件一致切换。
 
+继续检查发现`monthly_exit_observations`假设整个区间使用同一basis_id，而`apply_frontier_exit_packet`补历史时明确拒绝旧单位。因此只转换末次风险state不足以兼容现有入口。新增未挂载`data/strategy_split_history_projection_v1.py`，保留全部原观察及摘要，另外生成统一拆后单位的计算视图，派生content ID不冒充原始来源认证。3项合成日历测试通过：历史原文不变、拆股不误退出、拆前已退出状态保留、缺行/单位错配拒绝。日历完整性与行动证据需调用者认证，测试只覆盖给定合成日期，不是实际整月行情认证。累计27项定向测试。
+
+该计算视图仍未写入风险SQLite。后续持久化必须同时保存原始证据、转换行动和派生结果，并改造来源适配入口；不能直接覆盖旧risk_prices或仅替换末次state。此发现调整了实现顺序，生产仍未切换。
+
 ### 当前核心能力实测
 
 离线运行`python -m scripts.audit_split_readiness_v1`：真实账本reducer不支持SPLIT事件，返回EVENT_FIELDS；真实风险核心遇到明确单位变化返回RISK_UNIT_CHANGE_REQUIRES_REVIEW。若上层错误地保留旧单位标签并传入拆股后价格，核心会按跌幅退出。这一分支只说明来源适配层必须正确标记单位，不代表已发现生产来源层会放行该错误。
