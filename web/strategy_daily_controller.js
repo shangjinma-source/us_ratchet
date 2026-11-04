@@ -33,7 +33,9 @@ function targetRows(target){
  if(!sameProposal(target,target)||!Array.isArray(rows)||rows.some(row=>!row||typeof row.security_id!=='string'||!row.security_id||typeof row.ticker!=='string'||!row.ticker||!Number.isSafeInteger(row.quantity)||row.quantity<0)||new Set(rows.map(row=>row.security_id)).size!==rows.length)fail('DAILY_RESPONSE_BINDING_MISMATCH');
  return rows;
 }
-function createController({loadAccount,loadTarget,saveCash,generateTarget,previewDaily,recoverTarget=null,verifiedSnapshot=false,onChange=()=>{},now=()=>Date.now()}){
+function createController({loadAccount,loadTarget,saveCash,generateTarget,previewDaily,loadCurrentAdvice=null,recoverTarget=null,verifiedSnapshot=false,onChange=()=>{},now=()=>Date.now()}){
+ if(loadCurrentAdvice&&!verifiedSnapshot)fail('VERIFIED_SNAPSHOT_REQUIRED');
+ let prefetchedDaily=null;
  let epoch=0,ownCashStart=false,pendingTargetRequest=null,invalidationGeneration=0;
  let workTail=Promise.resolve(),writeBarrier=0,lastWrite=null;
  const pendingReads=new Map(),pendingSaves=new Map();
@@ -95,6 +97,7 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
  }
  async function transact(operation){
   if(model.busy)fail('DAILY_UI_BUSY');
+  prefetchedDaily=null;
   const token=++epoch;model.busy=true;model.retrying=false;model.error=null;retire();notify();
   try{return await operation(token);}
   catch(error){if(token===epoch){retire();model.error=error.message;}throw error;}
@@ -110,7 +113,8 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
    binding.expected_proposal_id=model.target.proposal_id;
   }
   let response;
-  try{response=await previewDaily(binding);}
+  const prefetched=prefetchedDaily;prefetchedDaily=null;
+  try{response=prefetched?.token===token?prefetched.response:await previewDaily(binding);}
   catch(error){
    guard(token);
    const body=error.responseBody;
@@ -138,8 +142,30 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
   acceptDaily(response);
   return copy(model);
  }
- async function read(token){
-  const [account,target]=await Promise.all([loadAccount(),loadTarget()]);
+ async function read(token,forAdvice=false,expectedRevision){
+  prefetchedDaily=null;
+  let account,target;
+  if(forAdvice&&loadCurrentAdvice){
+   let bundle;
+   try{bundle=await loadCurrentAdvice(expectedRevision);}
+   catch(error){
+    guard(token);const body=error.responseBody;
+    if(!(error.responseStatus===409&&body?.reason==='EVIDENCE_UNAVAILABLE'&&body.status==='WAIT'&&
+      Array.isArray(body.new_orders)&&body.new_orders.length===0&&body.orders_created===false&&
+      Object.keys(body.reference_quotes||{}).length===0))throw error;
+    model.retrying=true;notify();
+    bundle=await loadCurrentAdvice(expectedRevision);
+   }
+   guard(token);
+   if(bundle?.schema!=='CURRENT_ADVICE_READ_V1'||bundle.orders_created!==false||bundle.account_mutated!==false)fail('CURRENT_ADVICE_READ_INVALID');
+   account=bundle.account;target=bundle.target;
+   if(expectedRevision!==undefined&&account?.revision!==expectedRevision)fail('ACCOUNT_CHANGED_AFTER_CASH_SAVE');
+   if(bundle.daily!==null){
+    const snapshot=bundle.daily?.verified_snapshot;
+    if(!snapshot||JSON.stringify(snapshot.account)!==JSON.stringify(account)||JSON.stringify(snapshot.target)!==JSON.stringify(target))fail('CURRENT_ADVICE_BINDING_MISMATCH');
+    prefetchedDaily={token,response:copy(bundle.daily)};
+   }else if(target?.target_id&&target.target_month===target.server_month)fail('CURRENT_ADVICE_REQUIRED');
+  }else [account,target]=await Promise.all([loadAccount(),loadTarget()]);
   guard(token);
   if(!account?.revision)fail('ACCOUNT_REQUIRED');
   if(!target?.server_month)fail('SERVER_MONTH_REQUIRED');
@@ -198,7 +224,7 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
   // become unusable; stale orders are retained only as historical references.
   invalidate(){++invalidationGeneration;++epoch;retire();model.busy=false;model.retrying=false;model.error='DAILY_UI_SNAPSHOT_CHANGED';notify();},
   load(){return schedule('load',async token=>{if(!await recoverPendingTarget(token))await read(token);return copy(model);});},
-  refresh(){return schedule('refresh',async token=>{if(!await recoverPendingTarget(token)){if(pendingTargetRequest)await finishTargetRequest(token);else await read(token);}return requestDaily(token);});},
+  refresh(){return schedule('refresh',async token=>{if(!await recoverPendingTarget(token)){if(pendingTargetRequest)await finishTargetRequest(token);else await read(token,true);}return requestDaily(token);});},
   saveBalance(input){input=copy(input);return schedule('save',async token=>{
    if(await recoverPendingTarget(token)){
     if(String(input.amount)!==String(model.account.available_cash))fail('TARGET_RECOVERY_COMPLETE_RESUBMIT_CASH');
@@ -226,7 +252,7 @@ function createController({loadAccount,loadTarget,saveCash,generateTarget,previe
    if(!updated?.revision)fail('CASH_SAVE_REVISION_REQUIRED');
    model.cashSaved=true;
    const savedRevision=updated.revision;
-   const serverMonth=await read(token);
+   const serverMonth=await read(token,true,savedRevision);
    if(model.account.revision!==savedRevision)fail('ACCOUNT_CHANGED_AFTER_CASH_SAVE');
    let reason=null;
    if(!model.target)reason='INITIAL';

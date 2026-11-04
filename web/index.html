@@ -5061,6 +5061,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       request: window.StrategyDailyController.fetchTransport(window.fetch.bind(window)),
       recovery: window.StrategyTargetRecoveryV1.create({storage: window.localStorage,
         locks: window.navigator.locks, makeId: () => window.crypto.randomUUID()})}),
+    loadCurrentAdvice: expectedRevision => window.StrategyDailyController.fetchTransport(window.fetch.bind(window))(
+      '/api/strategy-daily-v3/current' + (expectedRevision === undefined ? '' : '?expected_revision=' + encodeURIComponent(expectedRevision))),
     onTargetChanged: target => { if (!realStrategyInitializing) window.RealStrategyMonthlyCharts?.setTarget(target); },
     onRecommendedTickers: tickers => window.RealStrategyAccount.setRecommendedTickers(tickers),
     onRefreshCompleted: () => { if (!realStrategyInitializing) window.RealStrategyMonthlyCharts?.refresh(); },
