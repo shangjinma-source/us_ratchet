@@ -5,6 +5,9 @@ Unrecognized, changed or conflicting notices require review, never a guessed dat
 This module is not mounted in the production news/model pipeline yet.
 """
 from datetime import datetime, timedelta, timezone
+from copy import deepcopy
+from hashlib import sha256
+import json
 import re
 from zoneinfo import ZoneInfo
 
@@ -95,3 +98,46 @@ def build_scheduled_earnings(snapshot, cache, positions):
                 status='REVIEW_REQUIRED' if conflict else 'CONTEXT_ONLY',
                 events=[] if conflict else candidates, coverage=coverage,
                 calendar_coverage_complete=False, changes_strategy=False)
+
+
+SCHEDULE_INSTRUCTION = '''Scheduled events are context, not fresh news or evidence
+of negative earnings. Their original publication time is unchanged. A call time
+is not the exact first public release time. Do not cite scheduled_events as
+action evidence. If a security has only calendar context and no admissible full
+news body, return ABSTAIN and explain the known upcoming call in uncertainty.
+Do not infer earnings results, surprise, price direction or automatic trades.
+'''
+
+
+def prepare_review_input(snapshot, cache, positions):
+    """Build the actual model projection, keeping calendar out of news evidence."""
+    from data.news_investment_sources_v1 import build_sources
+    from data.news_investment_model_v1 import _project, PROMPT
+    news = build_sources(snapshot, cache, positions, max_chars=110000)
+    payload, excluded = _project(list(news['sources'].values()), positions)
+    calendar = build_scheduled_earnings(snapshot, cache, positions)
+    payload['scheduled_events'] = deepcopy(calendar['events'])
+    payload['scheduled_coverage'] = deepcopy(calendar['coverage'])
+    payload['decision_at'] = snapshot['generated_at']
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+    return dict(payload=payload, input_sha256=sha256(encoded.encode()).hexdigest(),
+                instruction=PROMPT+'\n'+SCHEDULE_INSTRUCTION,
+                news_coverage=news['coverage'], calendar_status=calendar['status'],
+                excluded=excluded, production_activated=False)
+
+
+def validate_review_output(answer, prepared, now):
+    """Use the real model validator; calendar IDs never enter its evidence map."""
+    from data.news_investment_model_v1 import _validate
+    payload = prepared['payload']
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+    require(sha256(encoded.encode()).hexdigest() == prepared['input_sha256'],
+            'SCHEDULE_REVIEW_INPUT_CHANGED')
+    current = moment(now)
+    require(moment(payload['decision_at']) <= current, 'SCHEDULE_REVIEW_CLOCK_INVALID')
+    for event in payload['scheduled_events']:
+        require(current < moment(event['scheduled_at']) and
+                current-moment(event['observed_at']) <= timedelta(hours=24),
+                'SCHEDULE_REVIEW_CONTEXT_EXPIRED')
+    # _validate mutates normalized evidence, so never mutate a saved raw answer.
+    return _validate(deepcopy(answer), payload)

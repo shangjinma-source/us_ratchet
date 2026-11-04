@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from data.news_issuer_source import API, parse_issuer_story
-from data.news_scheduled_earnings_v1 import build_scheduled_earnings
+from data.news_scheduled_earnings_v1 import build_scheduled_earnings, prepare_review_input, validate_review_output
 
 
 class ScheduledEarningsTests(unittest.TestCase):
@@ -73,6 +73,35 @@ class ScheduledEarningsTests(unittest.TestCase):
             first['events'] += second['events']; first['source_receipts'] += second['source_receipts']
             result = self.build(first, root)
             self.assertEqual(result['status'], 'REVIEW_REQUIRED'); self.assertFalse(result['events'])
+
+    def test_model_context_is_not_trade_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); snapshot = self.fixture(root)
+            prepared = prepare_review_input(snapshot, root, [dict(ticker='MRNA',
+                security_id='synthetic', original_qty=0, target_qty=4)])
+            self.assertFalse(prepared['payload']['sources'])
+            event = prepared['payload']['scheduled_events'][0]
+            row = dict(security_id='synthetic', ticker='MRNA', action='ABSTAIN',
+                       reason='缺乏当前业绩正文', uncertainty=['已知财报会议安排'],
+                       counterevidence=[], buy_fraction='1/1', holding_fraction='1/1', evidence=[])
+            answer = dict(rows=[row])
+            self.assertEqual(validate_review_output(answer, prepared, snapshot['generated_at']), answer)
+            for action, buy, hold in [('EXIT', '0/1', '0/1'), ('PAUSE_BUY', '0/1', '1/1')]:
+                row.update(action=action, buy_fraction=buy, holding_fraction=hold,
+                           evidence=[dict(source_id=event['source_id'], quote=event['source_quote'])])
+                with self.assertRaisesRegex(ValueError, 'QUOTE_NOT_IN_SOURCE'):
+                    validate_review_output(answer, prepared, snapshot['generated_at'])
+
+    def test_model_context_integrity_and_expiry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); snapshot = self.fixture(root)
+            prepared = prepare_review_input(snapshot, root, [dict(ticker='MRNA',
+                security_id='synthetic', original_qty=0, target_qty=4)])
+            with self.assertRaisesRegex(ValueError, 'CONTEXT_EXPIRED'):
+                validate_review_output({}, prepared, '2026-11-06T13:00:00+00:00')
+            prepared['payload']['scheduled_events'][0]['scheduled_at'] = '2026-11-07T13:00:00+00:00'
+            with self.assertRaisesRegex(ValueError, 'INPUT_CHANGED'):
+                validate_review_output({}, prepared, snapshot['generated_at'])
 
 
 if __name__ == '__main__':
