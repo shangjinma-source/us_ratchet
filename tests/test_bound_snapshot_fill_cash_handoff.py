@@ -5,6 +5,7 @@ No production ledger, live quotes, broker fills or AI outcome certification.
 """
 from pathlib import Path
 from copy import deepcopy
+from datetime import timedelta
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -19,6 +20,16 @@ import test_frontier_fill_cash_handoff as handoff
 
 
 class BoundSnapshotFillCashHandoffTests(handoff.FrontierFillCashHandoffTests):
+    def test_added_cash_after_sale_is_reflected_without_reselecting_target(self):
+        self.check_sell_cash_handoff(sold_quantity=3, confirmed_cash=300,
+                                    cash_basis='AVAILABLE_AFTER_RESERVATIONS')
+
+    def test_saved_cash_survives_final_preview_failure_and_retry(self):
+        self.inject_projection_failure = True
+        self.projection_failures = 0
+        self.check_sell_cash_handoff(sold_quantity=3)
+        self.assertEqual(self.projection_failures, 1)
+
     def transport(self, service, monthly, case):
         # The lower-level fixture stores the raw target; the production monthly
         # view enriches it with the saved proposal before the HTTP UI projection.
@@ -35,7 +46,16 @@ class BoundSnapshotFillCashHandoffTests(handoff.FrontierFillCashHandoffTests):
             journal=DailyAdviceJournalV1(Path(case['root'])/'handoff-advice.sqlite3'),
             clock=lambda: case['clock'][0], validate_sources=lambda: None,
             policy_references={})
-        bound = BoundPreviewSnapshotV1(observed=observed, project_account=account.project)
+        def project(state):
+            if (getattr(self, 'inject_projection_failure', False)
+                    and not self.projection_failures
+                    and any(row['payload']['event_id'] == 'synthetic-cash-after-sale'
+                            for row in state['events'])):
+                self.projection_failures += 1
+                raise ValueError('SNAPSHOT_PROJECTION_TEMPORARILY_UNAVAILABLE')
+            return account.project(state)
+
+        bound = BoundPreviewSnapshotV1(observed=observed, project_account=project)
         app = FastAPI()
         app.include_router(create_router(service=bound))
         # Start Windows' event-loop socketpair before the fixture blocks network.
@@ -47,6 +67,24 @@ class BoundSnapshotFillCashHandoffTests(handoff.FrontierFillCashHandoffTests):
             response = client.post('/api/strategy-daily-v3/preview', json=binding)
             result = response.json()
             self.assertEqual(case['accounts'].read(), before)
+            if result.get('reason') == 'SNAPSHOT_PROJECTION_TEMPORARILY_UNAVAILABLE':
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(result['new_orders'], [])
+                self.assertEqual(result['reference_quotes'], {})
+                self.assertNotIn('verified_snapshot', result)
+                # Retry only the read/preview: never append another cash or fill.
+                # The first attempt already persisted an intraday cap capture;
+                # production retries acquire a newer capture, not the frozen one.
+                stale_capture = client.post('/api/strategy-daily-v3/preview', json=binding)
+                self.assertEqual(stale_capture.status_code, 409)
+                self.assertEqual(stale_capture.json()['reason'], 'CAP_INPUT_NOT_NEWER')
+                self.assertEqual(stale_capture.json()['new_orders'], [])
+                self.assertNotIn('verified_snapshot', stale_capture.json())
+                self.assertEqual(case['accounts'].read(), before)
+                case['clock'][0] += timedelta(seconds=1)
+                response = client.post('/api/strategy-daily-v3/preview', json=binding)
+                result = response.json()
+                self.assertEqual(case['accounts'].read(), before)
             if response.status_code != 200:
                 self.assertEqual(response.status_code, 409)
                 self.assertEqual(result['new_orders'], [])
