@@ -12,7 +12,7 @@ from core.strategy_account_ledger import canonical
 from backtest.return_priority_fresh_cash_quantity_search_v2 import search_fresh_cash_quantities
 from data.current_research_capital_decision_v2 import VERSION, REQUIRED_PINS
 from docs.candidates.strategy_account_split_target_inputs import build_target_inputs, require
-from data.strategy_account_preview import preview_scoped_account
+from docs.candidates.strategy_account_split_scoped_preview import preview_scoped_account
 
 
 ROOT=Path(__file__).resolve().parents[2]

@@ -1,6 +1,6 @@
 """Capture through persisted target using disposable split/account journals."""
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 from fractions import Fraction
 from hashlib import sha256
@@ -11,7 +11,7 @@ from unittest.mock import Mock
 from core.strategy_account_split_store_v1 import SplitStrategyAccountStore
 from core.strategy_account_ledger import canonical
 from core.strategy_monthly_target_store import StrategyMonthlyTargetStore
-from data.strategy_monthly_target_service import StrategyMonthlyTargetService, LIFECYCLE_PATHS
+from docs.candidates.strategy_split_monthly_target_service import StrategyMonthlyTargetService, LIFECYCLE_PATHS
 from docs.candidates.strategy_account_split_target_service import StrategyAccountTargetService, MINIMUM_RUNTIME_PATHS
 from docs.candidates.strategy_account_split_execution_limits import build_execution_limits
 from docs.candidates.strategy_account_split_market_capture import StrategyAccountMarketCapture
@@ -52,6 +52,42 @@ class SplitMonthlyPublicationTests(unittest.TestCase):
             self.assertTrue(evidence['limits']['B']['cap_record_hash'])
             self.assertTrue(caps.path.exists())
             self.assertEqual(store.read(), state)
+            # Reuse this exact validated evidence to test service/account binding;
+            # cap-store replay of the same minute intentionally rejects duplicates.
+            monthly.execution_provider = lambda *arguments: deepcopy(evidence)
+            preview = monthly.preview()
+            orders = preview['difference']['new_orders']
+            sells = [row for row in orders if row['side']=='SELL']
+            self.assertEqual([(row['security_id'],row['quantity']) for row in sells], [('A',16)])
+            self.assertLessEqual(Fraction(preview['difference']['new_buy_cash_required']), 80)
+            self.assertEqual(preview['target_id'], target['target_id'])
+            self.assertEqual(monthly.preview(), preview)
+            self.assertEqual(store.read(), state)
+            invalid = deepcopy(evidence)
+            invalid['limits']['A']['unit_id'] = 'old'
+            monthly.execution_provider = lambda *arguments: invalid
+            with self.assertRaisesRegex(ValueError, 'SPLIT_PREVIEW_UNIT_MISMATCH'):
+                monthly.preview()
+            # Continue through a genuine journal API in the disposable account:
+            # a simulated sale must invalidate cash until it is reconfirmed.
+            at = provider.clock() + timedelta(seconds=10)
+            for component in (provider, provider.market, provider.actions, monthly, monthly.selection, store):
+                component.clock = lambda: at
+            sold, _ = store.append(dict(event_id='simulated-sale', kind='DIRECT_FILL', security_id='A',
+                side='SELL', quantity=16, price='10', fees='0', executed_at=at.isoformat()),
+                expected_revision=state['revision'])
+            monthly.execution_provider = provider.execution
+            with self.assertRaisesRegex(ValueError, 'CASH_RECONFIRMATION_REQUIRED'):
+                monthly.preview()
+            confirmed, _ = store.append(dict(event_id='cash-after-sale', kind='CASH_CONFIRM',
+                amount='260', cash_basis='TOTAL_UNINVESTED'), expected_revision=sold['revision'])
+            after_sale = monthly.preview()
+            self.assertEqual(after_sale['target_id'], target['target_id'])
+            self.assertFalse(any(row['side']=='SELL' for row in after_sale['difference']['new_orders']))
+            self.assertGreater(Fraction(after_sale['difference']['new_buy_cash_required']),
+                Fraction(preview['difference']['new_buy_cash_required']))
+            self.assertLessEqual(Fraction(after_sale['difference']['new_buy_cash_required']), 240)
+            self.assertEqual(store.read(), confirmed)
 
     def test_real_limits_reject_incomplete_buy_minutes_after_publication(self):
         with TemporaryDirectory() as folder:
