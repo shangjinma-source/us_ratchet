@@ -33,3 +33,5 @@ scripts/research/*ema20*20261105.py -text
 tests/test_ema20_market_adapter.py -text
 scripts/research/inventory_compounder_ttm_20261105.py -text
 scripts/research/inspect_five_ttm_bridges_20261105.py -text
+scripts/research/*downside_frontier*20261105.py -text
+tests/test_downside_frontier_preflight_math.py -text
