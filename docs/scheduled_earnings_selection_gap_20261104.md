@@ -1,0 +1,7 @@
+# 财报日历来源恢复后的选稿缺口
+
+只读当前API确认，先前UNAVAILABLE原因为SCHEDULE_LATEST_REFRESH_UNCONFIRMED。日历缓存最近失败抓取为HTTPError，后续主按钮处于10分钟冷却，未成功重采集。根线程随后仅调用一次正式日历refresh，无模型或账户写入；同一任务返回SUCCEEDED、CONTEXT_ONLY但events为空。
+
+新保存snapshot实际包含11/4的Moderna临床报告和10/22的Merck/Moderna联合临床公告。普通capture依次取最新两篇正文，先前10/13预告11/6会议的公告被挤出。由此“来源成功”仍不能证明未来财报日历完整；不能直接删除失败保护或用过期缓存宣称已核实。
+
+下一步限定：日历用途单独优先选取财报安排、取消、改期相关标题，继续最多3次请求及原发行人/正文/日期/内容hash核验；不影响普通新闻排序，不把旧安排公告变成新新闻交易触发。先用已保存标题原文核对覆盖和候选测试，当前未部署新修复。完整来源及任务证据留在data/cache/news/scheduled_earnings_v1，不上传缓存。
