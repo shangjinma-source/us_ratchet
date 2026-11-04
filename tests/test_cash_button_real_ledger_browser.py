@@ -39,7 +39,11 @@ const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-pri
   assert.equal(state.error,process.argv[2]);
   assert.equal(state.daily,null);
   assert.equal(state.historicalOrders.S[0].limit_price,'10');
-  assert((await page.locator('#daily').innerText()).includes('已失效'));
+  const failedText=await page.locator('#daily').innerText();
+  assert(failedText.includes('不可用于挂单'));
+  assert(failedText.includes('等待'));
+  assert(!failedText.includes('买入 1 股'));
+  assert(!failedText.includes('$10.00'));
   assert(!(await page.locator('#daily').innerText()).includes('Unexpected token'));assert.equal(state.cashSaved,true);
   assert.equal(state.account.available_cash,'120');const savedRevision=state.account.revision;
   await button.click();await page.evaluate(()=>daily.whenIdle());
@@ -106,12 +110,26 @@ class CashButtonLedgerBrowserTests(unittest.TestCase):
             def page():
                 return HTMLResponse('<div id="daily"></div>' + ''.join(
                     '<script src="/web/' + name + '"></script>' for name in
-                    ('strategy_account.js', 'strategy_daily_controller.js', 'strategy_daily_mount.js')))
+                    ('strategy_account.js', 'strategy_daily_controller.js', 'news_investment_review.js', 'news_scheduled_earnings.js', 'strategy_daily_mount.js')))
 
             @app.get('/web/{name}')
             def script(name: str):
-                assert name in ('strategy_account.js', 'strategy_daily_controller.js', 'strategy_daily_mount.js')
+                assert name in ('strategy_account.js', 'strategy_daily_controller.js', 'news_investment_review.js', 'news_scheduled_earnings.js', 'strategy_daily_mount.js')
                 return FileResponse(ROOT / 'web' / name, media_type='text/javascript')
+
+            @app.get('/api/news/events/status')
+            def news_events():
+                return dict(enabled=False, status='DISABLED')
+
+            @app.get('/api/news/scheduled-earnings')
+            @app.post('/api/news/scheduled-earnings/refresh')
+            def news_calendar():
+                return dict(status='CONTEXT_ONLY', events=[])
+
+            @app.post('/api/news/investment-review')
+            def news_review():
+                # This fixture verifies cash persistence, not model behavior.
+                return dict(status='FAILED', error='ISOLATED_MODEL_NOT_CONFIGURED')
 
             @app.get('/api/strategy-account/target')
             def target():

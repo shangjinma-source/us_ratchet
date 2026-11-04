@@ -31,6 +31,7 @@ const settle=async()=>{for(let i=0;i<25;i++)await Promise.resolve();};
    setTimer:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimer:id=>timers.delete(id),
    saveCash:async request=>{writes++;cash=request.amount;if(change)revision='r'+writes;return liveAccount();},
    newsReviewFetch:async(url,options)=>{
+   if(url.startsWith('/api/news/scheduled-earnings'))return {ok:true,json:async()=>({status:'CONTEXT_ONLY',events:[]})};
     if(!options){if(url.includes('event-job'))eventJobGets++;return {ok:true,json:async()=>url.includes('/job?')?oldTerminal:({enabled:eventOffer,status:'REVIEW_COMPLETE',job_id:'event-job'})};}
     posts++;posted.push(JSON.parse(options.body));activePosts++;maxConcurrent=Math.max(maxConcurrent,activePosts);
     return new Promise(resolve=>responses.push(value=>{activePosts--;resolve({ok:true,json:async()=>value});}));
@@ -59,6 +60,7 @@ const settle=async()=>{for(let i=0;i<25;i++)await Promise.resolve();};
  const host=new Node('div',doc);
  const instance=mount(host,{...deps(),setTimer:(fn,ms)=>{timers.set(++tid,{fn,ms});return tid;},clearTimer:id=>timers.delete(id),
   saveCash:async()=>{writes++;return account;},newsReviewFetch:async(url,options)=>{
+   if(url.startsWith('/api/news/scheduled-earnings'))return {ok:true,json:async()=>({status:'CONTEXT_ONLY',events:[]})};
    if(options){posts++;return posts===1?{ok:false,status:409,json:async()=>({status:'RUNNING',job_id:'older',error:'ANALYSIS_ALREADY_RUNNING'})}:{ok:false,status:429,json:async()=>({status:'FAILED',error:'DAILY_REVIEW_BUDGET_EXHAUSTED'})};}
    if(url.includes('/job?')){polls++;return {ok:true,json:async()=>({status:'FAILED',error:'STALE_ACCOUNT_OR_TARGET'})};}
    return {ok:true,json:async()=>({enabled:false,status:'DISABLED'})};
@@ -74,6 +76,7 @@ const settle=async()=>{for(let i=0;i<25;i++)await Promise.resolve();};
  {
   const news=require('../web/news_investment_review.js');let clock=now,posts=0;const pending=[];
   const host=new Node('div',doc),n=news.mount(host,{now:()=>clock,setTimer:()=>1,clearTimer:()=>{},fetch:async(url,options)=>{
+   if(url.startsWith('/api/news/scheduled-earnings'))return {ok:true,json:async()=>({status:'CONTEXT_ONLY',events:[]})};
    if(!options)return {ok:true,json:async()=>({enabled:false})};posts++;return new Promise(resolve=>pending.push(value=>resolve({ok:true,json:async()=>value})));
   }});
   n.update({account,target,daily:daily()});void n.start();await settle();
