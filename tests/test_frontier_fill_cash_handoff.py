@@ -26,7 +26,18 @@ class FrontierFillCashHandoffTests(unittest.TestCase):
     def test_partial_sell_preserves_remainder_and_duplicate_fill_is_idempotent(self):
         self.check_sell_cash_handoff(sold_quantity=2)
 
-    def check_sell_cash_handoff(self, *, sold_quantity):
+    def test_broker_available_cash_after_withdrawal_limits_reinvestment(self):
+        self.check_sell_cash_handoff(sold_quantity=3, confirmed_cash=50, expect_buy=False,
+                                    cash_basis='AVAILABLE_AFTER_RESERVATIONS')
+
+    def test_available_cash_after_partial_withdrawal_still_allows_affordable_buy(self):
+        self.check_sell_cash_handoff(sold_quantity=3, confirmed_cash=100,
+                                    cash_basis='AVAILABLE_AFTER_RESERVATIONS')
+
+    def check_sell_cash_handoff(self, *, sold_quantity, confirmed_cash=None,
+                               cash_basis='TOTAL_UNINVESTED', expect_buy=True):
+        if confirmed_cash is None:
+            confirmed_cash = sold_quantity * 50
         with TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / 'tmp') as directory:
             case = fixture.IsolatedFrontierPipelineTests().case(directory, cash='0', cancel=True)
             case['accounts'].clock = lambda: case['clock'][0]
@@ -88,8 +99,9 @@ class FrontierFillCashHandoffTests(unittest.TestCase):
                     preview()
 
                 case['accounts'].append(dict(event_id='synthetic-cash-after-sale', kind='CASH_CONFIRM',
-                    amount=str(sold_quantity*50), cash_basis='TOTAL_UNINVESTED'), expected_revision=sold['revision'])
+                    amount=str(confirmed_cash), cash_basis=cash_basis), expected_revision=sold['revision'])
                 confirmed = case['accounts'].read()
+                self.assertEqual(Fraction(confirmed['available_cash']), confirmed_cash)
                 first = preview()
                 case['clock'][0] += timedelta(minutes=1)
                 repeated = preview()
@@ -97,15 +109,14 @@ class FrontierFillCashHandoffTests(unittest.TestCase):
                                           for o in result['new_orders']]
                 self.assertEqual(actions(first), actions(repeated))
                 self.assertEqual(first['status'], 'READY')
-                self.assertTrue(first['new_orders'])
                 buys = [o for o in first['new_orders'] if o['side'] == 'BUY']
                 sells = [o for o in first['new_orders'] if o['side'] == 'SELL']
-                self.assertTrue(buys)
+                self.assertEqual(bool(buys), expect_buy)
                 self.assertTrue(all(o['security_id'] == 'B' for o in buys))
                 self.assertEqual([(o['security_id'], o['quantity']) for o in sells],
                                  [('D', 3-sold_quantity)] if sold_quantity < 3 else [])
                 # Unfilled remaining sales cannot finance the next buy order.
-                self.assertLessEqual(-sum((Fraction(o['estimated_cash_change']) for o in buys), Fraction(0)), sold_quantity*50)
+                self.assertLessEqual(-sum((Fraction(o['estimated_cash_change']) for o in buys), Fraction(0)), confirmed_cash)
                 self.assertTrue(all(o['proposal_id'] == case['proposal']['proposal_id'] for o in first['new_orders']))
                 self.assertEqual(case['accounts'].read(), confirmed)
                 self.assertEqual(case['target'], original_target)
