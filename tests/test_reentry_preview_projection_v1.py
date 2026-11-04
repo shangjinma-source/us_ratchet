@@ -40,16 +40,30 @@ class ProjectionTests(unittest.TestCase):
         return dict(account=account, original_preview=original, reference_state=state,
                     decision_session='2026-10-27', scope_proofs=[proof], now=NOW)
 
-    def test_cash_reallocated_before_fill_and_sell_unchanged(self):
+    def test_filtered_buy_keeps_other_buy_quantity_and_sell_unchanged(self):
         args = self.case(); before = deepcopy(args)
         result = project(**args)
         self.assertEqual([(x['security_id'],x['quantity']) for x in args['original_preview']['new_orders'] if x['side']=='BUY'], [('A',1),('B',1)])
-        self.assertEqual([(x['security_id'],x['quantity']) for x in result['candidate_orders'] if x['side']=='BUY'], [('B',2)])
+        self.assertEqual([(x['security_id'],x['quantity']) for x in result['candidate_orders'] if x['side']=='BUY'], [('B',1)])
         self.assertEqual([x for x in result['candidate_orders'] if x['side']=='SELL'],
                          [x for x in args['original_preview']['new_orders'] if x['side']=='SELL'])
-        self.assertEqual(result['difference']['new_buy_cash_required'], '200')
+        self.assertEqual(result['difference']['new_buy_cash_required'], '100')
         self.assertFalse(result['sell_proceeds_assumed']); self.assertFalse(result['executable'])
         self.assertEqual(args, before)
+
+    def test_filter_does_not_create_buy_previously_rounded_to_zero(self):
+        args = self.case()
+        account, original, _ = fixture(held={'A': 0, 'B': 0, 'C': 3},
+                                      targets={'A': 4, 'B': 4, 'C': 1}, cash='100')
+        args.update(account=account, original_preview=original)
+        args['scope_proofs'][0]['original_binding']['account_revision'] = account['revision']
+        result = project(**args)
+        self.assertEqual([order for order in result['candidate_orders'] if order['side'] == 'BUY'], [])
+        from data.reentry_daily_response_v1 import format_reference_advice
+        response = format_reference_advice(original_preview=original, projection=result,
+                                            account=account, configuration_sha256='f'*64)
+        row = next(row for row in response['daily_gate']['rows'] if row['security_id'] == 'B')
+        self.assertEqual((row['action'], row['intent'], row['reason']), ('WAIT', 'BUY', 'NO_AVAILABLE_CASH'))
 
     def test_real_composition_order_provenance_survives_projection(self):
         args = self.case(); original = args['original_preview']

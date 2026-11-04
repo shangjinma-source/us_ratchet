@@ -1,7 +1,7 @@
 """Isolated reference projection with the original ledger and execution evidence.
 
 Source/identity authentication and atomic recovery precede this layer. No IO,
-model calls, persistence or production routing. Cash is allocated after gating.
+model calls, persistence or production routing. Retained orders keep their size.
 """
 from copy import deepcopy
 from datetime import timedelta
@@ -77,7 +77,15 @@ def project_reference_preview(*, account, original_preview, reference_state,
     gate = build_buy_scope_gate(reference_state=reference_state, original_binding=binding,
         decision_session=decision_session, effective_targets=targets,
         actual_shares=account['shares'], scope_proofs=scope_proofs)
-    derived_targets = gate['execution_targets']
+    derived_targets = deepcopy(gate['execution_targets'])
+    original_buys = {order['security_id']: order['quantity']
+                     for order in original_check['new_orders'] if order['side'] == 'BUY'}
+    if any(status != 'ALLOW' for status in gate['buy_status'].values()):
+        # Match the frozen research: remove blocked BUYs, do not redistribute
+        # their cash. Revalidate the retained quantities through the real ledger.
+        for sid, status in gate['buy_status'].items():
+            if status == 'ALLOW':
+                derived_targets[sid] = account['shares'].get(sid, 0) + original_buys.get(sid, 0)
     needed = {sid for sid in set(account['shares']) | set(derived_targets)
               if account['shares'].get(sid, 0) > 0 or derived_targets.get(sid, 0) > 0}
     difference = preview_scoped_account(
@@ -87,6 +95,9 @@ def project_reference_preview(*, account, original_preview, reference_state,
     original_sells = [o for o in original_check['new_orders'] if o['side'] == 'SELL']
     derived_sells = [o for o in difference['new_orders'] if o['side'] == 'SELL']
     require(derived_sells == original_sells, 'REFERENCE_ORIGINAL_SELL_CHANGED')
+    expected_orders = [order for order in original_check['new_orders']
+                       if order['side'] == 'SELL' or gate['buy_status'][order['security_id']] == 'ALLOW']
+    require(difference['new_orders'] == expected_orders, 'REFERENCE_RETAINED_ORDER_CHANGED')
     for order in difference['new_orders']:
         if order['side'] == 'BUY':
             sid = order['security_id']
@@ -113,6 +124,7 @@ def project_reference_preview(*, account, original_preview, reference_state,
         buy_reference_gate=gate, difference=difference,
         candidate_orders=candidate_orders, binding=lineage,
         binding_sha256=digest(lineage), original_sell_orders_preserved=True,
-        cash_allocated_after_reference_gate=True, sell_proceeds_assumed=False,
+        cash_allocated_after_reference_gate=False, retained_order_quantities_preserved=True,
+        sell_proceeds_assumed=False,
         executable=False, orders_created=False, account_mutated=False,
         source_authentication_performed=False)

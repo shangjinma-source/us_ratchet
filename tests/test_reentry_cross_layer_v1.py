@@ -107,12 +107,12 @@ class CrossLayerTests(unittest.TestCase):
         evidence['evidence_sha256']=digest(evidence)
         return evidence
 
-    def test_cross_month_blocks_buy_preserves_sell_and_reallocates_real_cash(self):
+    def test_cross_month_blocks_buy_preserves_sell_and_retains_cash(self):
         review=self.review(self.prepare());self.advance(DAYS[-1],70,[self.synthetic_complete_evidence(review)])
         result,original=self.preview(review)
         self.assertEqual([(o['security_id'],o['quantity']) for o in original['new_orders'] if o['side']=='BUY'],[('A',1),('B',1)])
-        self.assertEqual([(o['security_id'],o['side'],o['quantity']) for o in result['candidate_orders']],[('C','SELL',2),('B','BUY',2)])
-        self.assertEqual(result['difference']['new_buy_cash_required'],'200')
+        self.assertEqual([(o['security_id'],o['side'],o['quantity']) for o in result['candidate_orders']],[('C','SELL',2),('B','BUY',1)])
+        self.assertEqual(result['difference']['new_buy_cash_required'],'100')
     def test_conditional_interval_cannot_commit_recovery(self):
         review=self.review(self.prepare(True))
         before=(self.risk.read('synthetic'),self.risk.read_reference('synthetic'))

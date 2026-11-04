@@ -39,6 +39,8 @@ def format_reference_advice(*, original_preview, projection, account, configurat
         else:
             action = ordered.get(sid, 'WAIT' if gap else 'HOLD')
             reason = 'BOUND_DAILY_TARGET' if sid in ordered or not gap else 'NO_AVAILABLE_CASH'
+            if review == 'ALLOW' and sid not in ordered and projection['original_effective_targets'].get(sid, 0) > held:
+                action, intent, reason = 'WAIT', 'BUY', 'NO_AVAILABLE_CASH'
         require(sid not in ordered or action == ordered[sid], 'REFERENCE_RESPONSE_ORDER_GATE_CHANGED')
         rows.append(dict(security_id=sid, held=held, effective_target=effective,
                          action=action, intent=intent, reason=reason))

@@ -35,7 +35,7 @@ class GateTests(unittest.TestCase):
  def test_identity_known_price_missing_wait_only_and_no_new_sell(self):
   p=self.proof(['NEW'],'INTERSECTS_BUY_SCOPE');r=self.run_gate([p]);self.assertEqual(r['execution_targets']['NEW'],0);self.assertEqual(r['original_sell_quantities'],{'SELL':5});self.assertEqual(r['buy_status']['NEW'],'WAIT_REFERENCE')
   self.shares['NEW']=4;r=self.run_gate([p]);self.assertEqual(r['execution_targets']['NEW'],4);self.assertEqual(r['original_sell_quantities'],{'SELL':5})
- def test_filter_before_real_cash_allocation(self):
+ def test_raw_gate_reallocation_differs_from_research_and_requires_projection_cap(self):
   import sys
   sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tests'))
   from test_news_risk_plan_v1 import fixture,NOW
