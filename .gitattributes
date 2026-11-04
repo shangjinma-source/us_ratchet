@@ -52,3 +52,7 @@ backtest/downside_daily_integer_candidate.py -text
 scripts/research/sample_downside_integer_cost_20261105.py -text
 
 tests/test_downside_daily_integer_candidate.py -text
+
+backtest/downside_candidate_observer_integer_research.py -text
+
+tests/test_downside_candidate_observer_integer_research.py -text
