@@ -56,3 +56,13 @@ provider约占context的89.4%。此进程没有生产竞争者，**不能用微�
 实际账户/目标完整内容前后相等，活动配置字节前后相等，线程集合前后相等；没有执行startup hooks、新闻worker或模型。原进程自然退出0，未重启或重复构建。证据：`tmp/news_context_boundary_profile_v32_20261105/report.json`及同名前缀stdout/stderr日志；旧失败日志仍在 `tmp/news_context_boundary_profile_20261105.stderr.log`。计时脚本为 `scripts/research/profile_news_context_boundaries_20261105.py`，代理为 `snapshot_timing_probe_20261105.py`。
 
 没有新的生产提速结论；下一次授权的正常端到端操作仍需区分真实锁持有者与快照provider耗时，不能据此删掉独立绑定校验或增加跨请求缓存。
+
+## 后续静态核查边界
+
+V32经V28安装的实际provider仍走upgrade_handoff和replayed activation。首尾base_provider是发布变化检测，不能删除；BoundedSourceGate单调用路径去重、重放缓存及单次lstat已存在，不重复实施。剩余疑点为ReadDependencies.checked_read后MonthlyFileConfiguration._read再次检查路径元数据，尚无累计耗时占比，不能据此宣称找到主要瓶颈。下一步仅允许一次context的cProfile取证，构建不计入profile，无模型/启动hook/账户写入；若没有明显且安全的收益，结束该微优化方向。
+
+## 最后一次函数级取证与收束
+
+单次V32进程构建187.396秒，cProfile只覆盖context：13.0345秒，其中provider11.5820秒。分析器有运行开销，不与无profile的9.25秒直接作性能优劣比较。两次历史发布_validate_saved累计9.948秒，重放缓存4次verify累计3.606秒，282126次nt.stat自身3.588秒，11次V27 gate累计2.133秒，2次training compile累计1.480秒。这些调用存在父子包含，不能相加当总耗时。
+
+账户、目标、活动配置和线程集合未变，context结果hash与上次相同，startup/model均0，进程退出0。证据tmp/news_context_cprofile_v32_20261105/{report.json,context.prof,cumulative.txt,self_time.txt}。未找到收益明确且可安全删除的主要工作，停止该微优化分支；不再启动profile、不删重验、不改生产。端到端刷新慢尚未解决，独立进程无法解释线上锁竞争，后续仅随真实端到端使用采集，不为了性能测量单独调用模型。
