@@ -100,6 +100,10 @@ def build_target_inputs(*,state,source_package,manifest_path,marks_path,unit_rev
         historical_search_arguments=deepcopy(historical),search_arguments=arguments,
         strategy_shares=deepcopy(state['shares']),total_uninvested_cash=str(cash),strategy_equity=str(equity),
         holding_market_values=holding_values,marks=deepcopy(marks),current_price_basis=basis,
+        recorded_split_bindings={row['payload']['security_id']: dict(
+            action_sha256=sha256(canonical(row['payload'])).hexdigest(),
+            unit_id=row['payload']['new_unit_id']) for row in state['events']
+            if row['payload']['kind']=='SPLIT_CONFIRMED'},
         execution_context=dict(pending_orders=[deepcopy(o) for o in state['orders'].values() if o['status']=='OPEN'],
             reserved_cash=state['reserved_cash'],reserved_shares=deepcopy(state['reserved_shares']),available_cash=state['available_cash'],
             cash_confirmation_revision=state['cash_confirmed_for_holdings_revision'],sell_proceeds_available=False),

@@ -109,6 +109,18 @@ class StrategyAccountEvidenceProvider:
         from core.strategy_account_split_v1 import replay
         require(replay(state['account_id'],[r['payload'] for r in state['events']])==state,'ACCOUNT_REPLAY_MISMATCH')
         require(state['cash_confirmation_valid'] and state['execution_ready'],'CASH_RECONFIRMATION_REQUIRED')
+        # A current quote cannot silently change the units of a frozen target.
+        latest = {row['payload']['security_id']: row['payload'] for row in state['events']
+                  if row['payload']['kind'] == 'SPLIT_CONFIRMED'}
+        for sid in needed & set(latest):
+            action = latest[sid]
+            require(binding.get('recorded_split_bindings', {}).get(sid) == dict(
+                action_sha256=sha256(canonical(action)).hexdigest(), unit_id=action['new_unit_id']),
+                'SPLIT_FROZEN_TARGET_REQUIRES_TRANSITION')
+            mark = binding['marks'].get(sid, {})
+            require(mark.get('unit_id') == action['new_unit_id']
+                    and stamp(mark['observed_at']) >= stamp(action['effective_at']),
+                    'SPLIT_FROZEN_TARGET_UNIT_MISMATCH')
         if not needed:
             stamp(self.clock().isoformat())
             return dict(marks={},limits={})
