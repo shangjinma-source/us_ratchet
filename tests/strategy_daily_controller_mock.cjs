@@ -1,7 +1,8 @@
 'use strict';
 // All cash fixtures are synthetic; no broker balance or transfer amount is used.
 const assert=require('node:assert/strict');
-const {waitingExplanation,createController,httpDependencies,fetchTransport,presentation,render,dollars,actionExplanation}=require('../web/strategy_daily_controller.js');
+const candidate=process.env.TEST_CASH_READ_CANDIDATE==='1';
+const {waitingExplanation,createController,httpDependencies,fetchTransport,presentation,render,dollars,actionExplanation}=require(candidate?'../docs/candidates/strategy_daily_controller_cash_read_optimization.js':'../web/strategy_daily_controller.js');
 for(const reason of ['STALE_SNAPSHOT','STALE_REVISION','STALE_TARGET'])assert.match(waitingExplanation(reason),/无需重复录入新增资金/);
 const clone=structuredClone;
 const now=Date.parse('2026-10-20T15:00:00Z');
@@ -19,6 +20,7 @@ function fixture(month='2026-10'){
 }
 (async()=>{
  let count=0;
+ if(candidate){
  // A cash save must not wait for a redundant pre-save target read. Both
  // post-save and post-preview target checks remain authoritative.
  {
@@ -41,6 +43,7 @@ function fixture(month='2026-10'){
   const c=createController(f);
   await assert.rejects(c.saveBalance({amount:'50'}),/SNAPSHOT_CHANGED_DURING_PREVIEW/);
   assert.equal(c.getState().daily,null);assert.equal(c.getState().cashSaved,true);count++;
+ }
  }
  // An order cannot extend its source quote or survive a missing source.
  for(const source of ['expired','missing']){

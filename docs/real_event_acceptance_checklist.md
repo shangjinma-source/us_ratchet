@@ -1,5 +1,13 @@
 # 真实事件验收清单
 
+## 2026-11-04更正：现金提速部署已撤回，源码校验恢复
+
+上一轮仅核对静态文件HTTP200不足以证明部署成功。现金前端脚本属于V27 source_pins；直接修改后月目标GET实际返回422/V27_SOURCE_CHANGED。已将`web/strategy_daily_controller.js`恢复到活动配置批准的精确字节（SHA256 9e189495cd6ccde85a5b89a8577fedcc830d65fe907cf9241472075beea12c63），未更改任何校验门槛。
+
+恢复后真实月目标接口HTTP200/SAVED_TARGET/2026-11，耗时11.51秒；活动V27全部113项与V28全部19项source pins核对一致。生产controller45场景通过。提速候选保留在`docs/candidates/strategy_daily_controller_cash_read_optimization.js`，`TEST_CASH_READ_CANDIDATE=1`时48场景通过。**现金减少一次目标读取尚未正式上线**，前文静态可访问与提速上线的表述在此撤回。生产服务未重启，真实账户未修改。
+
+下一步必须创建独立候选配置并包含新脚本校验，进行正式挂载GET/preview验证后再部署；日历接线也必须走同一流程。不能再次只替换静态文件，或通过跳过source_pins让功能可用。
+
 ## 2026-11-04财报安排模型输入/输出边界（未挂载）
 
 识别候选新增prepare_review_input与validate_review_output，复用正式模型_project/_validate：七日内新闻证据仍为sources，未来会议单列scheduled_events，原发布时间不变；单有会议安排时要求ABSTAIN并说明不确定性。日历source_id不能充当PAUSE_BUY/EXIT证据，输入hash或会议/采集时效变化会拒绝旧输出。六项测试通过，含日历冒充动作依据和执行期间过期/篡改；真实原文投影得到news=0、scheduled=1，无模型调用。
