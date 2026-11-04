@@ -1,5 +1,8 @@
 """Capture through persisted target using disposable split/account journals."""
 from copy import deepcopy
+from datetime import datetime
+from functools import partial
+from fractions import Fraction
 from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -10,10 +13,60 @@ from core.strategy_account_ledger import canonical
 from core.strategy_monthly_target_store import StrategyMonthlyTargetStore
 from data.strategy_monthly_target_service import StrategyMonthlyTargetService, LIFECYCLE_PATHS
 from docs.candidates.strategy_account_split_target_service import StrategyAccountTargetService, MINIMUM_RUNTIME_PATHS
+from docs.candidates.strategy_account_split_execution_limits import build_execution_limits
+from docs.candidates.strategy_account_split_market_capture import StrategyAccountMarketCapture
+from data.strategy_account_live_pullback_runtime import LazyPullbackCapStore
 import test_split_evidence_provider_v1 as fixtures
 
 
 class SplitMonthlyPublicationTests(unittest.TestCase):
+    def test_published_target_uses_real_buy_and_sell_limit_calculations(self):
+        with TemporaryDirectory() as folder:
+            monthly, provider, store, state, _ = self.case(folder)
+            target = monthly.generate(event_id='initial', reason='INITIAL',
+                expected_revision=state['revision'], previous_target_id=None)
+            class Identity:
+                def __call__(self, ticker):
+                    return dict(ticker=ticker, security_id={'AAA':'A','BBB':'B'}[ticker],
+                        source_references=['identity-only'], source_hashes={'identity-only':sha256(b'id').hexdigest()})
+                def _read(self, path, digest):
+                    return b'id'
+            def fetch(ticker):
+                opening = int(datetime.fromisoformat('2026-11-02T14:30:00+00:00').timestamp())
+                return canonical(dict(chart=dict(error=None, result=[dict(meta=dict(symbol=ticker,
+                    currency='USD', instrumentType='EQUITY', exchangeTimezoneName='America/New_York', dataGranularity='1m',
+                    regularMarketPrice=10, regularMarketTime=opening+1800,
+                    currentTradingPeriod=dict(regular=dict(start=opening, end=opening+23400))),
+                    timestamp=[opening+60*i for i in range(30)], indicators=dict(quote=[dict(
+                        open=[10]*30, high=[11]*30, low=[9]*30, close=[10]*30, volume=[10]*30)]))])))
+            provider.market = StrategyAccountMarketCapture(identity_resolver=Identity(), fetch=fetch, clock=provider.clock)
+            caps = LazyPullbackCapStore(Path(folder)/'real-limit-caps.sqlite3', clock=lambda: provider.clock().isoformat(),
+                max_history_rows=32, max_history_bytes=8*1024*1024)
+            provider.limits = partial(build_execution_limits, cap_store=caps)
+            evidence = provider.execution(state, target)
+            self.assertFalse(evidence['limits']['A']['buy_evaluated'])
+            self.assertEqual(evidence['limits']['A']['unit_id'], 'new')
+            self.assertEqual(evidence['limits']['A']['sell'], '10')
+            self.assertTrue(evidence['limits']['B']['buy_evaluated'])
+            self.assertLess(Fraction(evidence['limits']['B']['buy']), 10)
+            self.assertTrue(evidence['limits']['B']['cap_record_hash'])
+            self.assertTrue(caps.path.exists())
+            self.assertEqual(store.read(), state)
+
+    def test_real_limits_reject_incomplete_buy_minutes_after_publication(self):
+        with TemporaryDirectory() as folder:
+            monthly, provider, store, state, _ = self.case(folder)
+            target = monthly.generate(event_id='initial', reason='INITIAL',
+                expected_revision=state['revision'], previous_target_id=None)
+            caps = LazyPullbackCapStore(Path(folder)/'caps.sqlite3', clock=lambda: provider.clock().isoformat(),
+                max_history_rows=32, max_history_bytes=8*1024*1024)
+            provider.limits = partial(build_execution_limits, cap_store=caps)
+            # Existing fixture intentionally contains only the most recent minute.
+            with self.assertRaisesRegex(ValueError, 'NONCONTIGUOUS_OR_FUTURE_MINUTE'):
+                provider.execution(state, target)
+            self.assertFalse(caps.path.exists())
+            self.assertEqual(store.read(), state)
+
     def test_frozen_target_must_bind_latest_split_before_execution_capture(self):
         with TemporaryDirectory() as folder:
             monthly, provider, store, state, _ = self.case(folder)

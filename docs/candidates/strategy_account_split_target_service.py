@@ -20,6 +20,7 @@ MINIMUM_RUNTIME_PATHS=set(REQUIRED_PINS)|{
     'docs/candidates/strategy_account_split_unit_review.py',
     'docs/candidates/strategy_account_split_evidence_provider.py',
     'docs/candidates/strategy_account_split_market_capture.py',
+    'docs/candidates/strategy_account_split_execution_limits.py',
     'core/strategy_account_split_v1.py','core/strategy_account_split_store_v1.py',
     'data/strategy_recorded_split_review_v1.py',
     'data/strategy_account_target_service.py','data/strategy_account_target_decision.py',
