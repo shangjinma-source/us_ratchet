@@ -99,15 +99,30 @@ class CrossLayerTests(unittest.TestCase):
         self.assertEqual([o for o in result['candidate_orders'] if o['side']=='SELL'],[o for o in difference['new_orders'] if o['side']=='SELL'])
         self.assertFalse(result['executable']);self.assertFalse(result['sell_proceeds_assumed'])
         return result,difference
+    def synthetic_complete_evidence(self,review):
+        # Explicit test-only closed universe authority, never a production source upgrade.
+        evidence=dict(review['evidence'],coverage_complete=True,
+                      coverage='SYNTHETIC_CLOSED_UNIVERSE_TEST_ONLY')
+        evidence.pop('evidence_sha256')
+        evidence['evidence_sha256']=digest(evidence)
+        return evidence
+
     def test_cross_month_blocks_buy_preserves_sell_and_reallocates_real_cash(self):
-        review=self.review(self.prepare());self.advance(DAYS[-1],70,[review['evidence']])
+        review=self.review(self.prepare());self.advance(DAYS[-1],70,[self.synthetic_complete_evidence(review)])
         result,original=self.preview(review)
         self.assertEqual([(o['security_id'],o['quantity']) for o in original['new_orders'] if o['side']=='BUY'],[('A',1),('B',1)])
         self.assertEqual([(o['security_id'],o['side'],o['quantity']) for o in result['candidate_orders']],[('C','SELL',2),('B','BUY',2)])
         self.assertEqual(result['difference']['new_buy_cash_required'],'200')
+    def test_conditional_interval_cannot_commit_recovery(self):
+        review=self.review(self.prepare(True))
+        before=(self.risk.read('synthetic'),self.risk.read_reference('synthetic'))
+        with self.assertRaisesRegex(ValueError,'REFERENCE_COMPLETE_COVERAGE_REQUIRED'):
+            self.advance(DAYS[-1],70,[review['evidence']])
+        self.assertEqual((self.risk.read('synthetic'),self.risk.read_reference('synthetic')),before)
+
     def test_completed_recovery_commits_then_restores_cash_allocation(self):
         review=self.review(self.prepare(True));self.assertFalse(review['coverage_complete'])
-        old=self.risk.read_reference('synthetic');self.advance(DAYS[-1],70,[review['evidence']]);new=self.risk.read_reference('synthetic')
+        old=self.risk.read_reference('synthetic');self.advance(DAYS[-1],70,[self.synthetic_complete_evidence(review)]);new=self.risk.read_reference('synthetic')
         self.assertEqual(new['locks'],{});self.assertGreater(new['version'],old['version']);self.assertEqual(new['releases'][0]['recovered_session'],DAYS[2])
         result,original=self.preview();self.assertEqual(result['candidate_orders'],original['new_orders'])
         self.assertEqual([(o['security_id'],o['quantity']) for o in result['candidate_orders'] if o['side']=='BUY'],[('A',1),('B',1)])

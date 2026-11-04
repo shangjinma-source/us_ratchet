@@ -23,7 +23,7 @@ class ReferenceTests(unittest.TestCase):
  def locked(self):self.advance('2026-10-01',100);return self.advance('2026-10-02',79)['reference_state']
  def evidence(self,lock,prices=(78,80,70)):
   dates=['2026-10-05','2026-10-06','2026-10-07'][:len(prices)]
-  return dict(status='AUTHENTICATED_COMPLETE_REFERENCE_INTERVAL',evidence_sha256=H,exit_session=lock['exit_session'],origin_security_id='S',origin_unit_id='u1',expected_sessions=dates,completed_through=dates[-1],as_of='2026-10-08T12:00:00Z',rows=[dict(session_date=d,completed=True,completed_at=d+'T20:00:00Z',security_id='S',unit_id='u1',close=str(p)) for d,p in zip(dates,prices)])
+  return dict(status='AUTHENTICATED_COMPLETE_REFERENCE_INTERVAL',coverage_complete=True,evidence_sha256=H,exit_session=lock['exit_session'],origin_security_id='S',origin_unit_id='u1',expected_sessions=dates,completed_through=dates[-1],as_of='2026-10-08T12:00:00Z',rows=[dict(session_date=d,completed=True,completed_at=d+'T20:00:00Z',security_id='S',unit_id='u1',close=str(p)) for d,p in zip(dates,prices)])
  def test_unfilled_exit_and_repeated_refresh(self):
   s=self.locked();self.assertEqual(s['locks']['S']['reference_price'],'79');self.assertEqual(self.advance('2026-10-02',79)['reference_state'],s)
   self.assertEqual(self.store.read('A')['exited'],['S'])
@@ -44,6 +44,15 @@ class ReferenceTests(unittest.TestCase):
   self.assertEqual(r['reference_state']['locks'],s['locks']);self.assertEqual(r['effective_target_quantities'],{'S':10});self.assertEqual(execution_targets(state=r['reference_state'],effective_targets={'S':10},actual_shares={'S':0},decision_date='2026-10-02'),{'S':0})
  def test_original_sell_not_changed(self):
   s=self.locked();self.assertEqual(execution_targets(state=s,effective_targets={'S':3},actual_shares={'S':8},decision_date='2026-10-02'),{'S':3});self.assertEqual(execution_targets(state=s,effective_targets={'S':12},actual_shares={'S':8},decision_date='2026-10-02'),{'S':8})
+ def test_missing_or_non_boolean_coverage_cannot_release(self):
+  state=self.locked()
+  for value in [None,False,1,'true']:
+   evidence=self.evidence(state['locks']['S'])
+   if value is None:evidence.pop('coverage_complete')
+   else:evidence['coverage_complete']=value
+   with self.assertRaisesRegex(ValueError,'REFERENCE_COMPLETE_COVERAGE_REQUIRED'):
+    recover(state=state,security_id='S',evidence=evidence,decision_session=evidence['completed_through'])
+   self.assertEqual(self.store.read_reference('A'),state)
  def test_mid_recovery_latches(self):
   s=self.locked();e=self.evidence(s['locks']['S']);r=recover(state=s,security_id='S',evidence=e,decision_session=e['completed_through']);self.assertEqual(r['locks'],{});self.assertEqual(r['releases'][0]['recovered_session'],'2026-10-06')
  def test_fresh_revalidation_does_not_invalidate_unchanged_decision(self):

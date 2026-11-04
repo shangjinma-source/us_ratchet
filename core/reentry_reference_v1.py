@@ -38,6 +38,8 @@ def advance(*,state,risk_before,risk_after,held_evidence=None,completed_at=None,
 def recover(*,state,security_id,evidence,decision_session):
  result=deepcopy(state);lock=result['locks'].get(security_id);require(lock is not None,'REFERENCE_LOCK_REQUIRED')
  require(evidence.get('status')=='AUTHENTICATED_COMPLETE_REFERENCE_INTERVAL' and digest(evidence.get('evidence_sha256')) and evidence.get('exit_session')==lock['exit_session'] and evidence.get('origin_security_id')==security_id and evidence.get('origin_unit_id')==lock['unit_id'],'REFERENCE_INTERVAL_BINDING')
+ # A conditional source review is not authority to release or advance a lock.
+ require(evidence.get('coverage_complete') is True,'REFERENCE_COMPLETE_COVERAGE_REQUIRED')
  require(evidence.get('completed_through')==decision_session and decision_session>=lock.get('verified_through',lock['exit_session']),'REFERENCE_DECISION_COVERAGE_REQUIRED')
  days=evidence.get('expected_sessions');rows=evidence.get('rows');require(isinstance(days,list) and bool(days) and isinstance(rows,list) and [x['session_date'] for x in rows]==days and days==sorted(set(days)) and days[0]>lock['exit_session'] and days[-1]==evidence.get('completed_through'),'REFERENCE_CONTIGUOUS_INTERVAL_REQUIRED')
  reference=F(lock['reference_price']);sid=security_id;unit=lock['unit_id'];first=None
