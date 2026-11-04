@@ -20,8 +20,8 @@ const settle=async()=>{for(let i=0;i<25;i++)await Promise.resolve();};
  let posts=0,writes=0,resolveReview;const host=new Node('div',doc);
  const instance=mount(host,{...deps(),setTimer:()=>1,clearTimer:()=>{},saveCash:async()=>{writes++;return account;},newsReviewFetch:async(url,options)=>{
    if(url.startsWith('/api/news/scheduled-earnings'))return {ok:true,json:async()=>({status:'CONTEXT_ONLY',events:[]})};
-  if(!options)return {ok:true,json:async()=>({enabled:false,status:'DISABLED'})};
-  assert.equal(url,'/api/news/investment-review');posts++;
+  if(url==='/api/news/events/status')return {ok:true,json:async()=>({enabled:false,status:'DISABLED'})};
+  assert.equal(url,'/api/news/investment-review');assert.equal(options?.method,'POST');posts++;
   return new Promise(resolve=>{resolveReview=()=>resolve({ok:true,json:async()=>({status:'FAILED'})});});
  }});
  await instance.ready;await instance.refresh();await settle();assert.equal(posts,0,'load and ordinary refresh never start model');
@@ -33,7 +33,7 @@ const settle=async()=>{for(let i=0;i<25;i++)await Promise.resolve();};
  resolveReview();await settle();instance.dispose();
  for(const mode of ['WAIT','SAVE_FAILED']){
   let attempted=0;const other=mount(new Node('div',doc),{...deps(),setTimer:()=>1,clearTimer:()=>{},previewDaily:async()=>mode==='WAIT'?{status:'WAIT',reason:'NO_PRICE'}:daily(),saveCash:async()=>{if(mode==='SAVE_FAILED')throw Error('SYNTHETIC_SAVE_FAILURE');return account;},newsReviewFetch:async(url,options)=>{
-   if(url.startsWith('/api/news/scheduled-earnings'))return {ok:true,json:async()=>({status:'CONTEXT_ONLY',events:[]})};if(options)attempted++;return {ok:true,json:async()=>({enabled:false,status:'DISABLED'})};}});
+   if(url.startsWith('/api/news/scheduled-earnings'))return {ok:true,json:async()=>({status:'CONTEXT_ONLY',events:[]})};if(url==='/api/news/events/status')return {ok:true,json:async()=>({enabled:false,status:'DISABLED'})};assert.equal(url,'/api/news/investment-review');assert.equal(options?.method,'POST');attempted++;return {ok:true,json:async()=>({status:'FAILED'})};}});
   await other.ready;other.elements.input.value='100';other.elements.form.listeners.submit[0]({preventDefault(){}});await other.whenIdle();await settle();assert.equal(attempted,0,mode+' must not start AI');other.dispose();
  }
  console.log('PASS cash submit integration: no standalone AI, cash->READY->single asynchronous AI; load/refresh/WAIT/save failure do not invoke; existing flight guarded');

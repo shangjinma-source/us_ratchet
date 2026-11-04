@@ -70,3 +70,9 @@ Goal保持active，不把研究收束、部署成功或工程绿灯当作整个�
 ## 最新刷新耗时取证
 
 一次正式V32隔离上下文读取已完成：构建191.98秒（独立启动成本），context9.25秒，唯一snapshot_provider8.27秒。账户、目标、活动配置和线程集合前后相等，模型调用0。不能把独立进程微秒锁等待当作生产无竞争的证明；尚未部署新提速。测量工具及3项嵌套/并发/异常测试已归档，详见news_review_latency_boundary_20261105.md。
+
+## 前端现金与AI等待边界复核
+
+8010页面及账户GET正常，served strategy_daily_mount.js与本地字节一致。实际submit先完成现金/建议流程，随后以void异步启动AI；源码未将基础建议等待绑定到AI完成。现有news_cash_submit_ai_integration.cjs复核发现旧mock把带options的事件状态GET误算AI请求，已改为精确path+POST计数，回归通过。覆盖AI未返回时基础建议READY、重复点击不重复启动AI、WAIT/现金失败不启动AI。仅mock集成与只读静态文件校验，不是真实现金按钮写入或完整线上延迟验收。
+
+当前账户GET显示现金确认有效、仅一条2026-10-17历史成交；未出现新真实成交供本轮承接验收。证据仅本地tmp/goal_operating_check_20261105。没有生产代码变化或重启。
