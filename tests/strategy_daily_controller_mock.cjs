@@ -19,6 +19,29 @@ function fixture(month='2026-10'){
 }
 (async()=>{
  let count=0;
+ // A cash save must not wait for a redundant pre-save target read. Both
+ // post-save and post-preview target checks remain authoritative.
+ {
+  const f=fixture(),order=[],load=f.loadTarget,save=f.saveCash,preview=f.previewDaily;
+  f.loadTarget=async()=>{order.push('target');return load();};
+  f.saveCash=async b=>{order.push('cash');return save(b);};
+  f.previewDaily=async b=>{order.push('preview');return preview(b);};
+  await createController(f).saveBalance({amount:'50',expected_revision:'revision-one'});
+  assert.deepEqual(order,['cash','target','preview','target']);count++;
+ }
+ {
+  const f=fixture();f.loadTarget=async()=>{throw Error('UNEXPECTED_TARGET_READ');};
+  const c=createController(f);
+  await assert.rejects(c.saveBalance({amount:'50',expected_revision:'stale'}),/CASH_INPUT_SNAPSHOT_CHANGED/);
+  assert.equal(f.calls.length,0);count++;
+ }
+ {
+  const f=fixture(),preview=f.previewDaily;
+  f.previewDaily=async b=>{const response=await preview(b);f.setTarget({server_month:'2026-10',target_month:'2026-10',target_id:'replaced'});return response;};
+  const c=createController(f);
+  await assert.rejects(c.saveBalance({amount:'50'}),/SNAPSHOT_CHANGED_DURING_PREVIEW/);
+  assert.equal(c.getState().daily,null);assert.equal(c.getState().cashSaved,true);count++;
+ }
  // An order cannot extend its source quote or survive a missing source.
  for(const source of ['expired','missing']){
   const f=fixture();
