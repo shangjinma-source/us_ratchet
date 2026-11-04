@@ -1,7 +1,7 @@
 'use strict';
 // All cash fixtures are synthetic; no broker balance or transfer amount is used.
 const assert=require('node:assert/strict');
-const {mount}=require('../web/strategy_daily_mount.js');
+const {mount}=require(process.env.TEST_SCHEDULED_MOUNT==='1'?'../web/strategy_daily_mount_scheduled_candidate.js':'../web/strategy_daily_mount.js');
 const {httpDependencies}=require('../web/strategy_daily_controller.js');
 class Node{
  constructor(tag,doc){this.tag=tag;this.ownerDocument=doc;this.children=[];this.listeners={};this.value='';}
