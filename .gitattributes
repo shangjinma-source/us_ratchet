@@ -12,3 +12,8 @@ data/news_issuer_source.py -text
 data/news_issuer_calendar_source.py -text
 data/news_scheduled_service_v1.py -text
 data/strategy_unified_server_preparation_v29.py -text
+
+# Keep the fixed cross-month research source bindings reproducible.
+docs/candidates/cross_month_held_peak* -text
+scripts/research/*cross_month_held_peak_20261105.py -text
+tests/test_cross_month_held_peak_candidate.py -text
