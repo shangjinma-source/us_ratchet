@@ -126,7 +126,7 @@ from api.strategy_error_boundary_v1 import StrategyErrorBoundary
 app.add_middleware(StrategyErrorBoundary)
 from api.verified_daily_comparison import router as verified_daily_comparison_router
 app.include_router(verified_daily_comparison_router)
-from api.strategy_server_mount_v6 import mount_strategy_routes
+from api.strategy_server_mount_v7 import mount_strategy_routes
 _strategy_runtime_root = Path(__file__).resolve().parents[1]
 from api.strategy_followup_summary_v1 import create_router as create_followup_summary_router
 app.include_router(create_followup_summary_router(_strategy_runtime_root))
