@@ -1,0 +1,28 @@
+{
+  "base_v27": {
+    "path": "research_contracts/news_failed_status_20261104/config-24.json",
+    "sha256": "167aa2a29daeacaaa4733442f9cd6dc78cbc6ba6b4c679da4793109e7c82c452"
+  },
+  "schema": "VERIFIED_REPLAY_UNIFIED_PREPARATION_V28",
+  "source_pins": {
+    "api/server.py": "509228f95cae4c0defe3efce50b732893d5c6e3be22f2f6284cf44c99c174bb1",
+    "api/strategy_server_mount_v7.py": "eb71fa8e357553c0728cbb740c249955017ae1b31047ca0348ea12a3178571d7",
+    "data/strategy_account_monthly_release_replayed_v1.py": "980560d41f4c25569a40e78d77e37e6bd61ed906378299c04ef0d84dea954afb",
+    "data/strategy_account_monthly_release_sized_v1.py": "e44ff51d8f03faee40df97d71fdbee5695aa03a889691eb96b2340f45359fb5e",
+    "data/strategy_account_ready_release_replayed_v1.py": "bd38f64af4b2f7c53b2701445d7887b199e7cd83fc135e891b306bbb482bf9ec",
+    "data/strategy_account_ready_release_sized_v1.py": "089a74991e25b9e9989e524af1e635ccb84e92e3b85be010bd6eeabef4578446",
+    "data/strategy_account_unit_review_compiled_v1.py": "ef4b7a9bc84d8b23dbf3529e3372f6ff12c4ca6a67a83d28edb64a1463398956",
+    "data/strategy_compiled_notice_review_v1.py": "5037bd11f2750197ee728709ef9c820267debd3ef18d0c1400152611274129cb",
+    "data/strategy_monthly_file_sized_v1.py": "c9e6569956f504923d82ba131593a9f0d279ddc919871aec0dfcf02b4df55663",
+    "data/strategy_profiled_monthly_release_replayed_v1.py": "8200c6901d50a8fccfc76d626397554bfd504365f2f30f33bfb05452ece4c8b0",
+    "data/strategy_profiled_monthly_release_sized_v1.py": "950b46e33041c23eec83b2f37d631e7f5eccfa0e879f90a10a45b6341e38b698",
+    "data/strategy_profiled_ready_release_replayed_v1.py": "f6fdf55fc3f736ca2202de4e1fb7ae31e1cf91d97b8d148d9c32fde214ae25fb",
+    "data/strategy_profiled_ready_release_sized_v1.py": "45677c16abed696a3150d67a015b1fa6dc97ff208c36b406a3cd31ce1507f3df",
+    "data/strategy_profiled_release_snapshot_replayed_v1.py": "949aa2e6ea7524f98242bb51cbc1b3f2f38e9b8f627761d2ca68b266238f1c09",
+    "data/strategy_profiled_release_snapshot_sized_v1.py": "b7c24d07e5e57f24628d8c1f8b528e07643c303edf86f5567b106f2f9c040211",
+    "data/strategy_release_replay_cache_v1.py": "2523625cd2a57a92f6b40081e683fdd637aba326b7244d42442d5feb4dc04eda",
+    "data/strategy_replayed_snapshot_install_v1.py": "4c1efbd44e1e2b83ea1486e889199cdaf931dc383f5d8b5caa6c49b10c68c801",
+    "data/strategy_sized_read_v1.py": "47377624048c3e50f157ae5edd4e4946255297da890de499fa6e2e6b8632a007",
+    "data/strategy_unified_server_preparation_v28.py": "4922dd3d69c1cdf35f02b19dbe1d920528731dfa68a7eca85f53e0b6610b58a8"
+  }
+}

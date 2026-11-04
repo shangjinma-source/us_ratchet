@@ -341,6 +341,13 @@ class NewsInvestmentService:
         if row is None:
             return dict(status='FAILED', error='UNKNOWN_JOB')
         job = json.loads(row[0])
+        if job['status'] == 'FAILED':
+            # A terminal failure carries no usable opinion. Reporting it must
+            # not wait on account/target/quote locks or expose saved proposals.
+            return {key: job[key] for key in (
+                'status', 'job_id', 'started_at', 'finished_at', 'error',
+                'stage_timings', 'worker_elapsed_before_persistence_seconds',
+                'request_to_result_ready_wall_seconds', 'timing_scope') if key in job}
         if job['status'] == 'RUNNING':
             if (self.clock()-moment(job['started_at'])).total_seconds() > 360:
                 return dict(status='FAILED', job_id=job_id, error='REVIEW_DEADLINE_EXCEEDED')

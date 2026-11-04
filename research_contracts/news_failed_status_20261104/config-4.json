@@ -1,0 +1,11 @@
+{
+  "base_v6": {
+    "path": "research_contracts/news_failed_status_20261104/config-3.json",
+    "sha256": "b1d3cd35f9dbe756578c38bbbf61451673fa048af5431bfb1d5fca4c9d811a16"
+  },
+  "publication_calendar": {
+    "path": "research_contracts/daily_calendar_2026_extension_v1/calendar.candidate.json",
+    "sha256": "1440d82ecc956baab15df4b49da444e4878459e353cf7c280dd5d3dcf2a109af"
+  },
+  "schema": "SESSION_GUARDED_UNIFIED_PREPARATION_V7"
+}

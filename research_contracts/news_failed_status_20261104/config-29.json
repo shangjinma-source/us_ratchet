@@ -1,0 +1,15 @@
+{
+  "schema": "CURRENT_ADVICE_UNIFIED_PREPARATION_V32",
+  "base_v31": {
+    "path": "research_contracts/news_failed_status_20261104/config-28.json",
+    "sha256": "5d253cf6741089cf5e230c1c6eec8b753dd11e90386c9835177fdf72923c6f13"
+  },
+  "source_pins": {
+    "data/strategy_current_preview_v1.py": "79dfb3b59a18ca7696f725566ff1b7de0152767a09b32a4137a8e28230eada92",
+    "api/strategy_server_mount_v8.py": "04f10d6b4bba3fadc5aa7dfdfb37f722a033853d0ef76180ca85421b4d7f89a3",
+    "data/strategy_unified_server_preparation_v32.py": "84072067185811e114baa1cdfa2312fd5aebb4ce86f601a64748277547a59210",
+    "web/strategy_daily_controller.js": "14d83e5b8daddd544a22dc3275b95a13c2d6a0d83fecd2ba886426d89e3ed8bd",
+    "api/strategy_current_preview_v1.py": "6978b9a62e7c14a4dc4aeae49498170732409c43d75e5c9e07cf75304dfb1e21",
+    "web/index.html": "fbe96ea7d82f182a4e9f8016162ba780b292226358b8ed10429f6fafcfaf66fa"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schema": "DAILY_SOURCE_ERROR_UNIFIED_PREPARATION_V17",
+  "base_v16": {
+    "path": "research_contracts/news_failed_status_20261104/config-14.json",
+    "sha256": "03d52af9d55df83d54afb001cfc4a8d5314b1d2eeb699aead1c9ace35bb9b72c"
+  },
+  "source_pins": {
+    "data/strategy_unified_server_preparation_v17.py": "c1afc32d8f4f3cd9fabe4c35bf87a8da9a1426b133aa21ba24f35bbf9c3fd8f5",
+    "api/strategy_daily_preview_v4.py": "c6eff9e5f3f13024dfbaad4e917ee9be67533666e41d81fe682209bf3a6b7dad"
+  }
+}

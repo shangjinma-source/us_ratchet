@@ -9,3 +9,13 @@
 同一任务的终态GET耗时54.576秒，返回STALE/REFRESH_ACCOUNT_AND_REVIEW。检查正式 `NewsInvestmentService.status` 发现FAILED任务也进入完整bound_context校验，因此已失败任务仍等待账户/目标读取，再被转为STALE。下一步限定修复：失败终态只返回不含proposal的状态、错误和计时，COMPLETE结果仍保留所有绑定、时效、消息与背景验证。这只能缩短失败反馈和前端后续任务交接，不等于解决完整复核耗时。
 
 当前验收结论：盘中原策略页面已通过独立只读一致性检查；此次AI端到端未通过。需要修复失败反馈后继续验证真实账户稳定时的完整任务与页面呈现；真实成交承接仍需用户真实操作。
+
+## 失败反馈补丁部署及同任务比较
+
+FAILED终态已增加严格字段白名单快速返回，不返回proposal、binding或event_pending。COMPLETE校验路径保持不变。候选15项回归通过，待部署字节以正式模块名加载的13项服务回归通过，包括账户变化仍拒绝、失败路径不调用阻塞校验和污染proposal不泄露。
+
+活动入口更新为 `research_contracts/news_failed_status_20261104/config-29.json`，8010新进程17732。重启窗口核对无运行中AI任务、无活动模型及事件租约，保留真实账户与金融任务。启动后同一真实失败任务GET耗时0.296秒，准确返回FAILED/STALE_ACCOUNT_OR_TARGET且无proposal；修复前该任务GET为54.576秒。仅证明失败反馈延迟减少，不是完整AI分析212.55秒已消除，也不是投资效果提升。
+
+部署和回退字节位于 `tmp/news_failed_status_deployment_20261104`，同任务比较见 `failed_status_comparison.json`。回退只能恢复源码和活动配置，禁止覆盖真实账户快照。
+
+完整部署复核为DEPLOYED_API_VERIFIED：静态资源与本地字节相同，全部活动配置引用及source pins匹配，账户和月目标完整内容与重启前相同，新闻worker正常。当前建议GET返回READY但耗时53.387秒，目标GET9.629秒，说明主建议读取仍慢；未把失败状态提速扩展成主按钮或完整AI链路已提速。此项为API验证，浏览器点击另验收。

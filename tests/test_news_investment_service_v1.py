@@ -69,7 +69,8 @@ class ServiceTests(unittest.TestCase):
             return self.answer
         self.model.side_effect=change
         result=self.run_job()
-        self.assertEqual(result['status'],'STALE')
+        self.assertEqual(result['status'],'FAILED')
+        self.assertEqual(result['error'],'STALE_ACCOUNT_OR_TARGET')
         with closing(self.service.connection()) as c:
             import json
             saved=json.loads(c.execute('SELECT document FROM jobs').fetchone()[0])
