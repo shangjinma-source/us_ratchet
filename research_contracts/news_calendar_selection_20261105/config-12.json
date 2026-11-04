@@ -1,0 +1,13 @@
+{
+  "base_v13": {
+    "path": "research_contracts/news_calendar_selection_20261105/config-11.json",
+    "sha256": "c2d9e0162f68c2caf8b368a5ea366e7b33cf59d2c1db0419678b6247d0dda999"
+  },
+  "schema": "DAILY_MARK_CLOCK_UNIFIED_PREPARATION_V14",
+  "source_pins": {
+    "data/strategy_account_market_capture_v2.py": "7c417917715872c99055224ccb3471a3b2712d64b69b0fd11848c411ac2e47b3",
+    "data/strategy_daily_market_capture_v3.py": "dada9dbfd78e48a4217272d3b082fd71ed0fd37613f505e5de53a21a877c17fe",
+    "data/strategy_daily_rolling_admission_v6.py": "97a2430679e1aaf13f150e6dd4c7d033302aba0a8b3167e137982473f268852f",
+    "data/strategy_unified_server_preparation_v14.py": "438a962f8b23792cd8c761090481b36d6f2dd91c59fa0440f266d0ee45fdd90b"
+  }
+}

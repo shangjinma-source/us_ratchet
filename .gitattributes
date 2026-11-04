@@ -5,3 +5,10 @@ tests/fixtures/news_skill_synthetic_r32/*.json -text
 
 # Frozen research archives must retain their authenticated source bytes.
 research_contracts/reentry_repair_20261029/* -text
+
+# Preserve deployed calendar configuration hashes and changed source bytes.
+research_contracts/news_calendar_selection_20261105/* -text
+data/news_issuer_source.py -text
+data/news_issuer_calendar_source.py -text
+data/news_scheduled_service_v1.py -text
+data/strategy_unified_server_preparation_v29.py -text

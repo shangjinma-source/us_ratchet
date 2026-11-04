@@ -1,0 +1,20 @@
+{
+  "base_v10": {
+    "path": "research_contracts/news_calendar_selection_20261105/config-7.json",
+    "sha256": "b38faa456c596f1b2ba4090475cbbf7fad834fab27cfbd3d1f730edb4618dfdb"
+  },
+  "capital_journal_path": "data/strategy_account/profiled_capital_arrivals_v2.sqlite3",
+  "schema": "CAPITAL_ARRIVAL_UNIFIED_PREPARATION_V11",
+  "source_pins": {
+    "api/strategy_capital_arrival_v2.py": "8bbbb749bd0eb3dfb39de2aba654c135881c72d1c1e6f59d1d0516d924866daa",
+    "core/strategy_profiled_capital_journal_v2.py": "ed558ed638d54673b5cfba052007dffcfe55718a964c1cf45091a1b0a6f9e9cb",
+    "data/strategy_account_action_capture_v3.py": "1f7cc402559f795d852a70ab68cd594b14ad7a49c61f0520b9a7a0142d15fc47",
+    "data/strategy_account_action_capture_v4.py": "19910246572e5510724a4da3fbdc2764fc899e46f2d535541a66543fb4c81edb",
+    "data/strategy_account_market_capture_v2.py": "7c417917715872c99055224ccb3471a3b2712d64b69b0fd11848c411ac2e47b3",
+    "data/strategy_capital_arrival_service_v2.py": "1f98557fe63e0a62001254987a5293de0469f0e5b2bd1cb0b73993b4c50adb76",
+    "data/strategy_capital_capture_provider_v2.py": "23602e6902dfae79c7e725f74afe7f0a50d7103b7f4bb9a82404fbb4d620c752",
+    "data/strategy_rss_verified_transport_v1.py": "80df35169cae43c45fe8b18aaf7380adb79ff4a8fccaa03fc137da4bdf7ce5c1",
+    "data/strategy_unified_server_preparation_v11.py": "0bf4ecd966ed702c4f96abc796df6b908a9520213d15fcfcb4cdc69a129ee003",
+    "data/strategy_upgrade_blob_store_v1.py": "2c868c5b4dfeb5090393dc3efab87019a6fc5126029b8c0a9b1467b8828b487b"
+  }
+}

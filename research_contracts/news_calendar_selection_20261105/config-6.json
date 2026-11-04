@@ -1,0 +1,11 @@
+{
+  "base_v8": {
+    "path": "research_contracts/news_calendar_selection_20261105/config-5.json",
+    "sha256": "74079d4e9e2b0770018637ab525fa721a321e7ecbd80f025566e2881fc5f95b6"
+  },
+  "schema": "SNAPSHOT_VALUATION_UNIFIED_PREPARATION_V9",
+  "source_pins": {
+    "data/strategy_saved_target_valuation_v1.py": "92cf6385d533108078eb30dabb1f29716fb9071ac6780210aa523f6a1c8f2fb0",
+    "data/strategy_unified_server_preparation_v9.py": "c46993f3b90aedb06d996fc003e99e1e89b198c759d28279fca63bfd44c89965"
+  }
+}

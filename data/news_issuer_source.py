@@ -25,7 +25,7 @@ def joint_headline(row):
             and 'NONCOMPANY' not in row.get('topic', ''))
 
 
-def candidate_headlines(document):
+def candidate_headlines(document, *, predicate=None):
     groups=document['results']['news']
     matches=[group for group in groups if group.get('topicstring')=='MRNA']
     if len(matches)!=1:raise ValueError('MRNA_TOPIC_REQUIRED')
@@ -34,6 +34,7 @@ def candidate_headlines(document):
         if not (row['headline'].startswith('Moderna ') or joint_headline(row)):continue
         if any(noise in row['headline'].casefold() for noise in ('top employer','best workplace','investigation','class action')):continue
         if (row['qmsource']!='bayaw' and not joint_headline(row)) or 'NONCOMPANY' in row.get('topic',''):continue
+        if predicate is not None and not predicate(row):continue
         rows.append(row)
     return sorted(rows,key=lambda row:row['datetime'],reverse=True)[:4]
 
@@ -81,7 +82,7 @@ def parse_issuer_story(headline,document,fetched_at):
         noise_hint='LOW_INFORMATION_EMPLOYER_AWARD' if 'Top Employer' in headline['headline'] else None)
 
 
-def capture(cache, *, session=None, now=None):
+def capture(cache, *, session=None, now=None, headline_selector=None):
     """At most one headlines and two stories; no retry, no arbitrary URL input.
 
     Moderna official newsroom embeds the FEED_URL above. Its inspected news.js
@@ -117,7 +118,7 @@ def capture(cache, *, session=None, now=None):
             src='pzo,bayaw,prn,bwi,TheNewsWire,nfil,actw,irw,acn,cnw,nwd,glpr,nwmw',
             thumbnailurl='true',summary='true',summLen=300,start=(now-timedelta(days=90)).date().isoformat(),end=now.date().isoformat()))
         eligible=[]
-        for headline in candidate_headlines(headlines):
+        for headline in (headline_selector or candidate_headlines)(headlines):
             stamp=datetime.fromisoformat(headline['datetime'])
             if stamp.tzinfo and now-timedelta(days=90)<=stamp<=now:eligible.append(headline)
         for headline in eligible[:2]:

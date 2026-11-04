@@ -1,0 +1,13 @@
+{
+  "evidence": {
+    "archive_root": "data/strategy_account/dynamic_daily_rebound_v1",
+    "configuration_path": "research_contracts/daily_rss_recovery_20261022_v5/configuration.json",
+    "configuration_sha256": "40ea7ba1078e4038c000bef8ea6a1d3b4b7da6f229460c587cb817546d9b4242",
+    "release_path": "research_contracts/daily_domain_release_20261020_v2_reviewed/policy-release.json",
+    "review_configuration_path": "research_contracts/daily_rss_recovery_20261022_v5/application.json",
+    "review_configuration_sha256": "4fd95281b974512d9b2f631368b0fb2a42309ac0faaa624e44674e5c9724be59",
+    "trusted_release_sha256": "a83739781bc0f0241ed616c3339f4a273d6c8019868ccd5c1c9c352d38b08b5b"
+  },
+  "policy_execution_enabled": true,
+  "policy_id": "SMA20_HALF_OFF_RESEARCH"
+}

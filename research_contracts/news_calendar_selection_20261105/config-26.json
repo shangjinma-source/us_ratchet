@@ -1,0 +1,19 @@
+{
+  "base_v28": {
+    "path": "research_contracts/news_calendar_selection_20261105/config-25.json",
+    "sha256": "5deb2c522ffc361f059ebfd2098d9a51618e2c67f976fb7161752dd789320370"
+  },
+  "schema": "SCHEDULED_EARNINGS_UNIFIED_PREPARATION_V29",
+  "source_pins": {
+    "api/news_scheduled_earnings_v1.py": "4e947709a410f7cdb5d76137ed46316a5312800fadbfa7dfc2fae349dae0eab9",
+    "api/strategy_server_mount_v8.py": "04f10d6b4bba3fadc5aa7dfdfb37f722a033853d0ef76180ca85421b4d7f89a3",
+    "data/news_schedule_binding_v1.py": "c43363dcc0e89871c8732cbae3ba519450887efc384650f98b2f09494a284ae5",
+    "data/news_scheduled_earnings_v1.py": "99b05f91e3bd3c9fe6a27e5c0e2fbfe8e867203957d248e6c9e7850daa6fff4f",
+    "data/news_scheduled_service_v1.py": "3fdae96a17a3d7fc64511c523af940854306392511b0515bb1a9c54e8e63c7cf",
+    "data/strategy_unified_server_preparation_v29.py": "13a9cb5d9fb9131f00a28c05f1d2d0de36e76254fe700ac0733bb8ceed11d242",
+    "web/news_scheduled_earnings.js": "1a32d505db6739654740a01012146b16971ec7d8e554b4c8763d8d354dad4261",
+    "data/news_sandisk_wire_v1.py": "a2debe1adf2d88e342bdb91d4a0411c323e1243addd7846460f0a800e4de46cb",
+    "data/news_sandisk_wire_capture_v1.py": "e620e16791863f39067f627da42cb9c1869dc5d4f871b11ca3565dbf4f051eb7",
+    "data/news_issuer_calendar_source.py": "dffdc152bd210e6158388d868ef203d1deaa9adc40d4845c2c86e9be25506321"
+  }
+}

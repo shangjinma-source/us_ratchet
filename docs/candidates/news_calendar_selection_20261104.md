@@ -1,4 +1,6 @@
-# 日历独立选稿候选（未部署）
+# 日历独立选稿候选（11月5日已部署）
+
+部署补记：正式四文件和30节点配置链已应用，8010 PID21628；只读验证当前建议READY、账户及月目标未变、新闻worker存活。单次正式刷新647fca8ea5234f3fb9c011861bb19710成功；GET已返回MRNA 11月6日08:00纽约时间（北京时间21:00）的电话会安排。公告发布时间仍为10月13日，不是新利空或财报首次公开时间，不能触发自动交易。calendar_coverage_complete仍为false。证据保留本地tmp/news_calendar_selection_deployment_20261105/verification.json。下文保留候选阶段历史。
 
 最新已存headline摘要7b80b9e4e258567e36c10f32d3234bb44f5bed74e6b39aa608a9289be216192a仍包含10/13财报安排5223396920174760。原capture取普通新闻前2条，11/4临床和10/22Merck排前，因而新snapshot无日历。已只读验证，未联网。
 

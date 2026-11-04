@@ -8,7 +8,7 @@ import sqlite3
 from uuid import uuid4
 
 from core.news_investment_review_v1 import require, moment
-from data.news_issuer_source import capture
+from data.news_issuer_calendar_source import capture
 from data.news_refresh_service import NewsRefreshService
 from data.news_scheduled_earnings_v1 import build_scheduled_earnings
 
