@@ -76,3 +76,7 @@ Goal保持active，不把研究收束、部署成功或工程绿灯当作整个�
 8010页面及账户GET正常，served strategy_daily_mount.js与本地字节一致。实际submit先完成现金/建议流程，随后以void异步启动AI；源码未将基础建议等待绑定到AI完成。现有news_cash_submit_ai_integration.cjs复核发现旧mock把带options的事件状态GET误算AI请求，已改为精确path+POST计数，回归通过。覆盖AI未返回时基础建议READY、重复点击不重复启动AI、WAIT/现金失败不启动AI。仅mock集成与只读静态文件校验，不是真实现金按钮写入或完整线上延迟验收。
 
 当前账户GET显示现金确认有效、仅一条2026-10-17历史成交；未出现新真实成交供本轮承接验收。证据仅本地tmp/goal_operating_check_20261105。没有生产代码变化或重启。
+
+## 风险候选保留的最新状态
+
+隔离观察器与精确整数加速已完成接线测试；固定首月修复序列化后单次完整观察及97条保留结果独审通过。旧保存域遗漏6967个下行合格候选，但尚未运行新账户回测、选择实际持股上限或证明收益/回撤改善。详见candidates/risk_candidate_retention_plan_20261105.md。当前生产仍不采用此研究组件。

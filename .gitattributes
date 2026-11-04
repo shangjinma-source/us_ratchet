@@ -64,3 +64,5 @@ scripts/research/complete_first_month_downside_observer_20261105_v2.py -text
 backtest/research_exact_fraction_json.py -text
 
 tests/test_research_exact_fraction_json.py -text
+
+scripts/research/review_complete_downside_observer_20261105.py -text

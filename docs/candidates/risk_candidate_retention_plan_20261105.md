@@ -63,3 +63,11 @@ finalize仅证明已观察流结束且未发生预算/校验失败；source_auth
 完整观察单次运行243.260秒，其中observer累计222.890秒；8210次hook、8113个raw、7124个cap全部计算风险，10000预算未耗尽，原search_result逐项相等。1518来源hash运行后及根复核均通过。然而保存每k候选sidecar时，Fraction十进制字符串超过Python4300位限制，进程已结束，sidecar未生成，summary状态STOPPED_WITH_ERROR。不能宣称完整交付，也无法从已保存原搜索结果恢复丢失的观察器最优候选。未重跑。
 
 已准备research_exact_fraction_json.py及独立v2 runner：分子/分母采用版本化十六进制对象，无损解析，不改全局整数限制，不用浮点近似。两项测试含超过5000十进制位的分数与嵌套/符号/零/版本拒绝。v2所有JSON为encoding+payload包装，须用该codec.loads读取；新输出目录独立，未运行。原失败脚本字节及证据保留。后续若执行v2是明确的新尝试，不能称续接已退出进程或无新增计算。
+
+## 序列化修复后的单次重试及独审通过
+
+v2在243.790秒完成并保存sidecar，observer累计223.385秒；1519来源hash通过。原search逐项一致，8210hook、8113raw、7124cap全量风险计算，无预算遗漏。只代表同次已访问域完整，不是所有可能组合。保留现金及实际持股数1—96各一条，97—102未留合格赢家不证明全市场无解。
+
+独立脚本review_complete_downside_observer_20261105.py用原逐项Fraction收益与真实QQQ精确下行矩重算97条，核253日/12情景、cap/整数/issuer/现金/评分和汇总计数，24.269秒PASS。新保留路径覆盖7061个正仓合格篮子及现金，其中6967个合格签名未在旧cap frontier保存；单股397、双股29均被旧保存域遗漏。该月份实证支持扩大候选保留的必要性，不证明账户收益、熊市表现或所保留赢家全域最优；未保存全部访问候选ledger，独审不宣称逐项证明赢家支配所有候选。
+
+证据目录tmp/downside_observer_complete_first_month_20261105_v2，包含版本化summary/sidecar/independent_review；旧失败目录不变。这是明确一次修复后重试，没有增加月份、改参数、选择用户持股限制或运行账户回测。
