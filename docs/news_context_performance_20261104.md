@@ -17,3 +17,13 @@
 同一独立实例构建耗时 203.245 秒；未运行 cProfile 的计时按原版、候选、候选、原版顺序进行。原版为 11.720/11.524 秒，候选为 10.116/10.188 秒。中位数差 1.470 秒，约 12.6%。四次上下文返回值完全一致，真实账户及目标前后快照一致；未运行 startup hooks、模型、新闻采集或交易写入。证据 tmp/news_context_profile_20261104/full_context_comparison.json；运行脚本 tmp/compare_news_context_20261104.py。
 
 结论：候选确实改善完整上下文读取，但不足以解决约 278 秒的复核任务耗时。本轮不单独重启部署，保留在后续有意义的性能补丁中合并。继续查复核各阶段重复构建与校验，保留模型等待前后的账户变化检测，不把候选微基准 30% 冒称为端到端提速。上一段“下一步完整对照”已完成；当前优先级转为整条复核流程。
+
+## 初始上下文与建议共享操作快照候选
+
+发现初始 bound_context 与紧接着的 initial_preview 各启动一次历史发布快照校验。新增完整 service/composition 候选：docs/candidates/news_investment_service_scoped_inputs.py 和 news_investment_composition_scoped_inputs.py。组合层明确注入 monthly_view.snapshot_operation；策略输入在线程池同一线程内读取账户/目标并计算建议，复用当前操作内发布快照。新闻采集仍并行。该 scope 在模型调用之前退出，不跨模型等待保留旧发布状态或账户锁。
+
+模型前后及最终 bound_context、第二次 fresh preview、新闻 generation、报价期限、财报日程绑定全部保留；未注入 scope 的原调用路径保持兼容。没有放宽六分钟任务期限或行情新鲜度。
+
+16 项隔离测试通过：原服务 13 项回归，加同线程 scope 共享/模型前释放、异常释放及真实 RollingMonthlyRuntimeRouter.snapshot_operation 的 provider 调用计数。初始两步共一次 provider 读取；保留后续独立检查。测试文件 tests/test_news_scoped_input_candidate.py，不调用外部模型或采集，不写真实账户。按已测单次快照成本预计能减少约十秒以上，但尚未做真实端到端测量，不能声称已达到。
+
+下一步优先将两份候选与财报日程接线集成回归，核验生产配置后整体部署；可同时合并已验证单次 lstat 优化，减少重复重启。部署前要保留源码/活动配置回退材料；此处三份性能候选目前均未上线。不要把单线程作用域单测视为盘中完整验收。
