@@ -38,7 +38,12 @@ function mount(container,dependencies){
  const reviewHost=el('div',undefined,'daily-news-controls');form.appendChild(reviewHost);
  let controller,newsState=null;const openedNews=new Set();
  const newsApi=typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview;
- const newsCell=(cell,sid)=>newsApi.renderImpactCell(cell,sid,newsState,openedNews,now());
+ const scheduledApi=typeof module!=='undefined'&&module.exports?require('./news_scheduled_earnings.js'):root.NewsScheduledEarnings;
+ const scheduled=scheduledApi.create({fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer,onChange:()=>{if(controller&&!disposed)ui.render(summary,controller.getState(),now(),newsCell);}});
+ const newsCell=(cell,sid)=>{newsApi.renderImpactCell(cell,sid,newsState,openedNews,now());
+  const state=controller?.getState(),ticker=[...ui.targetRows(state?.target),...(state?.account?.holdings||[])].find(row=>row.security_id===sid)?.ticker;
+  scheduled.render(cell,ticker);
+ };
  let syncingReview=false,capitalLocked=false;
  const newsReview=(typeof module!=='undefined'&&module.exports?require('./news_investment_review.js'):root.NewsInvestmentReview).mount(reviewHost,{fetch:dependencies.newsReviewFetch||root.fetch?.bind(root),now,setTimer,clearTimer,compact:true,manualButton:false,onReviewChange:next=>{newsState=next;if(controller)ui.render(summary,controller.getState(),now(),newsCell);},onComplete:proposal=>{
   if(capitalLocked)throw Error('CAPITAL_UPDATE_IN_PROGRESS');
@@ -112,7 +117,7 @@ function mount(container,dependencies){
    cashInput(state.account.available_cash)===amount;
   run(()=>retrySaved?controller.refresh():controller.saveBalance({amount,expected_revision:state.account?.revision})).then(()=>{
    const fresh=controller.getState();
-   if(!disposed&&!fresh.busy&&!fresh.error&&newsApi.view(fresh,null,now()).ready)void newsReview.start();
+   if(!disposed&&!fresh.busy&&!fresh.error){void scheduled.refresh();if(newsApi.view(fresh,null,now()).ready)void newsReview.start();}
   });
  };
  form.addEventListener('submit',submit);
@@ -122,6 +127,7 @@ function mount(container,dependencies){
  doc.defaultView?.addEventListener('focus',resume);
  doc.defaultView?.addEventListener('pageshow',resume);
  draw(controller.getState());
+ void scheduled.load();
  return {...controller,initialPreview:initialPreview===true,ready:run(()=>initialPreview===true?controller.refresh():controller.load()),whenIdle:()=>lastWork,
   setCapitalBusy(value){capitalLocked=!!value;draw(controller.getState());},
   async reloadCash(){
@@ -130,7 +136,7 @@ function mount(container,dependencies){
    if(value!==null&&state.account?.cash_confirmation_valid){input.value=value;cashEdited=false;}
   },
   elements:{form,input,save,cashPanel,summary,charts},
-  dispose(){newsReview.dispose();disposed=true;doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);doc.defaultView?.removeEventListener('pageshow',resume);if(expiryTimer!==null)clearTimer(expiryTimer);expiryTimer=null;input.removeEventListener('input',edited);form.removeEventListener('submit',submit);controller.invalidate();}
+  dispose(){scheduled.dispose();newsReview.dispose();disposed=true;doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);doc.defaultView?.removeEventListener('pageshow',resume);if(expiryTimer!==null)clearTimer(expiryTimer);expiryTimer=null;input.removeEventListener('input',edited);form.removeEventListener('submit',submit);controller.invalidate();}
  };
 }
 const api={mount};

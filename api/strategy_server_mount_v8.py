@@ -23,8 +23,8 @@ def mount_strategy_routes(*, app, root, environment):
     _, configuration = _read(root, dict(path=path, sha256=digest))
     if configuration.get('schema') != 'SCHEDULED_EARNINGS_UNIFIED_PREPARATION_V29':
         return previous_mount.mount_strategy_routes(app=app, root=root, environment=environment)
-    from data.strategy_unified_server_preparation_v29 import build_unified_server_preparation_v28
-    prepared = build_unified_server_preparation_v28(root=root, configuration_path=path,
+    from data.strategy_unified_server_preparation_v29 import build_unified_server_preparation_v29
+    prepared = build_unified_server_preparation_v29(root=root, configuration_path=path,
         configuration_sha256=digest)
     router = prepared['router']
     keys = {(route.path, method) for route in app.routes

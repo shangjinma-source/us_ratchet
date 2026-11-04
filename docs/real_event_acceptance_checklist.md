@@ -1,5 +1,15 @@
 # 真实事件验收清单
 
+## 2026-11-04财报安排服务与页面正式上线
+
+正式入口改为mount_v8/V29，独立scheduled_runtime_20261104_v27_r1、v28_r1、v29_r1配置统一绑定index、daily mount、api.server及六项日历源码。部署前发现mount_v8错误调用旧builder，已修正并新增6项启动测试通过。8010重启后PID44112，账户GET200/0.184秒、目标GET200/11.444秒、新静态脚本200/0.334秒，配置hash与各层source pins通过，账户及月目标完整快照保持一致。
+
+真实POST日历刷新只采集发行来源，不调用模型，返回SUCCEEDED/CONTEXT_ONLY及MRNA 11/6 13:00 UTC会议安排。实际IAB页面于北京时间13:33加载完成，MRNA行显示“财报会议：11/6 21:00（北京时间）；非业绩结论”，工作台显示等待开盘。打开页面触发一次daily preview，因此本次不是仅GET验收；未点击现金按钮、未录入成交，最终账户和月目标再核对未变。
+
+私人验收数据在tmp/scheduled_deployment_20261104/{verification,calendar_verification,ui_verification}.json。回退仅恢复同目录previous_active.json及previous__开头的3份源文件，绝不恢复账户快照。已保留工作台页供用户查看。
+
+范围：日历采集/读取/页面显示已落地；现金按钮触发日历刷新通过前端测试，未用真实现金点击重复验收。该日历目前未接入线上模型执行器，不声称AI风险判断、交易增益或财报首发精确时刻已证明。首次打开页面仍有明显等待，需要继续定位；不能把本次日历上线当作刷新性能全部解决。
+
 ## 2026-11-04财报安排页面及正式构建路径候选（未部署）
 
 新增web/news_scheduled_earnings.js与strategy_daily_mount_scheduled_candidate.js：仅在MRNA对应行AI说明后显示北京时间会议安排，不增加按钮；原现金按钮成功后并行刷新日历，初始读取不联网采集；过期、冲突、失效及销毁后迟到响应不会显示旧有效安排。页面单测及TEST_SCHEDULED_MOUNT=1原mount回归通过，生产mount尚未替换。
