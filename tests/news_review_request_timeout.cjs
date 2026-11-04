@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-const ui=require('../docs/candidates/news_investment_review_timeout.js');
+const ui=require(process.env.NEWS_REVIEW_CANDIDATE?require('node:path').resolve(process.env.NEWS_REVIEW_CANDIDATE):'../web/news_investment_review.js');
 const {Node,doc}=require('./news_mock_dom.cjs');
 const now=Date.parse('2026-10-27T00:01:00Z');
 const state={account:{revision:'r',holdings:[]},target:{target_id:'t',proposal_id:'p'},daily:{status:'READY',account_revision:'r',target_id:'t',proposal_id:'p',reference_quotes:{A:{sell:10}}}};

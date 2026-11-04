@@ -110,7 +110,9 @@ function renderImpactCell(container,sid,reviewState,opened=new Set(),now=Date.no
  details.appendChild(el('p',`${t.cached?'复用此前分析':'分析完成'} ${localTime(t.analysis_completed_at)}${t.cached?' · 本次重新校验 '+localTime(t.revalidated_at||reviewState.proposal.review_created_at):''} · 复核有效至 ${localTime(reviewState.proposal.review_valid_until)}`));
  container.appendChild(details);
 }
-function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,pollInterval=2000,maxPolls=180,onComplete=()=>null,compact=false,manualButton=true,onReviewChange=()=>{}}={}){
+function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,pollInterval=2000,maxPolls=180,requestTimeoutMs=180000,onComplete=()=>null,compact=false,manualButton=true,onReviewChange=()=>{}}={}){
+ if(!Number.isFinite(requestTimeoutMs)||requestTimeoutMs<=0)throw Error('INVALID_REQUEST_TIMEOUT');
+ const requests=new Set();
  const doc=container.ownerDocument,el=(tag,text)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=String(text);return n;};
  const card=el('section'),title=el('h3','AI 投资复核'),note=el('p','可按需复核，或开启持仓新事件发现。尚未验证能在价格变动前捕捉消息。原策略继续生效，复核不会下单或修改策略。'),button=el('button',compact?'AI新闻复核':'复核当前建议'),status=el('p'),body=el('div');button.type='button';button.title='按需采集与复核，不持续监控；不会修改正式买卖动作或下单。';
  for(const node of (compact?(manualButton?[button,status]:[status]):[title,note,button,status,body]))card.appendChild(node);container.replaceChildren(card);
@@ -167,7 +169,18 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
   if(expiry!==null)clearTimer(expiry);expiry=null;
   const deadlines=[proposal?.review_valid_until,proposal?.risk_plan?.valid_until].map(Date.parse).filter(t=>Number.isFinite(t)&&t>now());const wait=(deadlines.length?Math.min(...deadlines):NaN)-now();if(wait>0){expiry=setTimer(draw,Math.min(wait,2147483647));expiry?.unref?.();}else if(proposal&&Date.parse(proposal.review_valid_until)<=now()&&timer!==null){clearTimer(timer);timer=null;}
  }
- async function json(url,options){const response=await request(url,options);const value=await response.json();if(!response.ok&&!(response.status===409&&value.status==='RUNNING'&&value.job_id)&&response.status!==429)throw Error('REQUEST_FAILED');return value;}
+ async function json(url,options){
+  const controller=new AbortController();let timeout;
+  let rejectRequest;const interrupted=new Promise((_,reject)=>{rejectRequest=reject;});
+  const cancelRequest=()=>{controller.abort();rejectRequest(Error('REQUEST_CANCELLED'));};
+  requests.add(cancelRequest);
+  timeout=setTimer(()=>{controller.abort();rejectRequest(Error('REQUEST_TIMEOUT'));},requestTimeoutMs);
+  timeout?.unref?.();
+  try{return await Promise.race([interrupted,(async()=>{
+   const response=await request(url,{...options,signal:controller.signal});const value=await response.json();
+   if(!response.ok&&!(response.status===409&&value.status==='RUNNING'&&value.job_id)&&response.status!==429)throw Error('REQUEST_FAILED');return value;
+  })()]);}finally{clearTimer(timeout);requests.delete(cancelRequest);}
+ }
  async function accept(result,token,count){
   if(disposed||token!==generation)return;
   if(typeof result.job_id==='string')activeJob=result.job_id;
@@ -232,7 +245,7 @@ function mount(container,{fetch:request=root.fetch?.bind(root),now=()=>Date.now(
   await launch(intent);
  }
  button.addEventListener('click',start);draw();
- return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();pendingIntent=null;activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();pendingIntent=null;if(flightTimer!==null)clearTimer(flightTimer);if(eventTimer!==null)clearTimer(eventTimer);eventButton.removeEventListener('click',eventToggle);button.removeEventListener('click',start);},elements:{button,status,body},start,isBusy:()=>busy};
+ return {update(next){if(disposed)return;const nextKey=snapshot(next);if(nextKey!==key){generation++;cancel();pendingIntent=null;activeJob=null;busy=false;proposal=null;message=key?'账户、目标或报价已变化，请重新复核':'';key=nextKey;}state=structuredClone(next);draw();},dispose(){disposed=true;generation++;cancel();pendingIntent=null;for(const stop of requests)stop();requests.clear();if(flightTimer!==null)clearTimer(flightTimer);if(eventTimer!==null)clearTimer(eventTimer);eventButton.removeEventListener('click',eventToggle);button.removeEventListener('click',start);},elements:{button,status,body},start,isBusy:()=>busy};
 }
 const api={eventHealthText,publicationConflictText,riskView,renderRiskPlan,money,eventTiming,renderImpactCell,mount,view,binding,snapshot,safeUrl,localTime,ageText,evidenceGroups};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.NewsInvestmentReview=api;
 })(typeof window!=='undefined'?window:globalThis);
