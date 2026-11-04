@@ -20,6 +20,9 @@ import test_saved_frontier_isolated_pipeline as fixture
 
 
 class FrontierFillCashHandoffTests(unittest.TestCase):
+    def transport(self, service, monthly, case):
+        return service
+
     def test_sell_requires_cash_confirmation_and_refresh_does_not_repeat_fill(self):
         self.check_sell_cash_handoff(sold_quantity=3)
 
@@ -71,6 +74,7 @@ class FrontierFillCashHandoffTests(unittest.TestCase):
                 monthly_view=SimpleNamespace(require_proposal=proposal), evidence_reader=reader,
                 execution_provider=case['provider'].execution, clock=lambda: case['clock'][0],
                 policy_execution_enabled=True, policy_id=POLICY_ID, fee_bps='1')
+            service = self.transport(service, monthly, case)
 
             def preview(revision=None):
                 return service.preview(expected_revision=revision or case['accounts'].read()['revision'],
