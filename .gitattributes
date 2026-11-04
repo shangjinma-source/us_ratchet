@@ -17,3 +17,11 @@ data/strategy_unified_server_preparation_v29.py -text
 docs/candidates/cross_month_held_peak* -text
 scripts/research/*cross_month_held_peak_20261105.py -text
 tests/test_cross_month_held_peak_candidate.py -text
+
+# Preserve authenticated risk-budget research and corporate-action bridge bytes.
+docs/candidates/qqq_risk_budget*.py -text
+docs/candidates/qqq_risk_budget_account_contract_20261105.md -text
+scripts/research/*risk_budget*20261105.py -text
+tests/test_qqq_risk_budget*.py -text
+docs/candidates/split_identity_monthly_risk_adapter.py -text
+tests/test_split_identity_monthly_risk_candidate.py -text
