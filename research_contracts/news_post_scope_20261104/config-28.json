@@ -1,0 +1,16 @@
+{
+  "schema": "BATCH_DISPLAY_UNIFIED_PREPARATION_V31",
+  "base_v30": {
+    "path": "research_contracts/news_post_scope_20261104/config-27.json",
+    "sha256": "e6a2213b9c9c88ab94a7d307dac61062d9fdc9b5461b8fdc7591a06935c5f53a"
+  },
+  "source_pins": {
+    "api/strategy_server_mount_v8.py": "04f10d6b4bba3fadc5aa7dfdfb37f722a033853d0ef76180ca85421b4d7f89a3",
+    "web/index.html": "fbe96ea7d82f182a4e9f8016162ba780b292226358b8ed10429f6fafcfaf66fa",
+    "web/strategy_monthly_target_charts.js": "42d93bb3230ad9aa39c78c5da3e34521dbd56fe29cc5f4255d5740d6ab136e59",
+    "data/strategy_unified_server_preparation_v31.py": "404691eac23114694a71a5260bde2fac967d7909d58583e2e163a3bb642bd7ea",
+    "web/strategy_display_batch_fetch.js": "33f770445d1c885f3fcb3a72bdc555a970bfa68e39adc556cd03828b0c76609b",
+    "data/strategy_frontier_display_batch_v1.py": "545dcb33b2b767e4bc117266de4fa955770d4d764f65a633e8d1fc9f164754ee",
+    "api/strategy_frontier_display_batch_v1.py": "d07b87065e95b2e5b10dd7583aad40fed4b8c53028554c2d942d158574d4436d"
+  }
+}

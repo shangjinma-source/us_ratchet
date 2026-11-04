@@ -1,0 +1,11 @@
+{
+  "archive_root": "data/strategy_account/completed_selection_close_v26_evidence",
+  "base_v25": {
+    "path": "research_contracts/news_post_scope_20261104/config-22.json",
+    "sha256": "c6184452bc81db0418894d07932edaa070231e422dc40eb18b46bfcc94b2f197"
+  },
+  "schema": "FOLLOWUP_COMPATIBLE_EPOCH_PREPARATION_V26",
+  "source_pins": {
+    "data/strategy_unified_server_preparation_v26.py": "d509719b393c409d0616f9853f2b7bc3d84aebefa728e2447709ceeada52d887"
+  }
+}

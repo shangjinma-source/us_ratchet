@@ -1,0 +1,14 @@
+{
+  "schema": "DAILY_BUY_DATA_WAIT_UNIFIED_PREPARATION_V16",
+  "base_v15": {
+    "path": "research_contracts/news_post_scope_20261104/config-13.json",
+    "sha256": "034ab89bd44d3bc80356e780ac535516f2c2397c547cfe47d9cad2aeca3ef34e"
+  },
+  "source_pins": {
+    "data/strategy_daily_buy_data_wait_bridge_v1.py": "25210284a77e183cebfc8cf20a2aae5a67fa954eba6ec3a15b62d0ea9b081726",
+    "data/strategy_daily_buy_data_wait_preview_v1.py": "41f56913a2872e1d98f859eafd328b8733d199273830b19f88ebb5fe81ab8540",
+    "data/strategy_daily_composition_v4.py": "e1d112af998bfcbca8eb27bb663a996f2b5b2492106023511a359d18ea79b316",
+    "data/strategy_daily_rolling_admission_v8.py": "9b3afbafe3f1ff22a640df42da1aabadf69a39cda4901bac089c6ffbfdb91828",
+    "data/strategy_unified_server_preparation_v16.py": "57b6b3cb354319958ca8d6e4c52fc926468fc413a7c5d6be33b8ebdd9bdb5dc8"
+  }
+}

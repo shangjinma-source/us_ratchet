@@ -227,8 +227,18 @@ class NewsInvestmentService:
             if scheduled_context is not None and answer.get('scheduled_context_sha256') != context_digest(scheduled_context):
                 raise ValueError('SCHEDULE_MODEL_BINDING_MISMATCH')
             # No account lock is held during model execution. Re-read and re-quote.
-            account, target, names = self.bound_context(binding)
-            fresh = self.normalize_preview(measured('post_analysis_preview', self.preview, **binding))
+            def post_analysis_inputs():
+                def read_pair():
+                    state, goal, identities = self.bound_context(binding)
+                    preview = self.normalize_preview(measured('post_analysis_preview', self.preview, **binding))
+                    return state, goal, identities, preview
+                if self.input_operation is None:
+                    return read_pair()
+                # Start a NEW scope after analysis; never retain initial data or
+                # a lock across the model. Final validation remains independent.
+                with self.input_operation():
+                    return read_pair()
+            account, target, names, fresh = measured('post_analysis_inputs', post_analysis_inputs)
             if fresh['effective_target_quantities'] != quantities:
                 raise ValueError('STRATEGY_TARGET_CHANGED_DURING_ANALYSIS')
             finished = self.clock()
