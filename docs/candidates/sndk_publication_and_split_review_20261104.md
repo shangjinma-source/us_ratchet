@@ -124,3 +124,11 @@ FAQ第15–16问确认：11月9日登记后至11月19日发股前，权益随期
 独立临时目录执行真实采集：3次请求、2条发行人公告、0错误；完整原文恢复后财报27072字符ADMITTED_FULL_TEXT，另一旧公告被OLDER_THAN_SEVEN_DAYS拒收。证据tmp/sndk_wire_capture_20261104/{capture,acceptance}.json；没有模型调用或真实账户写入，未改变生产新闻任务。
 
 已准备完整news_desk_sandisk_wire候选，将按需SNDK正文来源替换为分发源并保持选择优先级与来源展示一致，不同时重复采旧新闻室正文。该组合候选仅编译检查，尚需原desk回归及定时EventSources路径同步接线；新旧发布去重/首次窗口约束必须一起验证后再统一部署。当前生产仍未切换。
+
+## 定时来源路径及首次窗口验证
+
+新增完整news_event_sources_sandisk_wire候选：SNDK改为固定QuoteMedia列表/正文端点，保留总4请求/55秒/2MB响应约束，使用wire原始收据；MRNA原路径不变。SNDK列表按Business Wire permalink去重，正文再核对股票、标题、发布时间和故事地址。尚未替换生产。
+
+2项新测试通过（其中一个覆盖两种初始化状态）：discover→hydrate保留20:05 UTC发布时间和真实采集时间；未知地址拒绝；使用真实EventNewsPipeline但隔离账户/合成公告，首次启动的旧公告进入BASELINE_WINDOW_EXPIRED，已初始化后换来源的新URL旧公告进入BODY_WINDOW_EXPIRED，两者均不调用模型、不启动交易复核。原事件流水线15项回归通过。按需news_desk候选通过原desk及provenance共11项回归（隔离模块替换，只在测试进程生效）。
+
+下一步统一部署desk、EventSources、sources恢复器和新增依赖的源码pins；然后验证实际worker、按需采集及账户/目标未变。线上切换前仍不得声称时间冲突已消除。跨来源保留历史记录，不以新的采集时间重开发布窗口。
