@@ -1,0 +1,29 @@
+# 同次已评估候选的下行合格保留：最小接线计划
+
+状态：仅只读代码审阅与设计，未修改搜索、生产或启动经济回测。持股上限 `max_holdings` 必须由外部明确提供；本文不代用户选5或10只。
+
+## 实际丢失位置
+
+1. `backtest/research_exact_fast_search.py::search_fresh_cash_quantities.evaluate` 按 `(12情景精确财富乘积, -notional, signature)` 排序，`best_by_k[k]` 只保留一条。已评估但增长较低的同k低风险篮子被丢弃。内部 `objective_products`/`visited` 虽暂存所有评估签名，却未作为结果输出。局部搜索的 `anchors` 又从该增长最优条目取得，故搜索方向本身也偏增长；不能把结果稀少归因于保存一层。
+2. `backtest/saved_quantity_candidate_comparison.py::compare_saved_candidates` 仅接收上一层 `best_by_k`，新增连续候选经 `evaluate` 后再次每k只留增长最优。`additional_generation` 保留生成器候选，故连续新增部分可另审；不能据此恢复第一层已丢的局部/种子候选。
+3. `backtest/research_exact_fast_guided.py::enhanced_search` 将第二层 frontier 写入最终结果。`backtest/capped_frontier_rerank_research.py::rerank` 才执行50%整股裁剪和重评分：原增长最优未必是裁剪后最优，更未必满足下行约束。`core/saved_monthly_frontier_proposal.py::build_frontier_proposal` 也仅消费该每k单条结构。
+
+已有67月静态结果只证明“保存下来的增长frontier”存在宽篮子偏好，不能证明完整访问域内无小篮子合格解，更不能证明所有未访问组合无解。
+
+## 唯一建议：只加观察钩子，先不改搜索路径
+
+在独立研究版本的两处 `evaluate` 完成合法性与原增长计算后，向可选 `candidate_observer` 发送不可变签名及来源序号；不读其返回值，不改变 `best_by_k`、anchors、种子、配额或停止规则。默认无钩子时返回必须逐字节等同旧结果。两层共用本次调用的观察器，第一层被第二层重新评估的签名去重。
+
+观察器按原50%整股规则裁剪、去零、去重；仅当裁剪后正持仓数≤外部 `max_holdings` 时计算252日下行矩（现金单列始终保留）。以本次真实输入价格/可交易权益构造权重，核同日253价格、12情景和source pins，复用已验严格上下界比较与边界Fraction精确回退；门槛仍唯一 `D(P)<=D(QQQ)`。原始raw产品不能代替裁剪后产品，裁剪后必须调用既有精确12情景评分。
+
+仅保留每个实际k的“下行合格且原评分最高”记录及现金，已经足够服务这个固定门槛和既定排序，无需新造多目标优化器或任意top-N截断。选择时保留已合格原篮子的原严格改善/同分约定；其余合格篮子按原排名。风险阈值、持股数要求和现金不能事后为改善成绩更改。
+
+独立sidecar建议结构：`binding={search_arguments_sha256, training_prices_sha256, qqq_sha256, source_hashes, max_holdings}`；`coverage={raw_unique_observed,capped_unique,over_holdings_limit,risk_evaluated,risk_pass_positive,risk_pass_cash,exact_boundary_count,complete}`；`eligible_best_by_k[k]={target_quantities, actual_k, notional, residual_cash, exact_score_binding, downside_interval, comparison_method, source_phase, source_evaluation_index, raw_signature}`。旁路输出，不伪装为原 `best_by_k`，不让原source校验误认证研究附加结果。
+
+## 成本与失败边界
+
+设原唯一评估数E，裁剪后符合上限的唯一数U，持股上限H：原12情景路径不变；附加评分约O(U×12×H)，下行约O(U×252×H)有理数运算，位长会影响实际成本。若保留完整raw签名，记录/去重上界为O(E×N)，N为原证券域大小（原候选可能超过H）；仅合格裁剪签名为O(U×H)，获胜记录O(H²)，252日输入O(252×证券数)。这不是零成本日志：已完成静态预检只处理67个月保存域也耗时467.8秒，不能承诺观察所有搜索状态仍等速。应先单次有界夹具/代表月记录U和耗时，不直接启动67月全经济回测；观察预算耗尽须 `complete=false` 明确失败，不能把部分样本标完整或悄悄截断。
+
+必须验证：开启/关闭观察器原访问顺序、评估计数、selected及best_by_k完全一致；同k增长第二名满足D而第一名失败能留下；raw到cap后名次反转；跨两层重复仅算一次；0目标不算持股；恰好等于门槛精确通过、边界无法浮点放行；日期/证券域/源hash缺失拒绝；全部正仓失败时仅现金且单独统计；观察器未覆盖完整调用不得发布完整结果。
+
+该步骤只是扩大保留同次已评估候选，并非风险感知新搜索。若它仍只留下低收益/大现金小篮子，下一阶段是否改变种子或搜索目标必须另立合同：不能在这里偷偷加入风险优化邻域，更不能从旧best_by_k回放推断未保留候选的结果。任何账户实验仍需按新分支财富重新选股，保留公司行动与独立账务审核。
