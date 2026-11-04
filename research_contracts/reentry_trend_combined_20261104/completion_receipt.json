@@ -23,7 +23,9 @@
     "tmp/reentry_trend_combined_20261104/early/independent_review.json": "3a1f07f5a733b2127a2573e72a38949e3ca9d20ff791afc4d49a86362b167f23",
     "tmp/reentry_trend_combined_20261104/early/book.json": "428d39e16d430a6091c873a950531384877c7ba704b5cd61cf005e429e614100",
     "tmp/reentry_trend_combined_20261104/recent/independent_review.json": "3bfeb2a14a0fda51a47b579832117a789c4c03eaf9c21baaf82ffb20fe08e12c",
-    "tmp/reentry_trend_combined_20261104/recent/book.json": "157ce0db6bfcea9c4d0f4ac033ec0cead1d46fb476ebacf0364afe4c231714b6"
+    "tmp/reentry_trend_combined_20261104/recent/book.json": "157ce0db6bfcea9c4d0f4ac033ec0cead1d46fb476ebacf0364afe4c231714b6",
+    "tmp/reentry_trend_combined_20261104/early/summary.json": "5edbee7fe091ebc9b946f00fd222d4fcc8bf9b38ee984c9a2b161671080586b0",
+    "tmp/reentry_trend_combined_20261104/recent/summary.json": "bf1e0f167047fb9c8b0a71c5c85fa52635bb2b24d7e7ed180e6bcf19b0e35a82"
   },
   "production_changed": false,
   "real_account_changed": false,
