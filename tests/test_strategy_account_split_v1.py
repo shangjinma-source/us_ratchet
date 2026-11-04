@@ -75,3 +75,15 @@ class SplitLedgerTests(unittest.TestCase):
                          quantity=1, price='125', fees='0', executed_at='2026-11-20T14:32:00Z'))
         with self.assertRaisesRegex(ValueError, 'POST_SPLIT_FILL'):
             self.append(self.split)
+
+    def test_record_date_does_not_freeze_entitlement_before_distribution(self):
+        # Issuer FAQ: rights follow purchases/sales between record and distribution.
+        self.append(dict(event_id='buy-after-record', kind='DIRECT_FILL', security_id='S', side='BUY',
+                         quantity=2, price='1000', fees='0', executed_at='2026-11-10T15:00:00Z'))
+        self.append(dict(event_id='sell-before-distribution', kind='DIRECT_FILL', security_id='S', side='SELL',
+                         quantity=3, price='1000', fees='0', executed_at='2026-11-18T15:00:00Z'))
+        self.assertEqual(self.state['shares']['S'], 13)
+        before_fills = deepcopy(self.state['events'])
+        self.append(self.split)
+        self.assertEqual(self.state['shares']['S'], 104)
+        self.assertEqual(self.state['events'][:-1], before_fills)
