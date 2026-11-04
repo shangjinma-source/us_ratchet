@@ -25,3 +25,10 @@ scripts/research/*risk_budget*20261105.py -text
 tests/test_qqq_risk_budget*.py -text
 docs/candidates/split_identity_monthly_risk_adapter.py -text
 tests/test_split_identity_monthly_risk_candidate.py -text
+
+# Preserve the frozen EMA experiment source bytes.
+research_contracts/ema20_20261105/* -text
+docs/candidates/ema20* -text
+scripts/research/*ema20*20261105.py -text
+tests/test_ema20_market_adapter.py -text
+scripts/research/inventory_compounder_ttm_20261105.py -text
