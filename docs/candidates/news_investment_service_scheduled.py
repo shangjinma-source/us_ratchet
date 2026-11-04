@@ -182,7 +182,7 @@ class NewsInvestmentService:
                          for sid in sorted(set(account['shares']) | set(quantities))
                          if account['shares'].get(sid,0)>0 or quantities.get(sid,0)>0]
             source_result = measured('source_builder', self.source_builder or build_sources, snapshot, self.cache, positions, max_chars=110000)
-            scheduled_context = None if job.get('event_pending') else build_scheduled_earnings(snapshot, self.cache, positions)
+            scheduled_context = None if job.get('event_pending') or not any(p['ticker'] == 'MRNA' for p in positions) else build_scheduled_earnings(snapshot, self.cache, positions)
             generation = self.news_generation()
             sources = source_result['sources']
             if not sources:

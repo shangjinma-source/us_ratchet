@@ -1,5 +1,15 @@
 # 真实事件验收清单
 
+## 2026-11-04 财报日程上下文已接入按需 AI 后端
+
+正式 model/service 已替换为通过回归的 scheduled 候选；V29 增加绑定校验模块源码 pin，独立 scheduled_ai_runtime_20261104_v27_r1/v28_r1/v29_r1 配置串联部署。8010 PID 37756；账户、月目标、静态接口均返回 200，完整账户和月目标快照未变，三层配置及源码 hash 验证通过。部署与回退材料保存在本地 tmp/scheduled_ai_deployment_20261104；回退仅恢复 previous__ 源文件和 previous_active.json，不恢复账户数据库。
+
+验证：4 项模型适配、3 项隔离任务集成，以及原模型 10 项、原服务 13 项回归通过。真实 Sol Medium 单次模型调用成功，使用已保存公开正文及合成持仓；MRNA 识别 11 月 6 日会议安排，明确会议时间不等于财报首发时间，缺少业绩正文仍弃权。结果在本地 tmp/scheduled_model_acceptance_20261104/result.json。不是当前真实账户交易建议或投资收益验证。
+
+日历不进入买卖动作的实质新闻证据集合，不能仅凭财报日程退出持仓。缓存、输出、最终收据及期限保持绑定；事件预分析路径仍按原规则运行。纯日历无新闻正文时不调用模型。新闻发现 worker 已恢复且 enabled/worker_alive 为 true；SNDK 列表与正文发布时间冲突尚未解决，仍诚实阻塞该来源。
+
+未完成：盘中现金按钮到 AI 意见的完整用户链验收、实际成交承接、AI 交易经济效果证明。下一优先级为缩短复核流程（既有真实任务约 278 秒，完成后有效窗口仅约 34 秒）；不通过放松行情期限或来源校验提速。当前生产策略仍为 V27。
+
 ## 2026-11-04财报日历进入AI复核任务候选（未部署）
 
 新增news_schedule_binding_v1和两份完整model/service候选（docs/candidates/news_investment_{model,service}_scheduled.py）。按需复核从本次capture正文恢复日历，独立scheduled_context进入模型payload和缓存身份；模型结果绑定该上下文hash。会议/采集时效在模型输入、缓存读取与推理结束时复核，日历ID不进入实质新闻证据map。任务最终重读原始收据重建日历，变化则拒收；review deadline取原报价/风险与日历时效的最早期限。

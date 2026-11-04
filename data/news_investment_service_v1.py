@@ -1,3 +1,5 @@
+from data.news_schedule_binding_v1 import context_digest
+from data.news_scheduled_earnings_v1 import build_scheduled_earnings
 """Asynchronous, account-bound AI opinions; never writes financial state or orders."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -180,6 +182,7 @@ class NewsInvestmentService:
                          for sid in sorted(set(account['shares']) | set(quantities))
                          if account['shares'].get(sid,0)>0 or quantities.get(sid,0)>0]
             source_result = measured('source_builder', self.source_builder or build_sources, snapshot, self.cache, positions, max_chars=110000)
+            scheduled_context = None if job.get('event_pending') or not any(p['ticker'] == 'MRNA' for p in positions) else build_scheduled_earnings(snapshot, self.cache, positions)
             generation = self.news_generation()
             sources = source_result['sources']
             if not sources:
@@ -201,7 +204,7 @@ class NewsInvestmentService:
                         raise ValueError('EVENT_REVIEW_DOMAIN_CHANGED')
                     return deepcopy(pending['answer'])
                 return (self.model or analyze_review)(list(sources.values()), positions,
-                    self.cache/'investment_analysis', timeout=model_timeout, max_chars=120000)
+                    self.cache/'investment_analysis', timeout=model_timeout, max_chars=120000, scheduled_context=scheduled_context)
             answer = measured('current_analysis_lookup', lookup)
             analysis_attempt_finished = self.clock()
             job['analysis_receipt'] = answer.get('receipt')
@@ -209,6 +212,8 @@ class NewsInvestmentService:
                 raise ValueError('MODEL_REVIEW_UNAVAILABLE')
             if getattr(self, 'background_guard', None):
                 self.background_guard(answer)
+            if scheduled_context is not None and answer.get('scheduled_context_sha256') != context_digest(scheduled_context):
+                raise ValueError('SCHEDULE_MODEL_BINDING_MISMATCH')
             # No account lock is held during model execution. Re-read and re-quote.
             account, target, names = self.bound_context(binding)
             fresh = self.normalize_preview(measured('post_analysis_preview', self.preview, **binding))
@@ -220,6 +225,8 @@ class NewsInvestmentService:
             deadline = min(finished+timedelta(minutes=5), moment(fresh['risk_valid_until']))
             if job.get('event_pending'):
                 deadline = min(deadline, moment(job['event_pending']['opinion_valid_until']))
+            for event in (scheduled_context or {}).get('events', []):
+                deadline = min(deadline, moment(event['scheduled_at']), moment(event['observed_at'])+timedelta(hours=24))
             for quote in fresh.get('reference_quotes', {}).values():
                 deadline = min(deadline, moment(quote['reference_valid_until']))
             review = dict(schema='NEWS_INVESTMENT_REVIEW_V1', review_id=job['job_id'],
@@ -233,7 +240,7 @@ class NewsInvestmentService:
                 for source in row['evidence']:
                     source['publication_age_seconds'] = (finished-moment(source['published_at'])).total_seconds()
                     source['discovery_delay_seconds'] = (moment(source['observed_at'])-moment(source['published_at'])).total_seconds()
-            proposal.update(coverage=source_result['coverage'], model=answer.get('model'),
+            proposal.update(scheduled_context=deepcopy(scheduled_context), coverage=source_result['coverage'], model=answer.get('model'),
                 timeliness=dict(requested_at=job['started_at'], analysis_started_at=analysis_started.isoformat(),
                     analysis_completed_at=(answer.get('receipt') or {}).get('finished_at', finished.isoformat()),
                     revalidated_at=finished.isoformat(), cached=bool(job.get('event_pending')) or answer.get('status')=='CACHED',
@@ -269,6 +276,10 @@ class NewsInvestmentService:
                 self.bound_context(binding)
                 if self.news_generation() != generation:
                     raise ValueError('NEWS_UPDATED_DURING_ANALYSIS')
+                if scheduled_context is not None:
+                    rechecked = build_scheduled_earnings(dict(snapshot, generated_at=self.clock().isoformat()), self.cache, positions)
+                    if context_digest(rechecked) != context_digest(scheduled_context):
+                        raise ValueError('SCHEDULE_CHANGED_DURING_ANALYSIS')
                 # Potentially blocking context/source checks happen before the
                 # final clock sample. No quote or total-job deadline is renewed.
                 final_now = self.clock()

@@ -9,7 +9,7 @@ from data.strategy_unified_server_preparation_v28 import build_unified_server_pr
 from data.news_scheduled_service_v1 import ScheduledEarningsService
 from api.news_scheduled_earnings_v1 import create_router
 
-SOURCES = {'data/strategy_unified_server_preparation_v29.py',
+SOURCES = {'data/news_schedule_binding_v1.py', 'data/strategy_unified_server_preparation_v29.py',
            'data/news_scheduled_earnings_v1.py', 'data/news_scheduled_service_v1.py',
            'api/news_scheduled_earnings_v1.py', 'web/news_scheduled_earnings.js',
            'api/strategy_server_mount_v8.py'}
