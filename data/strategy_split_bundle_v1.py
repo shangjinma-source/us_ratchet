@@ -1,10 +1,16 @@
 """One preparation bundle, published only by a complete manifest. Not activation."""
+from contextlib import closing
+import sqlite3
 from copy import deepcopy
 from hashlib import sha256
+from fractions import Fraction
 import json
 import os
 
 from core.strategy_account_ledger import canonical, require
+from core.monthly_peak_exit import advance_monthly_exit
+from core.saved_monthly_frontier_proposal import build_frontier_proposal
+from data.strategy_split_history_projection_v1 import project_history_units
 from core.strategy_account_store import StrategyAccountStore
 from core.strategy_account_split_store_v1 import SplitStrategyAccountStore
 from data.monthly_peak_exit_store import MonthlyPeakExitStore
@@ -85,4 +91,41 @@ def verify_split_bundle(directory):
     transition = project_native_split(account_after=state, action_id=manifest['action_id'],
         risk_before=inputs['risk_before'], target=inputs['target'], expected_proposal_id=manifest['proposal_id'])
     require(transition['transition_id'] == manifest['transition_id'], 'SPLIT_BUNDLE_TRANSITION_BINDING')
+    history = project_history_units(observations=inputs['observations'], action=inputs['action'],
+                                    expected_sessions=inputs['expected_sessions'])
+    baseline = build_frontier_proposal(target=inputs['target'])['payload']['proposed_target_quantities']
+    prefix = [row for row in inputs['observations']
+              if row['session_date'] <= inputs['risk_before']['session_date']]
+    require(prefix and prefix[-1]['session_date'] == inputs['risk_before']['session_date'],
+            'SPLIT_BUNDLE_PREFIX_REQUIRED')
+    def replay(rows, targets):
+        previous = None
+        for row in rows:
+            result = advance_monthly_exit(state=previous, account_id=state['account_id'],
+                baseline_targets=targets, **{key:value for key,value in row.items() if key != 'evidence_sha256'})
+            previous = result['state']
+        previous['target_month'] = inputs['target']['payload']['target_month']
+        return result
+    require(replay(prefix, baseline)['state'] == inputs['risk_before'], 'SPLIT_BUNDLE_PREFIX_REPLAY')
+    result = replay(history['payload']['normalized_observations'],
+                    transition['payload']['risk_projection']['target_quantities'])
+    require(result['state'] == risk, 'SPLIT_BUNDLE_RISK_REPLAY')
+    expected_prices = {}
+    for row in history['payload']['normalized_observations']:
+        for security_id, price in row['closes'].items():
+            expected_prices.setdefault(security_id, {})[row['session_date']] = dict(
+                close=str(Fraction(price)), units=row['unit_ids'][security_id])
+    saved_prices = MonthlyPeakExitStore(directory/'risk.sqlite3').recorded_prices(
+        state['account_id'], risk['decision_date'])
+    require(saved_prices == expected_prices, 'SPLIT_BUNDLE_PRICES_REPLAY')
+    # Bind the archived preparation to the same inputs, not merely its own hash.
+    with closing(sqlite3.connect((directory/'risk.sqlite3').as_uri()+'?mode=ro', uri=True)) as connection:
+        rows = connection.execute('SELECT payload,digest FROM split_preparation').fetchall()
+    require(len(rows) == 1, 'SPLIT_BUNDLE_ARCHIVE_COUNT')
+    raw, digest = rows[0]
+    require(sha256(raw.encode()).hexdigest() == digest, 'SPLIT_BUNDLE_ARCHIVE_DIGEST')
+    expected = dict(schema='SPLIT_RISK_PREPARATION_V1', transition=transition, history=history,
+                    original_risk_state=inputs['risk_before'], action=inputs['action'],
+                    result=result, production_activated=False, source_authenticated=False)
+    require(json.loads(raw) == expected, 'SPLIT_BUNDLE_ARCHIVE_REPLAY')
     return manifest

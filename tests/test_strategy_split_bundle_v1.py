@@ -40,3 +40,52 @@ class SplitBundleTests(unittest.TestCase):
         self.assertTrue((self.directory/'failed.json').exists())
         with self.assertRaisesRegex(ValueError, 'BUNDLE_FAILED'): verify_split_bundle(self.directory)
         self.assertEqual(self.source.read(), before)
+
+    def test_rehashed_input_history_cannot_keep_old_risk(self):
+        import json
+        from hashlib import sha256
+        from core.strategy_account_ledger import canonical
+        prepare_split_bundle(**self.arguments)
+        path = self.directory/'inputs.json'
+        inputs = json.loads(path.read_bytes())
+        inputs['observations'][-1]['closes']['A'] = '13'
+        path.write_bytes(canonical(inputs))
+        manifest_path = self.directory/'complete.json'
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest['files']['inputs.json'] = sha256(path.read_bytes()).hexdigest()
+        manifest_path.write_bytes(canonical(manifest))
+        with self.assertRaisesRegex(ValueError, 'SPLIT_BUNDLE_.*(REPLAY|ARCHIVE)'):
+            verify_split_bundle(self.directory)
+
+    def test_rehashed_calendar_gap_rejected(self):
+        import json
+        from hashlib import sha256
+        from core.strategy_account_ledger import canonical
+        prepare_split_bundle(**self.arguments)
+        path = self.directory/'inputs.json'
+        inputs = json.loads(path.read_bytes())
+        inputs['expected_sessions'] = inputs['expected_sessions'][:1]
+        path.write_bytes(canonical(inputs))
+        manifest_path = self.directory/'complete.json'
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest['files']['inputs.json'] = sha256(path.read_bytes()).hexdigest()
+        manifest_path.write_bytes(canonical(manifest))
+        with self.assertRaisesRegex(ValueError, 'SPLIT_FULL_HISTORY_REQUIRED'):
+            verify_split_bundle(self.directory)
+
+    def test_rehashed_saved_prices_cannot_disagree_with_replayed_history(self):
+        import json, sqlite3
+        from contextlib import closing
+        from hashlib import sha256
+        from core.strategy_account_ledger import canonical
+        prepare_split_bundle(**self.arguments)
+        path = self.directory/'risk.sqlite3'
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute("UPDATE risk_prices SET close='999' WHERE security_id='A'")
+            connection.commit()
+        manifest_path = self.directory/'complete.json'
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest['files']['risk.sqlite3'] = sha256(path.read_bytes()).hexdigest()
+        manifest_path.write_bytes(canonical(manifest))
+        with self.assertRaisesRegex(ValueError, 'SPLIT_BUNDLE_PRICES_REPLAY'):
+            verify_split_bundle(self.directory)
