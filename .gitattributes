@@ -197,3 +197,4 @@ scripts/research/run_downside_account_candidate_20261105_v9.py -text
 tests/test_downside_resume_v9_20261105.py -text
 tests/test_downside_v9_independent_review_20261105.py -text
 scripts/research/summarize_downside_max10_20261105.py -text
+scripts/research/preflight_cross_sectional_momentum_20261105.py -text
