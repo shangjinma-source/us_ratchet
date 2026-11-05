@@ -4,6 +4,8 @@
 
 最终根线程复核：`D:/python/python.exe -B -m unittest discover -s tests -p test_split_native_runtime_routes_20261105.py -q`，1 项综合测试，3.281 秒，OK。
 
+后续扩展同一测试至目标 API：`split_native_monthly_routes_20261105.attach_monthly_routes` 将原 proposal-aware monthly router 挂到同一 view/current 对象，拒绝重复挂载或路由冲突；不生成新算法、不默认启用生产。最终扩展测试 1 项3.805秒通过。实际 HTTP GET 返回持久 proposal；POST EXPLICIT_RECONFIGURE 在当前现金/成交后生成不同 target；重发同请求完全幂等；旧 target/proposal 新闻绑定拒绝。该测试证明同月重新配置 API，不等价于真实跨月资料准备或真实新月时点验收。
+
 - 现金 POST 后 current 返回 READY，账户和建议 revision 一致。
 - HTTP DIRECT_FILL 在临时账本卖出 1 股后持仓减少 1，事件只增加 1 条；同一请求重试账本不变。
 - 旧新闻 bound_context 被拒绝；未重新确认现金时 current 返回 409 / CASH_RECONFIRMATION_REQUIRED。

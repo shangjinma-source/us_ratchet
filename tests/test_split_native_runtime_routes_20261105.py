@@ -19,6 +19,7 @@ from data.news_risk_skill_v1 import PINS
 from docs.candidates.split_native_daily_composition_20261105 import build_composition
 from docs.candidates.split_native_daily_execution_bridge_20261105 import DailyMixedExecutionBridge,DailyBuyDataWaitExecutionBridge
 from docs.candidates.split_runtime_routes_20261105 import build_routes
+from docs.candidates.split_native_monthly_routes_20261105 import attach_monthly_routes
 
 class Tests(unittest.TestCase):
  def test_native_target_http_cash_fill_retry_and_news_staleness(self):
@@ -49,6 +50,7 @@ class Tests(unittest.TestCase):
    start=self.enterContext(patch('data.news_event_pipeline_v1.EventNewsPipeline.start_worker'))
    stop=self.enterContext(patch('data.news_event_pipeline_v1.EventNewsPipeline.stop_worker'))
    prepared=build_routes(root=Path(folder),monthly_view=view,daily_service=service,journal=DailyAdviceJournalV1(Path(folder)/'journal.sqlite'),clock=provider.clock,validate_sources=monthly.selection._pins,policy_references={'scope':'CONTROLLED_NATIVE_HTTP_TEST'},timing_bundles=bundles,account_arguments=dict(database_path=store.path,account_id=state['account_id'],resolver=market.identity,clock=provider.clock))
+   prepared=attach_monthly_routes(prepared=prepared,validate_sources=monthly.selection._pins)
    app=FastAPI();app.include_router(prepared['router'])
    connect=socket.socket.connect
    def offline(sock,address):
@@ -87,6 +89,18 @@ class Tests(unittest.TestCase):
     self.assertEqual(remaining['quantity'],sale['quantity']-1)
     self.assertEqual(value['account']['revision'],store.read()['revision']);self.assertEqual(news.context()[0],store.read())
     self.assertEqual(news.context()[1],view.current());self.assertEqual(view.current(),fixed_target)
+    target_response=client.get('/api/strategy-account/target')
+    self.assertEqual(target_response.status_code,200,target_response.text)
+    self.assertEqual(target_response.json()['proposal_id'],target['proposal_id'])
+    old_binding=dict(expected_revision=store.read()['revision'],target_id=target['target_id'],expected_proposal_id=target['proposal_id'])
+    regeneration=dict(event_id='http-reconfigure',reason='EXPLICIT_RECONFIGURE',expected_revision=store.read()['revision'],previous_target_id=target['target_id'])
+    regenerated=client.post('/api/strategy-account/target/generate',json=regeneration)
+    self.assertEqual(regenerated.status_code,200,regenerated.text)
+    self.assertNotEqual(regenerated.json()['target_id'],target['target_id'])
+    repeated=client.post('/api/strategy-account/target/generate',json=regeneration)
+    self.assertEqual(repeated.status_code,200,repeated.text)
+    self.assertEqual(repeated.json(),regenerated.json())
+    with self.assertRaisesRegex(ValueError,'STALE_ACCOUNT_OR_TARGET'):news.bound_context(old_binding)
     self.assertEqual(start.call_count,1);self.assertFalse(stop.called)
    self.assertEqual(stop.call_count,1)
 
