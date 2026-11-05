@@ -46,3 +46,9 @@
 新 native reader 的原 timing calendar 可能只覆盖训练结束日。新增 `split_calendar_extension_20261105.validate_calendar_extension`：仅允许完整保留历史 sessions 前缀后追加日期，日历其余字段必须完全一致；全部会话校验纽约日期、开始结束顺序、无重叠及日期递增。原 timing hash 和拆股报价单位边界不重签、不重算。
 
 独立测试 1 项 0.012 秒通过：追加和原样允许；改历史、删除、前插、重复、跨日期及改市场拒绝。该测试仅证明扩展规则，native reader 接入与其完整源测试仍由同轮任务继续验证。
+
+## Native reader 拒绝边界
+
+独立 `test_split_native_daily_bindings_20261105.py` 在实际 factory 目标与源归档上验证：重新 hash 当前复核仍不能替换目标原有 timing；真实临时现金事件后旧复核 revision 拒绝；目标生成后增加新的拆股行动不能沿用原目标。三者均在风险写入前拒绝，未生成成功信号档案。session41457：1 综合测试17.697秒通过。首次测试的新行动时点晚于临时 store 时钟，被 FUTURE_SPLIT_CONFIRMATION 正确阻止；仅将测试时钟推进到测试当前时点后重跑，未改产品检查。
+
+组合联调随后发现原 source fixture 曾对带 view 附加字段的 target 重建 proposal，未使用真实 proposal store 中的编号。该 fixture 正在修正为原 monthly.current() 和 view.require_proposal；上述边界需随修正后的完整组合组再次确认，暂不将这次独立通过当成端到端完成。
