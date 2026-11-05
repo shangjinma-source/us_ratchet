@@ -38,7 +38,7 @@ class ReferenceServiceTests(unittest.TestCase):
             self.ref['reference_state_sha256']='b'*64
             return deepcopy(self.base.answer)
         self.base.model.side_effect=change
-        self.assertEqual(self.run_job()['status'],'STALE')
+        result=self.run_job();self.assertEqual(result['status'],'FAILED');self.assertEqual(result['error'],'REFERENCE_REVIEW_CHANGED');self.assertNotIn('proposal',result);self.assertNotIn('binding',result)
         self.plan.assert_not_called()
 
     def test_change_during_risk_bridge_discards_result(self):
@@ -46,7 +46,7 @@ class ReferenceServiceTests(unittest.TestCase):
             self.ref['configuration_sha256']='d'*64
             return {'status':'WAIT'}
         self.plan.side_effect=change
-        self.assertEqual(self.run_job()['status'],'STALE')
+        result=self.run_job();self.assertEqual(result['status'],'FAILED');self.assertEqual(result['error'],'REFERENCE_REVIEW_CHANGED');self.assertNotIn('proposal',result);self.assertNotIn('binding',result)
 
     def test_risk_bridge_cannot_increase_filtered_target(self):
         self.plan.return_value={'status':'READY','rows':[{'security_id':'A','planned_target_quantity':11}], 'candidate_orders':[]}
@@ -56,14 +56,14 @@ class ReferenceServiceTests(unittest.TestCase):
 
     def test_missing_old_binding_and_pre_run_changes_do_not_call_model(self):
         self.binding.pop(KEY)
-        self.assertEqual(self.run_job()['status'],'STALE')
+        result=self.run_job();self.assertEqual(result['status'],'FAILED');self.assertEqual(result['error'],'REFERENCE_REVIEW_CHANGED');self.assertNotIn('proposal',result);self.assertNotIn('binding',result)
         self.base.model.assert_not_called()
 
     def test_event_pending_change_checks_before_source_analysis(self):
         self.service.event_guard=lambda pending:True
         pending={'execution_window':{'not_before':'2026-10-27T15:00:00Z'},'opinion_valid_until':'2026-10-27T15:05:00Z'}
         self.ref['reference_version']+=1
-        self.assertEqual(self.run_job(event_pending=pending)['status'],'STALE')
+        result=self.run_job(event_pending=pending);self.assertEqual(result['status'],'FAILED');self.assertEqual(result['error'],'REFERENCE_REVIEW_CHANGED');self.assertNotIn('proposal',result);self.assertNotIn('binding',result)
         self.base.collector.assert_not_called()
         self.base.model.assert_not_called()
 
@@ -97,7 +97,7 @@ class ReferenceServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'REFERENCE_REVIEW_CHANGED'):
             self.service.bound_context(events.binding)
         self.binding=events.binding
-        self.assertEqual(self.run_job()['status'],'STALE')
+        result=self.run_job();self.assertEqual(result['status'],'FAILED');self.assertEqual(result['error'],'REFERENCE_REVIEW_CHANGED');self.assertNotIn('proposal',result);self.assertNotIn('binding',result)
 
 
 if __name__=='__main__':unittest.main()

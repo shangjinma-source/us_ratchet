@@ -58,7 +58,7 @@ class TimingTests(unittest.TestCase):
         self.assertEqual(self.preview_call.call_count,1)
     def test_initial_context_failure_and_stale_telemetry_only(self):
         self.account['revision']='changed'
-        r=self.run_job();self.assertEqual(r['status'],'STALE')
+        r=self.run_job();self.assertEqual(r['status'],'FAILED');self.assertEqual(r['error'],'STALE_ACCOUNT_OR_TARGET')
         self.assertEqual(r['stage_timings']['initial_bound_context']['status'],'FAILED')
         self.assertNotIn('proposal',r);self.assertNotIn('binding',r)
         self.model.assert_not_called()

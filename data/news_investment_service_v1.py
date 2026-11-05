@@ -27,7 +27,8 @@ def digest(value):
 
 class NewsInvestmentService:
     def __init__(self, *, cache, context, preview, validate=lambda: None,
-                 collector=None, model=None, source_builder=None, clock=None, risk_plan_provider=None, input_operation=None):
+                 collector=None, model=None, source_builder=None, clock=None, risk_plan_provider=None, input_operation=None, context_validates_sources=False):
+        self.context_validates_sources = context_validates_sources
         self.input_operation = input_operation
         self.cache = Path(cache)
         self.risk_plan_provider = risk_plan_provider
@@ -48,7 +49,9 @@ class NewsInvestmentService:
                            (job['job_id'], json.dumps(job, ensure_ascii=False)))
 
     def bound_context(self, binding):
-        self.validate()
+        # Only the explicit server composition can certify that context validates.
+        if not self.context_validates_sources:
+            self.validate()
         account, target, names = self.context()
         if (account['revision'] != binding['expected_revision'] or
                 target['target_id'] != binding['target_id'] or

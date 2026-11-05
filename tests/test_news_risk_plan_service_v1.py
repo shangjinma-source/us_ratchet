@@ -39,7 +39,7 @@ class RiskPlanServiceTests(original_service_tests.ServiceTests):
             return result
         self.service.risk_plan_provider=change
         result=self.run_job()
-        self.assertEqual(result['status'],'STALE');self.assertNotIn('proposal',result)
+        self.assertEqual(result['status'],'FAILED');self.assertEqual(result['error'],'STALE_ACCOUNT_OR_TARGET');self.assertNotIn('proposal',result);self.assertNotIn('binding',result)
 
     def test_callback_expired_quote_never_published(self):
         def expired(**arguments):

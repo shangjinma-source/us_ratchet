@@ -57,7 +57,7 @@ def compose(*, root, monthly_view, observed_daily, validate, background_configur
             return account, target, names
     service = NewsInvestmentService(cache=root/'data/cache/news', context=context,
                                    preview=observed_daily.preview, validate=validate,
-                                   input_operation=monthly_view.snapshot_operation)
+                                   input_operation=monthly_view.snapshot_operation, context_validates_sources=True)
     from data.news_risk_plan_v1 import build_risk_plan
     from data.news_risk_execution_bridge_v1 import make_hold_risk_plan_adapter
 
