@@ -7,3 +7,9 @@
 候选native链已通过受控来源、隔离账本和新闻API测试，不能因此直接替换生产配置。部署前仍需：真实日行情口径和当前目标授权证据；新配置在正式存储路径上的准入与兼容；原资料任务读端兼容；同一账户的切换/回退演练；新PID加载版本及当前建议的实际核验。未来公司行动到账尚不能提前认证，但其缺失也不能被解释成当前未发生行动的V27必须停用。
 
 生产配置和全部账户、定时任务保持原状。此处没有要求用户额外确认，也没有把上述工程问题转嫁给用户；下一步应形成真实来源下可审核的候选配置，并在隔离副本演练，不能把合成授权改名冒充正式授权。
+
+## 真实账本副本的迁移演练
+
+2026-11-05T12:54:17Z，以SQLite只读连接和backup API分别复制当前account、target、risk、proposal四库至本地tmp/native_real_rehearsal_20261105T125417Z，4/4 quick_check通过。四库为分别备份，**不是跨库原子快照，不可作为激活包**；manifest仅本地保留，私人账本不提交GitHub。
+
+在该目录内调用现有prepare_split_account，把account.sqlite3迁移到另一个新native-account.sqlite3。实际结果SPLIT_ACCOUNT_SNAPSHOT_PREPARED_NOT_ACTIVATED；新旧读取器完整状态相等，源副本sha256不变，production_activated=false，requires_activation_source_recheck=true。没有追加拆股或成交事件，也没有访问真实库的写连接。该结果证明当前历史事件可保留重放，不证明跨库绑定、实际公司行动准入、native目标/风险/行情整体兼容或上线完成。
