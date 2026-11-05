@@ -160,7 +160,12 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
    if(data.status!=='READY')throw issue('估值响应不完整。');
    model.valuation=data;if(!quiet)model.message='估值已更新。';
    model.performance=null;
-   try{const performance=await request('/restart-performance');if(version===valuationGeneration&&model.account?.revision===revision&&performance.account_revision===revision)model.performance=performance;}catch(_){/* Missing or unverified performance must not invalidate a valid account valuation. */}
+   try{const performance=await request('/restart-performance');if(version===valuationGeneration&&model.account?.revision===revision&&performance.account_revision===revision){
+    const shared=performance.valuation_snapshot;
+    if(performance.status==='READY_RECONCILED_NO_EXTERNAL_FLOW'&&shared?.status==='READY'&&shared.account_revision===revision&&Array.isArray(shared.holdings)&&shared.valued_at===performance.as_of&&String(shared.strategy_total)===String(performance.current_equity)){
+     model.valuation=shared;model.performance=performance;
+    }
+   }}catch(_){/* Missing or unverified performance must not invalidate a valid account valuation. */}
   }catch(e){if(version===valuationGeneration){model.performance=null;model.valuation=null;model.message=quiet?'市值暂不可用，当前按成本显示。':errors[e.code]||e.message;}throw e;}
   finally{if(version===valuationGeneration){model.valuationLoading=false;emit();}}
  }

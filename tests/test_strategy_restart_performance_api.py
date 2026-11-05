@@ -28,6 +28,8 @@ class ApiTests(unittest.TestCase):
             result=client.get(url)
             self.assertEqual(result.status_code,200)
             self.assertEqual(result.json()['return_fraction'],'0')
+            self.assertEqual(result.json()['valuation_snapshot']['strategy_total'],result.json()['current_equity'])
+            self.assertEqual(result.json()['valuation_snapshot']['valued_at'],result.json()['as_of'])
             self.assertIsNone(result.json()['maximum_drawdown_fraction'])
             self.assertEqual(client.get(url+'?baseline_path=anything').status_code,409)
             self.assertEqual(client.post(url).status_code,405)
@@ -48,6 +50,7 @@ class ApiTests(unittest.TestCase):
             filled_result = client.get(url)
             self.assertEqual(filled_result.status_code, 200)
             self.assertEqual(filled_result.json()['return_fraction'], '19/1000')
+            self.assertEqual(filled_result.json()['valuation_snapshot']['strategy_total'], '1019')
             self.assertEqual(filled_result.json()['account_revision'], traded['revision'])
             self.assertEqual(json.dumps(current[0], sort_keys=True), before_read)
             current[0] = state

@@ -4,6 +4,7 @@ read_account must return the authenticated full ledger from the formal store;
 same-revision snapshots rely on that store's integrity, not client claims.
 Historical baseline valuation is allowed, but current valuation must be fresh.
 """
+from copy import deepcopy
 import json
 from pathlib import Path
 from hashlib import sha256
@@ -64,6 +65,7 @@ class RestartPerformanceService:
             account_evidence={after['revision']:dict(baseline_account=old,current_account=after)})
         return dict(result, account_revision=after['revision'], initial_equity=baseline['initial_equity'],
                     effective_at=baseline['effective_at'], current_equity=current['strategy_total'],
+                    valuation_snapshot=deepcopy(current) if result['status']=='READY_RECONCILED_NO_EXTERNAL_FLOW' else None,
                     orders_created=False)
 
 
