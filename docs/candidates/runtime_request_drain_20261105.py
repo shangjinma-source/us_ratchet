@@ -4,6 +4,7 @@ Only a server owner can call begin/resume. A drained gate is not evidence that
 background workers, scheduled tasks or another process have stopped writing.
 """
 from threading import Condition
+import asyncio
 
 
 class RequestDrain:
@@ -50,6 +51,7 @@ class RequestDrain:
 class DrainMiddleware:
     def __init__(self, app, gate):
         self.app, self.gate = app, gate
+        self._requests = set()
 
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
@@ -61,7 +63,18 @@ class DrainMiddleware:
                 (b'retry-after', b'5'), (b'content-length', str(len(body)).encode())]))
             await send(dict(type='http.response.body', body=body))
             return
+        # A cancelled HTTP caller does not prove that an account write stopped.
+        # Keep ownership/counting until the actual application task terminates.
         try:
-            await self.app(scope, receive, send)
-        finally:
+            task = asyncio.create_task(self.app(scope, receive, send))
+        except BaseException:
             self.gate.leave()
+            raise
+        self._requests.add(task)
+        def completed(request):
+            self._requests.discard(request)
+            self.gate.leave()
+            if not request.cancelled():
+                request.exception()  # Observe failures after the caller disconnected.
+        task.add_done_callback(completed)
+        await asyncio.shield(task)

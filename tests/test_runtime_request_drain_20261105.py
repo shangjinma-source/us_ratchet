@@ -40,5 +40,27 @@ class Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gate.begin(),0)
         self.assertTrue(gate.wait(0))
 
+    async def test_cancelled_caller_does_not_mark_unfinished_write_drained(self):
+        entered, release, committed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        async def writing(scope, receive, send):
+            entered.set()
+            await release.wait()
+            committed.set()
+        gate = RequestDrain(); middleware = DrainMiddleware(writing, gate)
+        caller = asyncio.create_task(middleware({'type':'http'}, None, None))
+        await entered.wait()
+        caller.cancel()
+        with self.assertRaises(asyncio.CancelledError): await caller
+        self.assertEqual(gate.begin(), 1)
+        self.assertFalse(gate.wait(0))
+        self.assertFalse(committed.is_set())
+        pending = list(middleware._requests)
+        self.assertEqual(len(pending), 1)
+        release.set()
+        await asyncio.gather(*pending)
+        self.assertTrue(committed.is_set())
+        self.assertTrue(gate.wait(0))
+        self.assertFalse(middleware._requests)
+
 
 if __name__ == '__main__': unittest.main()
