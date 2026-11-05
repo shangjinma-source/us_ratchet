@@ -55,6 +55,10 @@ def verify_saved_frontier_daily_evidence(*, research_root, target_id, state, ris
     require(type(review_bytes) is bytes and len(review_bytes) <= 1024*1024
             and sha256(review_bytes).hexdigest() == trusted_review_sha256, 'FRONTIER_REVIEW_HASH')
     review = json.loads(review_bytes)
+    if 'source_received_by_security' in review:
+        received_map=review['source_received_by_security']
+        require(set(received_map)==set(review['documents']['raw_by_security']) and
+            max(map(stamp,received_map.values()))==stamp(review['source_received_at']), 'RAW_CAPTURE_RECEIPT_DOMAIN')
     clocks = review['action_clocks']
     require(clocks['distribution_at'] == clocks['quote_unit_effective_at'] == action['effective_at']
         and stamp(action['broker_confirmed_at']) <= stamp(now)
@@ -180,7 +184,7 @@ def verify_saved_frontier_daily_evidence(*, research_root, target_id, state, ris
                 and unit['transition_id'] == transition['transition_id'], 'FRONTIER_UNIT_REVIEW_BINDING')
         normalizations[sid] = unit['raw_normalization']
         nr = normalizations[sid]
-        require(nr['current_unit_id'] == unit['basis_id'] and nr['captured_at'] == review['source_received_at'], 'RAW_UNIT_CAPTURE_BINDING')
+        require(nr['current_unit_id'] == unit['basis_id'] and nr['captured_at'] == review.get('source_received_by_security', {}).get(sid, review['source_received_at']), 'RAW_UNIT_CAPTURE_BINDING')
         expected_schedule = []
         if sid == action['security_id']:
             expected_schedule = [dict(action_id=action['action_id'], security_id=sid, ratio=action['ratio'],
