@@ -69,3 +69,15 @@ v7 summary已确认BLOCKED / ORDER_PROVIDER_NOT_READY，563/646会话、new28/re
 ## ASML最终公告已定位，尚待时间边界与成对准入
 
 2026-11-05沿adr.com公开JS的真实API路由取得CUSIP N07059210 final列表。根已直接打开JPM 4月final PDF（cmsId ed94f9f7e606407d857f7482ba7c32a9, sequenceNo14）：公告4/28、FX fixing4/27、EUR2.70、最终汇率1.1735、gross USD3.168450、15%扣税后net2.693183、pay5/5。原provider3.177是初始近似值，不是最终gross舍入；应显式修正映射。7月API final为gross2.137748、pay8/5（晚于回测截止，仅应收）。news_economic_cases准备原文补证；strategy_fit_execution核4/27应收计量是否进入final公布前决策。未准入、未启动v8，不把最终会计金额当事前新闻信号。
+
+## v8终止：全部31次选股已完成，余21日会计受GEHC股息阻断
+
+实际session10311退出0但summary为BLOCKED，不是完成。625/646会话，new31/replayed28，累计2550.014866100042秒。6/30 gate仅GEHC security:0001932393:36266G107 的7/24普通股息USD0.035两源观察未映射，missing_action_streams为空；31次选股全部保存。news核官方支付日配对；执行agent核原父链深度能否支持8节点父链续接，无权修改旧冻结源。下一步只允许重放31次选择并完成余21日会计，原搜索上限不扩展。ASML真实阻断已解除且563行前缀通过，尚未完整经济独审。
+
+## v9完整回放已完成，独审首次失败待修正证据规范化校验
+
+v9 session95332退出0，summary COMPLETE646/646，new31/replayed31、累计2613.748398500029秒，未新增选股；625日prefix通过。GEHC补证准入且仅应收。完整独审session68690终止INSM_SCOPED_REVIEW_APPLIED：根实际比对原missing_stream完全一致，review仅增加ticker、request_checks、legacy_request_check三个执行准入核验字段。待独立重建精确预期行并追加篡改拒绝测试；未改经济账本，当前不标独审通过、不发布最终指标。
+
+## v9完整独审与经济比较完成
+
+修正独审INSM规范化字段后session41875成功，646风险会话/31选择、原费用及股息账本核验通过，最终INDEPENDENT_DOWNSIDE_MAX10_CHAIN_FINANCE_PASS；比较器来源与完整账本核验后成功输出COMPLETE_AUDITED_LATE_WINDOW_COMPARISON。候选年化20.3010%/最大收盘回撤18.1730%，同窗QQQ22.7207%/22.5430%；未满足双优，不部署。候选121成交、2026部分年-9.5514%，早窗ALXN仍未完整。完整报告downside_max10_late_result_20261105.md，不能将后窗完成冒称Goal完成。

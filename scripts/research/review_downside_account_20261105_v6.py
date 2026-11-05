@@ -1,5 +1,6 @@
 """Independent v6 audit with scoped provider absence, no synthetic dividends."""
 import argparse,gzip,inspect,json
+from copy import deepcopy
 from datetime import datetime,timezone
 from hashlib import sha256
 from pathlib import Path
@@ -34,11 +35,26 @@ def validate_insm_absence(artifact,original_events,inventory):
     require(len(sessions)==647 and sessions[0]==row['start_exclusive'] and sessions[-1]==row['end_inclusive'] and days==sorted(set(days)) and len(days)==receipt['rows'] and set(sessions)<=set(days),'INSM_FULL_CALENDAR')
     begin=datetime.fromtimestamp(int(q['period1'][0]),timezone.utc).date().isoformat();end=datetime.fromtimestamp(int(q['period2'][0]),timezone.utc).date().isoformat()
     require(begin<=sessions[0] and end>sessions[-1],'INSM_REQUEST_INTERVAL')
+    derived=dict(first_bar=days[0],last_bar=days[-1],verified_sessions=len(sessions),complete_gzip_crc_json=True)
+    require(all(artifact['checks'][key]==value for key,value in derived.items()),'INSM_DERIVED_REQUEST_CHECKS')
     for key in ('open','high','low','close'):
         values=r['indicators']['quote'][0][key]
         require(len(values)==len(days) and all(values[days.index(d)] is not None and values[days.index(d)]>0 for d in sessions),'INSM_OHLC_COVERAGE')
     require(all(ref in artifact['source_hashes'] for ref in row['source_references']),'INSM_REFERENCE_PINS')
     return []
+
+def check_insm_applied(new, missing, artifact):
+    # The execution adapter adds request metadata, not a broader absence scope.
+    # Independently recheck the pinned raw source before deriving that metadata.
+    document=base.read(ROOT/'tmp/old_continuous_baseline_20261026_v9/execution_inputs.json')
+    validate_insm_absence(artifact,document['dividend_events'],document['provider_event_inventory'])
+    expected=deepcopy(artifact['review_rows'][0])
+    expected['ticker']='INSM'
+    expected['request_checks']=[dict(source=p) for p in expected['selected_price_sources']]
+    expected['legacy_request_check']={k:artifact['checks'][k] for k in ('first_bar','last_bar','verified_sessions','complete_gzip_crc_json')}
+    matches=[entry for entry in new['accepted_period_reviews'] if entry['missing_stream'].get('security_id')==expected['security_id']]
+    require(len(matches)==1 and matches[0]==dict(review=expected,missing_stream=missing),'INSM_SCOPED_REVIEW_APPLIED')
+
 
 def validate_resume(directory,freeze_path=FREEZE,schema='DOWNSIDE_MAX10_RESUME_EXECUTION_V6',parent_rows=502,parent_budget=None,additional=(),absence_origin=None):
     freeze=base.read(ROOT/freeze_path);chain.v2.check_pins(freeze['source_hashes'])
@@ -58,7 +74,7 @@ def validate_resume(directory,freeze_path=FREEZE,schema='DOWNSIDE_MAX10_RESUME_E
     require(missing['security_id']==row['security_id'] and missing['source'] in row['selected_price_sources'] and all(s['source_path'] in row['selected_price_sources'] for s in missing['selected_source_segments']),'INSM_OLD_SOURCE_SCOPE')
     new=base.read(directory/'2025-12-31.exposure.json',True)
     require(new['admitted'] and not new['missing_action_streams'] and not new['unmapped_events'],'INSM_NEW_GATE')
-    require(any(e['review']==row and e['missing_stream']==missing for e in new['accepted_period_reviews']),'INSM_SCOPED_REVIEW_APPLIED')
+    check_insm_applied(new,missing,base.read(ROOT/INSM_PATH))
     return result
 
 def run(output):
