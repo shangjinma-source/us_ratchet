@@ -13,6 +13,9 @@ from docs.candidates.split_native_rolling_admission_20261105 import NativeSplitR
 # Fixed conservative local-import inventory; includes inactive branches, not a claim
 # that every imported function executes. No request-time dependency discovery.
 SOURCE_PATHS=frozenset({
+ 'docs/candidates/news_review_worker_owner_20261105.py',
+ 'docs/candidates/runtime_request_drain_20261105.py',
+ 'docs/candidates/runtime_service_quiesce_20261105.py',
  'docs/candidates/split_configured_runtime_routes_20261105.py',
  'docs/candidates/split_configured_news_calendar_20261105.py',
  'data/news_event_calendar_v1.py',

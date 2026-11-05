@@ -10,8 +10,9 @@ from threading import Event,Thread,current_thread,Lock
 
 
 class ServiceQuiescer:
-    def __init__(self,*,gate,worker_owner):
+    def __init__(self,*,gate,worker_owner,review_owner=None):
         self.gate,self.owner=gate,worker_owner
+        self.review_owner=review_owner
         self._lock=Lock()
 
     def quiesce(self,*,timeout):
@@ -41,7 +42,13 @@ class ServiceQuiescer:
             alive=worker is not None and worker.is_alive()
             if alive:
                 return dict(status='QUIESCE_TIMEOUT',stage='WORKER',http_drained=True,worker_stopped=False,gate_closed=True,may_switch=False)
+            if self.review_owner is not None:
+                reviews=self.review_owner.close_and_wait(timeout=max(0,deadline-time.monotonic()))
+                if reviews['status']!='REVIEWS_DRAINED':
+                    return dict(status='QUIESCE_TIMEOUT',stage='REVIEWS',http_drained=True,
+                                worker_stopped=True,reviews_drained=False,gate_closed=True,may_switch=False)
             return dict(status='QUIESCED',stage='COMPLETE',http_drained=True,worker_stopped=True,gate_closed=True,may_switch=False,
-                        scope='THIS_HTTP_GATE_AND_ONE_REGISTERED_WORKER_ONLY')
+                        reviews_drained=True if self.review_owner is not None else None,
+                        scope='THIS_HTTP_GATE_REGISTERED_WORKER_AND_REVIEWS' if self.review_owner is not None else 'THIS_HTTP_GATE_AND_ONE_REGISTERED_WORKER_ONLY')
         finally:
             self._lock.release()
