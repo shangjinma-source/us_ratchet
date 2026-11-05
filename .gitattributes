@@ -198,3 +198,13 @@ tests/test_downside_resume_v9_20261105.py -text
 tests/test_downside_v9_independent_review_20261105.py -text
 scripts/research/summarize_downside_max10_20261105.py -text
 scripts/research/preflight_cross_sectional_momentum_20261105.py -text
+backtest/momentum_equal_weight_target_research.py -text
+docs/candidates/momentum_absence_20261105.py -text
+docs/candidates/momentum_account_decision_20261105.py -text
+docs/candidates/momentum_action_bridge_20261105.py -text
+docs/candidates/momentum_cash_merger_settlement_20261105.py -text
+scripts/research/inspect_momentum_absence_20261105.py -text
+scripts/research/inventory_momentum_actions_20261105.py -text
+scripts/research/prepare_momentum_early_dividends_20261105.py -text
+scripts/research/recheck_momentum_inventory_20261105.py -text
+scripts/research/verify_momentum_dividend_batch_20261105.py -text
