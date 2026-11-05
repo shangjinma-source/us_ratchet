@@ -13,3 +13,14 @@
 - 继续保留旧仓、未成交单、现金限制、报价单位和券商实际可交易时点校验。
 
 候选改动未部署，未写真实账户，未改变 V27 策略或原定时任务。下一次执行批准必须使用修改后的 daily evidence 源码 hash；不修改旧批准收据。
+
+## 新月风险边界已验证
+
+新增 `tests/test_split_new_month_risk_20261105.py`，在真实临时 split-prepared SQLite 上调用现有 `apply_frontier_exit_packet`。新月目标为签名合成 fixture，并非真实选股器输出，因此只证明风险边界：
+
+- 缺少显式月 reset 授权时拒绝，原风险状态不变。
+- 有授权时采用新 proposal 原生股数，不再次乘 8；A 保留 unit-A8。
+- 新月份状态重新初始化；上月价格历史与 split_preparation 内容、摘要保持不变。
+- 同一新月数据再次调用，状态与有效目标数量一致。
+
+验证命令：`D:/python/python.exe -B -m unittest discover -s tests -p test_split_new_month_risk_20261105.py -q`；1 项测试，5.379 秒，OK。现有风险计算可复用，下一步重点是原生新月 source admission / reader / execution 接线，不需复制一套风险算法。该结果不证明完整两月选择、HTTP 建议、真实成交或生产部署已通过。
