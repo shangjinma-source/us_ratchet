@@ -68,3 +68,19 @@ tests/test_research_exact_fraction_json.py -text
 scripts/research/review_complete_downside_observer_20261105.py -text
 
 docs/candidates/overnight_strategy_feasibility_20261105.md -text
+
+docs/candidates/downside_account* -text
+
+docs/candidates/downside_bounded_execution_supplement_20261105.py -text
+
+scripts/research/run_downside_account_candidate_20261105.py -text
+
+scripts/research/prepare_downside_max10_freeze_20261105.py -text
+
+scripts/research/preflight_overnight_20261105.py -text
+
+tests/test_downside_account_candidate_20261105.py -text
+
+tests/test_downside_bounded_execution_supplement_20261105.py -text
+
+research_contracts/downside_max10_20261105/*.json -text

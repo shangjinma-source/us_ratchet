@@ -23,7 +23,7 @@ def fixture(day='2020-01-30',cash='110',shares=None,daily=F('0.001'),reference=F
 
 
 def run(capital,returns,qqq):
-    return decide_observed_for_account(stock_returns=returns,qqq_reference=qqq,research_source_hashes=RESEARCH,guard=lambda:None,**capital)
+    return decide_observed_for_account(stock_returns=returns,qqq_reference=qqq,research_source_hashes=RESEARCH,max_holdings=10,guard=lambda:None,**capital)
 
 
 def apply(raw,side,returns,qqq):
@@ -65,6 +65,30 @@ class DownsideAccountTests(unittest.TestCase):
         raw,side=run(cap,r,q);self.assertTrue(original_rerank(raw)['target_quantities'])
         selected=apply(raw,side,r,q)
         self.assertFalse(selected['downside_audit']['incumbent_admitted']);self.assertEqual(selected['target_quantities'],{})
+
+    def test_ten_eleven_cash_and_cap_actual_cardinality(self):
+        from backtest.downside_candidate_observer_integer_research import DownsideCandidateObserver
+        cap,one,qqq=fixture();dates=list(qqq);domain=['S'+str(i) for i in range(11)]
+        args=deepcopy(cap['search_arguments']);args.pop('quote_as_of');args.pop('price_basis')
+        args.update(entered_cash='1000',prices={s:'10' for s in domain},metadata={s:dict(ticker=s,issuer_id=s) for s in domain},training_scenarios=[{s:F(1) for s in domain} for _ in range(12)])
+        returns={s:dict.fromkeys(dates,F(0)) for s in domain}
+        observer=DownsideCandidateObserver(max_holdings=10,search_arguments=args,stock_returns=returns,qqq_reference=qqq,max_risk_evaluations=10)
+        observer.observe(dict.fromkeys(domain[:10],1),phase='base',evaluation_index=0)
+        observer.observe(dict.fromkeys(domain,1),phase='base',evaluation_index=1)
+        observer.end_observation();side=observer.finalize()
+        self.assertIn('10',side['eligible_best_by_k']);self.assertNotIn('11',side['eligible_best_by_k'])
+        self.assertEqual(side['coverage']['over_holdings_limit'],1)
+        self.assertEqual(side['coverage']['risk_evaluated'],side['coverage']['capped_unique']-side['coverage']['over_holdings_limit'])
+        args['prices']['S10']='600'
+        observer=DownsideCandidateObserver(max_holdings=10,search_arguments=args,stock_returns=returns,qqq_reference=qqq,max_risk_evaluations=10)
+        observer.observe(dict.fromkeys(domain,1),phase='base',evaluation_index=0)
+        observer.end_observation();side=observer.finalize()
+        self.assertIn('10',side['eligible_best_by_k']);self.assertEqual(side['coverage']['over_holdings_limit'],0)
+        args['prices']['S10']='10'
+        observer=DownsideCandidateObserver(max_holdings=10,search_arguments=args,stock_returns=returns,qqq_reference=qqq,max_risk_evaluations=10)
+        observer.observe(dict.fromkeys(domain,1),phase='base',evaluation_index=0)
+        observer.end_observation();side=observer.finalize()
+        self.assertEqual(side['eligible_best_by_k'],{});self.assertEqual(side['cash']['target_quantities'],{})
 
     def test_real_book_dividend_equity_exit_and_next_open(self):
         days=['2020-01-30','2020-01-31','2020-02-03','2020-02-04','2020-02-05','2020-02-06','2020-02-07']

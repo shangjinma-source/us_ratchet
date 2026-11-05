@@ -24,12 +24,14 @@ def evidence_binding(raw,stock_returns,qqq_reference,research_source_hashes):
         stock_return_coordinates_sha256=exact_hash(stock_returns),qqq_coordinates_sha256=exact_hash(qqq_reference))
 
 
-def decide_observed_for_account(*, stock_returns, qqq_reference, research_source_hashes, guard, **arguments):
+def decide_observed_for_account(*, stock_returns, qqq_reference, research_source_hashes, max_holdings, guard, **arguments):
     """Preserve V2 terminal semantics while reusing exact capital validation.
 
     Pins are caller-authenticated; this pure function does not read source files.
     The legacy core is pinned for the imported validator, never executed here.
     """
+    if max_holdings != 10 or type(max_holdings) is not int:
+        raise ValueError('FIXED_TEN_HOLDINGS_REQUIRED')
     if 'search' in arguments:
         raise ValueError('V2 search cannot be replaced')
     if any(path not in arguments['source_hashes'] for path in REQUIRED_PINS):
@@ -38,7 +40,7 @@ def decide_observed_for_account(*, stock_returns, qqq_reference, research_source
     sidecars = []
 
     def compatibility(**kwargs):
-        observer = DownsideCandidateObserver(max_holdings=len(kwargs['prices']), search_arguments=kwargs,
+        observer = DownsideCandidateObserver(max_holdings=max_holdings, search_arguments=kwargs,
             stock_returns=stock_returns, qqq_reference=qqq_reference, max_risk_evaluations=10000)
         counts = {}
         class Guarded:
@@ -55,7 +57,7 @@ def decide_observed_for_account(*, stock_returns, qqq_reference, research_source
         extra = result['continuous_comparison']['exact_evaluations']
         if (counts.get('base') != result['objective_evaluations'] or
             counts.get('comparison') != extra['saved_unique'] + extra['new_unique'] or
-            sidecar['coverage']['risk_evaluated'] != sidecar['coverage']['capped_unique']):
+            sidecar['coverage']['risk_evaluated'] != sidecar['coverage']['capped_unique']-sidecar['coverage']['over_holdings_limit']):
             raise ValueError('OBSERVED_CANDIDATE_COVERAGE_INCOMPLETE')
         sidecar['phase_counts'] = counts
         sidecars.append(sidecar)
@@ -99,19 +101,20 @@ def apply_downside_selection(*, raw, sidecar, stock_returns, qqq_reference, rese
     args = raw['binding']['search_arguments']
     incumbent = original['target_quantities']
     incumbent_score = evaluate({s:q for s,q in incumbent.items() if q}, args)
-    if not sidecar['complete'] or sidecar['max_holdings'] != len(args['prices']):
-        raise ValueError('COMPLETE_UNRESTRICTED_SAME_CALL_DOMAIN_REQUIRED')
+    if not sidecar['complete'] or sidecar['max_holdings'] != 10:
+        raise ValueError('COMPLETE_TEN_HOLDINGS_SAME_CALL_DOMAIN_REQUIRED')
     days = list(qqq_reference)
     weights = {s:q*F(args['prices'][s])/F(args['entered_cash']) for s,q in incumbent.items() if q}
     values = [sum((w*F(stock_returns[s][d]) for s,w in weights.items()),F(0)) for d in days]
     reference = [F(qqq_reference[d]) for d in days]
     admitted,_,_ = classify(values,reference,bounds(reference))
+    admitted = admitted and len(weights)<=10
     candidates = [sidecar['cash'],*sidecar['eligible_best_by_k'].values()]
     if any(record is None for record in candidates):raise ValueError('CASH_FALLBACK_REQUIRED')
     checked=[]
     for record in candidates:
         q=record['target_quantities'];score=evaluate(q,args)
-        if (capped(q,args)!=q or len(q)!=record['actual_k'] or score['product']!=record['exact_product'] or
+        if (len(q)>10 or capped(q,args)!=q or len(q)!=record['actual_k'] or score['product']!=record['exact_product'] or
             score['notional']!=record['notional'] or score['residual_cash']!=record['residual_cash']):
             raise ValueError('SIDECAR_CANDIDATE_SCORE_MISMATCH')
         w={s:n*F(args['prices'][s])/F(args['entered_cash']) for s,n in q.items()}
@@ -132,7 +135,7 @@ def apply_downside_selection(*, raw, sidecar, stock_returns, qqq_reference, rese
                            incumbent_product_sha256=product_hash(incumbent_score['product']),
                            selected_product_sha256=product_hash(score['product']),coverage=deepcopy(sidecar['coverage']),
                            tie_rule='ADMITTED_ACTUAL_V27_INCUMBENT_RETAINED_UNLESS_STRICT_PRODUCT_IMPROVEMENT',
-                           holding_count_limit='CURRENT_ELIGIBLE_DOMAIN',source_authenticated=False))
+                           holding_count_limit=10,source_authenticated=False))
     binding=dict(schema=selected['method'],original_rerank_decision_id=original['rerank_decision_id'],
                  target_quantities=chosen,downside_audit=selected['downside_audit'])
     selected['original_rerank_audit']=selected.pop('rerank_audit')

@@ -1,4 +1,4 @@
-"""DRAFT fixed same-call downside account runner. PENDING INTEGRATION AND ACTION REVIEW."""
+"""Fixed downside account runner; execution requires an exact reviewed source freeze."""
 import argparse,json,time,sys,os,importlib.util,gzip
 from datetime import datetime,timezone
 from zoneinfo import ZoneInfo
@@ -12,22 +12,44 @@ from backtest.continuous_guided_account_decision import decide_continuous_guided
 from backtest.monthly_exit_core_research_adapter import MonthlyExitCoreResearchAdapter
 from docs.candidates.downside_account_selection_20261105 import decide_observed_for_account,apply_downside_selection
 from backtest.research_exact_fraction_json import dumps as exact_dumps
+from docs.candidates.downside_bounded_execution_supplement_20261105 import extend_execution_evidence
 # Separate module instance; never mutate the frozen risk-budget module namespace.
 _kernel_spec=importlib.util.spec_from_file_location('downside_private_book_kernel',ROOT/'docs/candidates/qqq_risk_budget_account_runner.py')
 kernel=importlib.util.module_from_spec(_kernel_spec);_kernel_spec.loader.exec_module(kernel)
 
 def read(p):return json.loads(Path(p).read_bytes())
 def digest(p):return sha256(Path(p).read_bytes()).hexdigest()
-def save(p,x):Path(p).write_text(exact_dumps(x),encoding='utf-8')
+def save(p,x):
+    p=Path(p);temporary=p.with_name(p.name+'.writing');temporary.write_text(exact_dumps(x),encoding='utf-8');temporary.replace(p)
 def require(ok,why):
     if not ok:raise ValueError(why)
 def check(pins):
     for name,h in pins.items():require(digest(ROOT/name)==h,'SOURCE_CHANGED:'+name)
 
 
+FREEZE_SCHEMA='DOWNSIDE_MAX10_EXECUTION_V1'
+RUNNER_NAME='scripts/research/run_downside_account_candidate_20261105.py'
+
+
+def validate_execution_freeze(root):
+    root=Path(root)
+    freeze=read(root/'research_contracts/downside_max10_20261105/freeze.json')
+    require(freeze.get('schema')==FREEZE_SCHEMA and freeze.get('status')=='READY_FOR_FIXED_MAX10_EXECUTION','EXECUTION_FREEZE_SCHEMA')
+    require(freeze.get('max_holdings')==10 and freeze.get('windows')=={'2021_2023':36,'2024_2026':31}
+            and freeze.get('seconds_per_window')==10800 and freeze.get('seconds_per_month')==600,'EXECUTION_FREEZE_RULES')
+    pins=freeze.get('source_hashes',{})
+    require(RUNNER_NAME in pins,'EXECUTING_RUNNER_PIN_REQUIRED')
+    for name,h in pins.items():
+        target=(root/name).resolve();require(target.is_relative_to(root.resolve()),'FREEZE_PATH_OUTSIDE_WORKSPACE')
+        require(digest(target)==h,'SOURCE_CHANGED:'+name)
+    return freeze
+
+
 def run(window,output):
-    raise RuntimeError("DRAFT_PENDING_INTEGRATION_AND_ACTION_REVIEW")
-    started=time.monotonic();out=ROOT/output;out.mkdir(parents=True,exist_ok=False)
+    # Technical freeze validation precedes output creation or any book execution.
+    freeze=validate_execution_freeze(ROOT)
+    require(window in freeze['windows'],'FIXED_WINDOW_REQUIRED')
+    started=time.monotonic();out=(ROOT/output).resolve();require(out.is_relative_to((ROOT/'tmp').resolve()),'ISOLATED_TMP_REQUIRED');out.mkdir(parents=True,exist_ok=False)
     recent=window=='2024_2026';name='old_continuous_baseline_20261026_v9' if recent else 'recent_continuous_baseline_20261026_v7'
     price_name='old_window_execution_prices_20261026' if recent else 'recent_execution_prices_20261026'
     base=ROOT/'tmp'/name;document=read(base/'execution_inputs.json');baseline=read(base/'book.json');assembled=document['assembled'];dates=assembled['session_dates'];months=31 if recent else 36
@@ -42,6 +64,8 @@ def run(window,output):
     supplement=read(supplement_path);check(supplement['source_hashes'])
     review['rows'].extend(deepcopy(supplement['review_rows'][window]));document['dividend_events'].extend(deepcopy(supplement['dividend_events'][window]))
     pins[supplement_path.relative_to(ROOT).as_posix()]=digest(supplement_path);pins.update(supplement['source_hashes'])
+    document,review,bounded_pins,bounded_audit=extend_execution_evidence(root=ROOT,document=document,prices=prices,review=review)
+    pins.update(bounded_pins);save(out/'bounded_execution_evidence.json',bounded_audit)
     training_path=ROOT/('tmp/old_window_source_reuse_20261026/unified_raw_compilation_v4.json' if recent else 'tmp/qqq_20201231_anchor_20261025/recent_training_windows_v1.json')
     training=read(training_path);check(training['source_hashes']);pins.update(training['source_hashes']);pins[training_path.relative_to(ROOT).as_posix()]=digest(training_path)
     training_windows={}
@@ -59,6 +83,7 @@ def run(window,output):
     manifest=read(ROOT/'research_contracts/research_archive_20261026/trend_fixed_candidate_v1_manifest.json')['base_file_dependencies']
     for name in (training_path.relative_to(ROOT).as_posix(),'tmp/qqq_month_end_warmup_20261026_v1/QQQ.response.bin','data/cache/research/current_raw_capture_20261014_v1/QQQ.response.bin'):
         require(pins[name]==manifest[name],'FROZEN_INPUT_CHANGED:'+name)
+    pins.update(freeze['source_hashes'])
     sidecars={};returns_by_day={};qqq_by_day={}
     legacy=None
     if recent:
@@ -66,13 +91,18 @@ def run(window,output):
         spec=importlib.util.spec_from_file_location('equal_four_legacy',ap);legacy=importlib.util.module_from_spec(spec);spec.loader.exec_module(legacy);proof=legacy.certify(ROOT,dates);pins.update(proof['source_hashes']);pins[ap.relative_to(ROOT).as_posix()]=digest(ap)
     for plan in assembled['monthly_inputs']:
         args=plan['search_arguments'];require(args['max_objective_evaluations']==8192 and str(args['fee_bps'])=='0' and args['fixed_seed']=='fresh-quantity-20261014-v1','RULE_CHANGED')
-    contract=dict(status='STARTED',pid=os.getpid(),window=window,start=dates[0],end=dates[-1],maximum_new_searches=months,seconds=10800,monthly_seconds=600,source_hashes=pins,initial_cash='20000',fee_bps='0',slippage_bps='5',serialization_policy='RESEARCH_EXACT_FRACTION_HEX_JSON_V1',candidate='SAME_CALL_OBSERVED_DOWNSIDE_QQQ_V1',full_pit=False,oos=False)
+    contract=dict(status='STARTED',pid=os.getpid(),window=window,start=dates[0],end=dates[-1],maximum_new_searches=months,seconds=10800,monthly_seconds=600,max_holdings=10,source_hashes=pins,initial_cash='20000',fee_bps='0',slippage_bps='5',serialization_policy='RESEARCH_EXACT_FRACTION_HEX_JSON_V1',candidate='SAME_CALL_OBSERVED_DOWNSIDE_QQQ_V1',full_pit=False,oos=False)
     save(out/'contract.json',contract);print('STARTED',os.getpid(),window,flush=True)
     budget=dict(new=0,reused=0);arguments={};decision_dates=[p['decision_date'] for p in assembled['monthly_inputs']]+[dates[-1]]
     def guard():require(time.monotonic()-started<10800,'FIXED_TIME_LIMIT')
     def select(**args):
         guard();day=args['decision_date'];arguments[day]=deepcopy(args);month_started=time.monotonic()
-        def monthly_guard():guard();require(time.monotonic()-month_started<600,'MONTHLY_TIME_LIMIT')
+        last_progress=[0.0]
+        def monthly_guard():
+            guard();elapsed=time.monotonic()-month_started
+            if elapsed-last_progress[0]>=10:
+                save(out/'progress.json',dict(day=day,stage='MONTHLY_SELECTION',searches=budget,monthly_elapsed=elapsed,total_elapsed=time.monotonic()-started));last_progress[0]=elapsed
+            require(elapsed<600,'MONTHLY_TIME_LIMIT')
         require(budget['new']<months,'SEARCH_LIMIT');budget['new']+=1;save(out/'search_budget.json',budget)
         item=training_windows[day];training_dates=item['training_dates']
         require(len(training_dates)==253 and training_dates==sorted(set(training_dates)) and training_dates[-1]==day,'TRAINING_DATE_DOMAIN')
@@ -81,7 +111,7 @@ def run(window,output):
             monthly_guard();values=list(map(F,candidates[sid]['training_close']));require(len(values)==253 and all(v>0 for v in values),'TRAINING_PRICE_DOMAIN')
             returns[sid]=dict(zip(training_dates[1:],[b/a-1 for a,b in zip(values,values[1:])]))
         reference=dict(zip(training_dates[1:],[qprices[b]/qprices[a]-1 for a,b in zip(training_dates,training_dates[1:])]))
-        raw,sidecar=decide_observed_for_account(stock_returns=returns,qqq_reference=reference,research_source_hashes=pins,guard=monthly_guard,**args)
+        raw,sidecar=decide_observed_for_account(stock_returns=returns,qqq_reference=reference,research_source_hashes=pins,max_holdings=10,guard=monthly_guard,**args)
         validate_selection_binding(raw,args)
         sidecars[day]=sidecar;returns_by_day[day]=returns;qqq_by_day[day]=reference
         save(out/(day+'.selection.json'),dict(arguments=args,raw_selection=raw));save(out/(day+'.sidecar.json'),sidecar);monthly_guard();return raw
@@ -110,7 +140,7 @@ def run(window,output):
         summary=dict(status=book['status'],reason=book.get('reason'),completed_sessions=len(book['daily_ledger']),required_sessions=len(dates)-1,searches=budget,elapsed_seconds=time.monotonic()-started,independently_reviewed=False)
         save(out/'summary.json',summary);print(json.dumps(summary),flush=True)
     except Exception as error:
-        save(out/'failure.json',dict(status='FAILED',error=repr(error),searches=budget,elapsed_seconds=time.monotonic()-started));raise
+        save(out/'failure.json',dict(status='FAILED',error=repr(error),searches=budget,elapsed_seconds=time.monotonic()-started,source_hashes=pins,last_decision_date=next(reversed(arguments),None),no_automatic_retry=True));raise
     finally:kernel.decide_continuous_guided_for_account,kernel.rerank,kernel.run_next_open_book=previous
 
 if __name__=='__main__':
