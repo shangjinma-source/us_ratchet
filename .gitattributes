@@ -100,3 +100,29 @@ scripts/research/review_downside_account_20261105_v2.py -text
 tests/test_downside_resume_parent_20261105.py -text
 
 tests/test_downside_resume_independent_review_20261105.py -text
+
+scripts/research/overnight_book_20261105.py -text
+
+scripts/research/run_overnight_fixed_20261105.py -text
+
+scripts/research/review_overnight_fixed_20261105.py -text
+
+docs/candidates/overnight_execution_ready_20261105.md -text
+
+docs/candidates/overnight_fixed_result_20261105.md -text
+
+tests/test_overnight_book_20261105.py -text
+
+scripts/research/run_downside_account_candidate_20261105_v3.py -text
+
+scripts/research/prepare_downside_max10_resume_v3_freeze_20261105.py -text
+
+docs/candidates/downside_resume_chain_20261105.py -text
+
+docs/candidates/downside_max10_resume_v3_contract_20261105.md -text
+
+tests/test_downside_resume_chain_20261105.py -text
+
+scripts/research/prepare_ceg_dividend_evidence_20261105.py -text
+
+scripts/research/prepare_early_dividend_gaps_20261105.py -text
