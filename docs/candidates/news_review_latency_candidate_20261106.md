@@ -42,3 +42,11 @@ NewsInvestmentService.bound_context先self.validate，再调用composition.conte
 ## 部署进度
 
 上述候选已由主线程部署，活动配置 `research_contracts/news_context_dedup_20261106/config-25.json`，SHA256 `5ca8698439a74f28bfe56a6d61fb818f7d31469a0c12f3655dd0cecd9e09dfb0`。部署源码与准备材料一致，账户、月目标完整快照未变。服务启动后首页 HTTP 200；单次相同现金按钮链路正在测量，尚未证明实际延迟降低。生产 composition 使用正式 data 模块路径，不从候选目录加载。
+
+## 单次真实按钮结果
+
+本次单击使用已有已确认余额：点击至测试收尾 240.619 秒，后台任务 COMPLETE，运行 141.653 秒。没有现金保存或成交请求，账户前后完全一致；实际 POST 仅日历刷新与 AI 复核。没有复用该结果宣称真实新余额写入通过。
+
+优化前最近三次完成任务分别为 120.433、185.169、349.203 秒；不同负载和缓存条件，不能只选最慢基准宣称提速。本次 final_validation 9.519 秒，post_analysis_inputs 44.923 秒，parallel_capture_preview 56.630 秒；模型分析缓存读取 0.048 秒。尚不满足快速反馈目标。
+
+点击至收尾与后台任务时长相差约 99 秒，包含按钮刷新、同步 start 校验、轮询和收尾，当前证据不能把它全部归因于某一函数。前端在刷新当前建议完成后才发起 AI；start 在创建后台任务前仍调用 bound_context。下一步需分别计时，不延长报价有效期，也不通过省略账户/目标绑定检查换取速度。私人原始证据保存在本地 tmp/cash_button_live_20261106_r3。
