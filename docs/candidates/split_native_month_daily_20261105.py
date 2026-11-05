@@ -267,11 +267,11 @@ def project_native_month_daily(*,research_root,risk_path,target_id,state,review_
     store=MonthlyPeakExitStore(path);previous=store.read(state['account_id'])
     admitted=verify_saved_frontier_daily_evidence(research_root=root,target_id=target_id,state=state,risk_state=previous,review_bytes=review_bytes,trusted_review_sha256=trusted_review_sha256,files=files,now=now,enabled=True)
     archived=read_saved_frontier_policy(research_root=root,target_id=target_id)
+    content=dict(files);proofpath='native-month/projection.json'
+    require(proofpath not in content,'NATIVE_ARCHIVE_COLLISION')
     epoch=admitted['inputs']['base_target']['monthly_decision_date']
     reset=epoch if previous is not None and previous['target_month']!=admitted['target_month'] else None
     result=apply_frontier_exit_packet(target=archived['target'],proposal=archived['proposal'],inputs=admitted['inputs'],risk_store=store,account_id=state['account_id'],decision_date=epoch,expected_previous_session=previous['session_date'] if previous else None,authorized_monthly_reset=reset)
-    content=dict(files);proofpath='native-month/projection.json'
-    require(proofpath not in content,'NATIVE_ARCHIVE_COLLISION')
     content[proofpath]=canonical(dict(admitted=admitted,risk_before=previous,risk_after=result['state']))
     policy='SPLIT_NATIVE_MONTH_CONTENT_ONLY_V1'
     receipt=dict(schema='SERVER_REVIEWED_DAILY_EVIDENCE_V1',policy_id=policy,target_id=target_id,proposal_id=admitted['proposal_id'],account_id=state['account_id'],account_revision=state['revision'],source_sha256={k:sha256(v).hexdigest() for k,v in content.items()},valid_from=admitted['valid_from'],valid_until=admitted['valid_until'],source_authenticity_verified=False,production_admitted=False)

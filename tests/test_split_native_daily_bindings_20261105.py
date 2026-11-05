@@ -17,6 +17,15 @@ class Tests(unittest.TestCase):
             _, account, _, _, arguments = fixture.Tests().case(folder)
             risk = MonthlyPeakExitStore(arguments['risk_path'])
             initial = risk.read(account.read()['account_id'])
+            collision = deepcopy(arguments)
+            collision['files']['native-month/projection.json'] = b'{}'
+            collision_review = json.loads(collision['review_bytes'])
+            collision_review['source_sha256']['native-month/projection.json'] = fixture.digest(b'{}')
+            collision['review_bytes'] = canonical(collision_review)
+            collision['trusted_review_sha256'] = fixture.digest(collision['review_bytes'])
+            with self.assertRaisesRegex(ValueError, 'NATIVE_ARCHIVE_COLLISION'):
+                project_native_month_daily(**collision)
+            self.assertEqual(risk.read(account.read()['account_id']), initial)
             altered = deepcopy(arguments)
             review = json.loads(altered['review_bytes'])
             timing = review['timing_bundles']['split-B']['review']
