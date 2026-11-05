@@ -43,6 +43,9 @@ function render(model){
  const cash=a.cash_confirmation_valid?number(a.total_uninvested_cash??a.cash):null;
  const total=value?.strategy_total!=null?value.strategy_total:cash!==null&&cost!==null?cash+cost:null;
  html+='<div class="preview-metrics"><div>'+(value?'持仓市值':'持仓金额（成本口径）')+'<strong>'+esc(value?'$'+display(value.market_value):cost!==null?'$'+display(cost):'成本待补充')+'</strong></div><div>持仓成本<strong>'+esc(cost!==null?'$'+display(cost):'待补充')+'</strong></div><div>可用现金<strong>'+esc(a.cash_confirmation_valid?'$'+display(a.available_cash??a.cash):'请在今日建议填写')+'</strong></div><div>'+(value?'账户总额':'账户总额（成本口径）')+'<strong>'+esc(cash===null?'请在今日建议填写':total!==null?'$'+display(total):'成本待补充')+'</strong></div></div>';
+ const performance=model.performance;
+ const performanceFresh=performance?.status==='READY_RECONCILED_NO_EXTERNAL_FLOW'&&performance.account_revision===a.revision&&Number.isFinite(Date.parse(performance.as_of))&&Date.now()-Date.parse(performance.as_of)>=0&&Date.now()-Date.parse(performance.as_of)<=120000;
+ html+='<p class="restart-performance">'+(performanceFresh?'本阶段：起始资产 $'+esc(display(performance.initial_equity))+' · 当前资产 $'+esc(display(performance.current_equity))+' · 收益 '+esc(display(number(performance.return_fraction)*100))+'%':'本阶段收益：待核验')+'</p>';
  if(value)html+='<details><summary>估值明细</summary><p class="preview-caption">读取于 '+esc(value.valued_at)+'；价格会变化，公开行动核查可能漏报。'+value.holdings.map(row=>esc(row.ticker)+' $'+esc(display(row.price))+'（'+esc(row.observed_at)+'）').join(' · ')+'</p></details>';
  const costs=Object.fromEntries((a.holding_costs||[]).map(row=>[row.security_id,row]));
  html+='<div style="overflow-x:auto"><table><thead><tr><th>股票</th><th>实际股数</th><th>持仓均价 USD</th><th>持仓成本 USD</th></tr></thead><tbody>';
@@ -76,11 +79,11 @@ function browserPendingFillStore(storage,key){
 }
 function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=>{},makeId=()=>root.crypto.randomUUID(),automaticValuationEnabled=true,requestTimeoutMs=180000,pendingFillStore=null}={}){
  if(!Number.isFinite(requestTimeoutMs)||requestTimeoutMs<=0)throw issue('INVALID_REQUEST_TIMEOUT');
- let model={loaded:false,account:null,busy:false,message:''},generation=0,retry=null,recommendedTickers=[],reconciliation=pendingFillStore?.read()||null,valuationPromise=null;
+ let model={loaded:false,account:null,busy:false,message:''},generation=0,retry=null,recommendedTickers=[],reconciliation=pendingFillStore?.read()||null,valuationPromise=null,valuationGeneration=0,valuationPromiseGeneration=-1;
  if(reconciliation)retry={...reconciliation};
  const snapshot=()=>structuredClone({...model,recommendedTickers});
  const emit=()=>onRender(render({...model,recommendedTickers}),snapshot());
- function invalidate(){model.valuation=null;onInvalidate();}
+ function invalidate(){valuationGeneration++;model.performance=null;model.valuation=null;model.valuationLoading=false;onInvalidate();}
  async function request(path,body){
   const abort=new AbortController();let timer;
   const deadline=new Promise((_,reject)=>{
@@ -115,7 +118,7 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
    // A missing fill on the original revision may still be in flight. Only a
    // recorded fill or a changed CAS revision resolves this persisted request.
    if(saved&&!pendingFill)pendingFillStore.clear(saved.eventId);
-   model={loaded:true,account,busy:false,pendingFill,message:reconciliation?(recorded?'已核对：刚才的成交已经记录，请勿重复录入。':pendingFill?'上次成交结果仍待确认；请继续核对原记录，勿重新录入。':'账户已刷新，请核对刚才的记录后再操作。'):''};reconciliation=null;
+   model={...model,loaded:true,account,busy:false,pendingFill,message:reconciliation?(recorded?'已核对：刚才的成交已经记录，请勿重复录入。':pendingFill?'上次成交结果仍待确认；请继续核对原记录，勿重新录入。':'账户已刷新，请核对刚才的记录后再操作。'):''};reconciliation=null;
   }
   catch(e){if(version!==generation)return;invalidate();model={loaded:false,account:null,busy:false,message:errors[e.code]||e.message};}
   finally{if(version===generation){model.busy=false;emit();}}
@@ -142,21 +145,24 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
   try{await valuation(true);}catch(_){/* Valuation failure must never turn a successful save into a failed save. */}
  }
  function valuation(quiet=false){
-  if(valuationPromise)return valuationPromise;
-  valuationPromise=performValuation(quiet).finally(()=>{valuationPromise=null;});
-  return valuationPromise;
+  if(valuationPromise&&valuationPromiseGeneration===valuationGeneration)return valuationPromise;
+  const pending=performValuation(quiet).finally(()=>{if(valuationPromise===pending)valuationPromise=null;});
+  valuationPromise=pending;valuationPromiseGeneration=valuationGeneration;
+  return pending;
  }
  async function performValuation(quiet=false){
   requireAccount();if(model.busy||model.valuationLoading)throw issue('BUSY');
-  const revision=model.account.revision,version=generation;model.valuationLoading=true;if(!quiet)model.message='正在读取持仓估值…';emit();
-  try{const data=await request('/valuation');if(version!==generation)return;
+  const revision=model.account.revision,version=valuationGeneration;model.valuationLoading=true;if(!quiet)model.message='正在读取持仓估值…';emit();
+  try{const data=await request('/valuation');if(version!==valuationGeneration)return;
    if(data.account_revision!==revision||model.account?.revision!==revision||!Array.isArray(data.holdings))throw issue('STALE_REVISION');
    const waiting={EMPTY_HOLDINGS:'当前没有持仓，无需更新市值。',WAIT_SAVED_TARGET:'等待已保存策略目标，暂按成本显示。',WAIT_REGULAR_SESSION:'美股常规交易时段可更新市值，暂按成本显示。'};
-   if(Object.hasOwn(waiting,data.status)){model.valuation=null;model.message=waiting[data.status];return;}
+   if(Object.hasOwn(waiting,data.status)){model.performance=null;model.valuation=null;model.message=waiting[data.status];return;}
    if(data.status!=='READY')throw issue('估值响应不完整。');
    model.valuation=data;if(!quiet)model.message='估值已更新。';
-  }catch(e){if(version===generation){model.valuation=null;model.message=quiet?'市值暂不可用，当前按成本显示。':errors[e.code]||e.message;}throw e;}
-  finally{if(version===generation){model.valuationLoading=false;emit();}}
+   model.performance=null;
+   try{const performance=await request('/restart-performance');if(version===valuationGeneration&&model.account?.revision===revision&&performance.account_revision===revision)model.performance=performance;}catch(_){/* Missing or unverified performance must not invalidate a valid account valuation. */}
+  }catch(e){if(version===valuationGeneration){model.performance=null;model.valuation=null;model.message=quiet?'市值暂不可用，当前按成本显示。':errors[e.code]||e.message;}throw e;}
+  finally{if(version===valuationGeneration){model.valuationLoading=false;emit();}}
  }
  return {
   load,valuation,refresh:async()=>{if(model.busy)return;const reconciling=Boolean(reconciliation);await load();if(!reconciling&&model.loaded&&model.account)await automaticValuation();},getState:snapshot,
@@ -188,7 +194,7 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
    if(pending.length)throw issue('此股票存在相反方向未结订单，请先核对成交方向与订单状态。');return mutate('/events',{kind:'DIRECT_FILL',ticker,side,...event});
   },
   cancel:order_id=>{requireAccount();if(!model.account.orders.some(o=>o.order_id===order_id))throw issue('未找到未结订单，请刷新。');return mutate('/events',{kind:'CANCEL',order_id});},
-  dispose:()=>{generation++;model.loaded=false;model.account=null;}
+  dispose:()=>{generation++;valuationGeneration++;model.loaded=false;model.account=null;model.valuationLoading=false;model.performance=null;model.valuation=null;}
  };
 }
 function mount({container,initialValuation=true,...options}){
