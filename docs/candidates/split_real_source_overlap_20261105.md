@@ -20,3 +20,7 @@
 根线程于11月5日检索到Yahoo自身[MRNA历史页面](https://ca.finance.yahoo.com/quote/MRNA/history/)的字段说明：Close为拆股调整价格；[Yahoo adjusted close帮助](https://help.yahoo.com/kb/SLN28256.html)说明Adjusted Close还包含适用的股息调整。前者检索快照约两个月前，后者检索当日；直接打开帮助及SNDK历史页均遇429，未取得可归档的完整响应，不能把搜索摘要当作执行来源收据。
 
 这缩小了下一步问题：不是继续寻找是否存在一般性字段说明，而是确认实际chart接口quote.close与所述字段的一致性、具体响应的单位截止时点和真实公司行动。不能把split-adjusted误标AS_TRADED，也不能据帮助页证明每个API响应无错误。本轮不更改任何授权、生产字段或事件。
+
+有界复核结论：实际两份raw均含quote与adjclose，但meta没有价格调整口径或basis-asof声明，events为空；官方帮助可支持Adjusted Close的一般定义，尚不能给当前具体chart响应签发明确单位授权。本次不继续反复搜相同说明，不生成grant。已有16日相等结果用于保留当前条件性路径，未来行动的接入仍需要实际行动与报价单位证据。
+
+真实现金验收另需当前券商余额及未录入成交/委托信息；不能用旧工具余额自行制造一次“验收入金”。已向用户请求该事实输入，在答复前仅做只读或隔离演练。
