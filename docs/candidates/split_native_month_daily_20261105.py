@@ -92,6 +92,9 @@ def verify_saved_frontier_daily_evidence(*, research_root, target_id, state, ris
     require(type(review_bytes) is bytes and len(review_bytes) <= 1024*1024
             and sha256(review_bytes).hexdigest() == trusted_review_sha256, 'FRONTIER_REVIEW_HASH')
     review = json.loads(review_bytes)
+    if 'source_received_by_security' in review:
+        received_map=review['source_received_by_security']
+        require(set(received_map)==set(review['documents']['raw_by_security']) and max(map(stamp,received_map.values()))==stamp(review['source_received_at']),'NATIVE_RECEIPT_DOMAIN')
     native=verify_native_units(state=state,target=target,archived=archived,review=review,now=now)
     require(review['schema'] == 'SPLIT_NATIVE_MONTH_DAILY_REVIEW_V1'
             and review['target_id'] == target_id and review['proposal_id'] == proposal['proposal_id']
@@ -214,7 +217,7 @@ def verify_saved_frontier_daily_evidence(*, research_root, target_id, state, ris
                 and unit['unresolved_units'] == [] and unit['pending_rights'] == []
                 and unit['native_unit_proof_sha256'] == native['proof_sha256'], 'FRONTIER_UNIT_REVIEW_BINDING')
         nr=unit['raw_normalization'];normalizations[sid]=nr
-        require(nr['current_unit_id']==unit['basis_id'] and nr['captured_at']==review['source_received_at'],'NATIVE_RAW_UNIT_CAPTURE')
+        require(nr['current_unit_id']==unit['basis_id'] and nr['captured_at']==review.get('source_received_by_security',{}).get(sid,review['source_received_at']),'NATIVE_RAW_UNIT_CAPTURE')
         validate_raw_schedule(sid=sid,raw=raw,normalization=nr,unit=unit,native=native,epoch_open=sessions[dates.index(epoch)]['open'])
         require(stamp(unit['covered_from']) <= stamp(sessions[dates.index(epoch)]['open'])
                 and stamp(completed['close']) <= stamp(unit['covered_through']) <= received
@@ -274,4 +277,4 @@ def project_native_month_daily(*,research_root,risk_path,target_id,state,review_
     receipt=dict(schema='SERVER_REVIEWED_DAILY_EVIDENCE_V1',policy_id=policy,target_id=target_id,proposal_id=admitted['proposal_id'],account_id=state['account_id'],account_revision=state['revision'],source_sha256={k:sha256(v).hexdigest() for k,v in content.items()},valid_from=admitted['valid_from'],valid_until=admitted['valid_until'],source_authenticity_verified=False,production_admitted=False)
     archive=archive_rebound_evidence(root=root/'native-daily-evidence',receipt_bytes=canonical(receipt),files=content)
     signal=dict(account_id=state['account_id'],account_revision=state['revision'],target_id=target_id,proposal_id=admitted['proposal_id'],policy_id=policy,evidence_id=archive['receipt_sha256'],evidence_archive=archive,effective_target_quantities=result['effective_target_quantities'],observed_at=admitted['observed_at'],available_at=admitted['available_at'],valid_from=admitted['valid_from'],valid_until=admitted['valid_until'])
-    return dict(status='DAILY_SIGNAL_READY',signal=signal,evidence_archive=archive,native_unit_proof=admitted['native_unit_proof'],production_admitted=False)
+    return dict(status='DAILY_SIGNAL_READY',signal=signal,evidence_archive=archive,native_unit_proof=admitted['native_unit_proof'],risk_projection=deepcopy(result),production_admitted=False)

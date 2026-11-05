@@ -16,6 +16,8 @@
 
 ## 上线前真实缺口
 
+新增采集接线已由根线程独立复核：`test_split_native_month_capture_20261105.py` 1项综合测试20.446秒通过。实际durable capture、gzip收据、逐证券接收时间、原生风险投影及采集中账户变更拒绝已连接；运输响应与独立来源审核仍为受控fixture。原生rolling admission另有已提交测试，二者完整组合验证继续推进，未部署。
+
 1. 把受控原始资料 fixture 换成正式捕获、审核和不可变存档入口；来源一致性不等于供应商/券商真实性。
 2. 保留原生产停牌、分钟数据重试、限价缓存及来源身份保护，组成新月 reader 的正式执行入口；不得仅修改研究 policy_id 冒充生产批准。
 3. 独立配置及完整执行源码批准；同一 generation 绑定 monthly、account、daily、news、图表和后台生命周期。
