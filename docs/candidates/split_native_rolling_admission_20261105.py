@@ -1,5 +1,6 @@
 """Unactivated native monthly rolling admission retaining the factory subclass."""
 from copy import copy,deepcopy
+from contextlib import contextmanager
 from functools import partial
 from zoneinfo import ZoneInfo
 from core.strategy_account_ledger import require
@@ -24,7 +25,8 @@ class NativeSplitRollingAdmission:
   self.timing_bundles=deepcopy(timing_bundles)
   self.enabled,self.policy_id=policy_execution_enabled,policy_id
 
- def preview(self,*,expected_revision,target_id,expected_proposal_id):
+ @contextmanager
+ def protected_composition(self,*,expected_revision,target_id,expected_proposal_id):
   with self.monthly.snapshot_operation():
    self.validate_code()
    proposal=self.monthly_view.require_proposal(target_id=target_id,expected_proposal_id=expected_proposal_id)
@@ -67,7 +69,11 @@ class NativeSplitRollingAdmission:
     monthly_service=self.monthly,monthly_view=self.monthly_view,evidence_reader=self.reader,
     execution_provider=provider.execution,clock=self.clock,policy_execution_enabled=self.enabled,
     policy_id=self.policy_id,fee_bps=runtime.selection.fees)
-   result=service.preview(expected_revision=expected_revision,target_id=target_id,expected_proposal_id=expected_proposal_id)
+   yield service
    require(self.monthly_view.require_proposal(target_id=target_id,expected_proposal_id=expected_proposal_id)==proposal,'FRONTIER_PROPOSAL_CHANGED')
    self.validate_code()
-   return result
+   require(self.monthly.accounts.read()==state and self.monthly.current()==target,'NATIVE_COMPOSITION_SNAPSHOT_CHANGED')
+
+ def preview(self,*,expected_revision,target_id,expected_proposal_id):
+  with self.protected_composition(expected_revision=expected_revision,target_id=target_id,expected_proposal_id=expected_proposal_id) as composition:
+   return composition.preview(expected_revision=expected_revision,target_id=target_id,expected_proposal_id=expected_proposal_id)

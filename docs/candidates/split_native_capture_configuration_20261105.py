@@ -1,5 +1,6 @@
 """Unactivated server configuration for native capture -> protected daily admission."""
 from pathlib import Path
+from contextlib import contextmanager
 import json
 from core.strategy_account_ledger import canonical,require
 from data.monthly_peak_exit_store import MonthlyPeakExitStore
@@ -12,6 +13,15 @@ from docs.candidates.split_native_rolling_admission_20261105 import NativeSplitR
 # Fixed conservative local-import inventory; includes inactive branches, not a claim
 # that every imported function executes. No request-time dependency discovery.
 SOURCE_PATHS=frozenset({
+ 'docs/candidates/split_configured_runtime_routes_20261105.py',
+ 'docs/candidates/split_configured_news_calendar_20261105.py',
+ 'data/news_event_calendar_v1.py',
+ 'data/news_event_sources_v1.py',
+ 'docs/candidates/split_native_news_hold_20261105.py',
+ 'data/news_risk_execution_bridge_v1.py',
+ 'data/news_risk_plan_v1.py',
+ 'data/news_investment_service_v1.py',
+ 'core/news_investment_review_v1.py',
  'backtest/affordable_support_seeds.py',
  'backtest/continuous_guided_account_decision.py',
  'backtest/continuous_quantity_candidates.py',
@@ -215,7 +225,7 @@ class ConfiguredNativeAdmission:
   require(configuration['schema']=='NATIVE_CAPTURE_RUNTIME_CANDIDATE_V1' and configuration['production_activated'] is False,'NATIVE_CONFIG_SCHEMA')
   require(set(configuration['source_pins'])>=SOURCE_PATHS,'NATIVE_CONFIG_SOURCE_DOMAIN')
   for name,expected in configuration['source_pins'].items():
-   actual=(CODE_ROOT/name).resolve();require(actual.is_relative_to(CODE_ROOT),'NATIVE_CONFIG_CODE_PATH')
+   reject_links(CODE_ROOT/name);actual=(CODE_ROOT/name).resolve();require(actual.is_relative_to(CODE_ROOT),'NATIVE_CONFIG_CODE_PATH')
    require(digest(self._read(name))==expected and digest(bounded_read(actual,maximum=8*1024*1024))==expected,'NATIVE_CONFIG_SOURCE_CHANGED')
   require(type(configuration['policy_execution_enabled']) is bool and configuration['policy_id']=='SPLIT_NATIVE_MONTH_CONTENT_ONLY_V1','NATIVE_CONFIG_RESEARCH_POLICY')
   for target_id,reference in configuration['authorizations'].items():
@@ -225,7 +235,14 @@ class ConfiguredNativeAdmission:
    for key,path in reference['files'].items():require(digest(self._read(path))==grant['source_sha256'][key],'NATIVE_CONFIG_AUTH_SOURCE_CHANGED')
   return configuration
 
- def preview(self,*,expected_revision,target_id,expected_proposal_id):
+ @contextmanager
+ def protected_composition(self,*,expected_revision,target_id,expected_proposal_id):
+  with self.monthly.snapshot_operation():
+   with self._protected_composition(expected_revision=expected_revision,target_id=target_id,expected_proposal_id=expected_proposal_id) as composition:
+    yield composition
+
+ @contextmanager
+ def _protected_composition(self,*,expected_revision,target_id,expected_proposal_id):
   configuration=self.validate_code()
   require(target_id in configuration['authorizations'],'NATIVE_CONFIG_NEW_TARGET_AUTHORIZATION_REQUIRED')
   reference=configuration['authorizations'][target_id];raw=self._read(reference['path']);grant=json.loads(raw)
@@ -234,6 +251,9 @@ class ConfiguredNativeAdmission:
   context=dict(calendar=json.loads(files[grant['calendar']]),identities=json.loads(files[grant['identities']])['securities'])
   reader=NativeMonthCaptureReader(monthly_view=self.monthly_view,risk_store=self.risk,research_root=self.research_root,capture_root=self.capture_root,context_sha256=digest(canonical(context)),review_capture=reviewer,clock=self.clock,validate_sources=self.validate_code,fetch_daily=self.fetch_daily,fetch_official=self.fetch_official,**context)
   admission=NativeSplitRollingAdmission(monthly=self.monthly,monthly_view=self.monthly_view,reader=reader,clock=self.clock,validate_code=self.validate_code,timing_bundles=grant['timing_bundles'],policy_execution_enabled=configuration['policy_execution_enabled'],policy_id=configuration['policy_id'])
-  result=admission.preview(expected_revision=expected_revision,target_id=target_id,expected_proposal_id=expected_proposal_id)
+  with admission.protected_composition(expected_revision=expected_revision,target_id=target_id,expected_proposal_id=expected_proposal_id) as composition:
+   yield composition
   self.validate_code()
-  return result
+ def preview(self,*,expected_revision,target_id,expected_proposal_id):
+  with self.protected_composition(expected_revision=expected_revision,target_id=target_id,expected_proposal_id=expected_proposal_id) as composition:
+   return composition.preview(expected_revision=expected_revision,target_id=target_id,expected_proposal_id=expected_proposal_id)

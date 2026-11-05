@@ -12,8 +12,7 @@ from fastapi.testclient import TestClient
 import test_split_native_capture_configuration_20261105 as fixture
 from data.news_risk_skill_v1 import PINS
 from data.strategy_daily_advice_journal_v1 import DailyAdviceJournalV1
-from docs.candidates.split_runtime_routes_20261105 import build_routes
-from docs.candidates.split_native_monthly_routes_20261105 import attach_monthly_routes
+from docs.candidates.split_configured_runtime_routes_20261105 import build_configured_routes as build_routes
 
 class Tests(unittest.TestCase):
  def test_configured_capture_cash_fill_http_lifecycle(self):
@@ -24,7 +23,11 @@ class Tests(unittest.TestCase):
    path=f.root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes((fixture.fixture.ROOT/name).read_bytes())
   started=self.enterContext(patch('data.news_event_pipeline_v1.EventNewsPipeline.start_worker'));stopped=self.enterContext(patch('data.news_event_pipeline_v1.EventNewsPipeline.stop_worker'))
   prepared=build_routes(root=f.root,monthly_view=view,daily_service=service,journal=DailyAdviceJournalV1(f.root/'http-journal.sqlite3'),clock=clock,validate_sources=service.validate_code,policy_references={'scope':'CONFIGURED_NATIVE_CAPTURE_HTTP_FIXTURE'},timing_bundles=case['timing'],account_arguments=dict(database_path=store.path,account_id=store.read()['account_id'],resolver=provider.market.identity,clock=clock))
-  prepared=attach_monthly_routes(prepared=prepared,validate_sources=service.validate_code)
+  self.assertTrue(prepared['calendar_enabled']);self.assertTrue(prepared['native_hold_enabled']);self.assertTrue(prepared['monthly_generation_enabled'])
+  self.assertIs(prepared['event_pipeline'].service,prepared['news_service'])
+  self.assertTrue(callable(prepared['news_service'].risk_plan_provider))
+  calendar=prepared['event_pipeline'].calendar_window(clock().isoformat())
+  self.assertEqual(calendar['target_id'],fixed_id);self.assertEqual(calendar['proposal_id'],target['proposal_id'])
   app=FastAPI();app.include_router(prepared['router']);connect=socket.socket.connect
   def offline(sock,address):
    if isinstance(address,tuple) and address[0] in ('127.0.0.1','::1'):return connect(sock,address)
