@@ -32,3 +32,11 @@
 `test_split_monthly_execution_20261105.py` 通过真实目标生成、受控完整分钟行情、实际 action review 与限价计算，验证 B 使用 new 单位、账户未变；篡改 manifest 或历史参数分别拒绝。原选股 fixture 只有一根分钟 bar，曾被实际限价检查以 NONCONTIGUOUS_OR_FUTURE_MINUTE 正确拒绝；本测试补足受控原始分钟序列，未绕过检查。
 
 最终验证：execution 1 项 0.721 秒、原 monthly factory 2 项 3.579 秒，均 OK。仍未证明新月完整 daily signal reader、受保护 HTTP 建议及生产上线。
+
+## 原日执行桥不能直接承接新月工厂
+
+实际诊断用真实 factory 生成目标，将该 provider 子类 `_assemble` 临时替换为必抛出的审核探针，再调用现有 `strategy_split_daily_execution_bridge.DailyExecutionBridge`。探针调用次数为 0，执行最终在基础实现报 `SPLIT_REVIEW_EVENT_OUTSIDE_INTERVAL`。所有对象和数据库均为临时合成资料。
+
+原因：桥内显式调用基础 `StrategyAccountEvidenceProvider._assemble`，绕过工厂子类新增的完整历史审核、三时钟校验及行动查询窗口扩展。即使工厂直接 execution 已通过，不能据此宣称经过日执行桥也通过。
+
+后续分工：独立 native reader 验证新 proposal 的原生数量、来源、单位与新月风险 epoch；独立 native execution bridge 保留实际 provider 子类审核和冻结目标/lineage。两者组合后再测 HTTP，当前不部署。
