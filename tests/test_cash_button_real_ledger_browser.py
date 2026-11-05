@@ -58,6 +58,7 @@ const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-pri
   // A later ordinary balance confirmation replaces cash, never adds it.
   await button.click();await page.evaluate(()=>daily.whenIdle());
   state=await page.evaluate(()=>daily.getState());assert.equal(state.account.available_cash,'120');
+  assert.equal(state.account.revision,savedRevision); // unchanged confirmed cash must not write again
   assert.equal(state.daily.account_revision,state.account.revision);assert.equal(state.target.target_id,'a'.repeat(64));
   // Withdrawn funds replace the balance too; zero cash must survive a reload.
   await input.fill('50');await button.click();await page.evaluate(()=>daily.whenIdle());
@@ -183,11 +184,12 @@ class CashButtonLedgerBrowserTests(unittest.TestCase):
                 self.assertEqual(final['shares'], initial['shares'])
                 self.assertEqual(final['orders'], initial['orders'])
                 cash_events = [event for event in final['events'] if event['payload']['kind'] == 'CASH_CONFIRM']
-                self.assertEqual(len(cash_events), 5)  # setup + two confirmations + reduction + zero
+                self.assertEqual([event['payload']['amount'] for event in cash_events],
+                                 ['100', '120', '50', '0'])  # unchanged confirmation is a no-op
                 self.assertEqual(len(preview_revisions), 7)
                 self.assertNotEqual(preview_revisions[0], preview_revisions[1])
                 self.assertEqual(preview_revisions[1], preview_revisions[2])
-                self.assertNotEqual(preview_revisions[2], preview_revisions[3])
+                self.assertEqual(preview_revisions[2], preview_revisions[3])
             finally:
                 server.should_exit = True
                 thread.join(timeout=10)
