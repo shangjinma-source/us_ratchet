@@ -2,8 +2,10 @@
 from hashlib import sha256
 import json
 import unittest
+import sqlite3
+from contextlib import closing
 from core.strategy_account_ledger import canonical
-from docs.candidates.split_three_clock_bundle_20261105 import prepare_split_bundle, verify_split_bundle
+from docs.candidates.split_three_clock_bundle_20261105 import prepare_split_bundle, verify_split_bundle, bound_split_sources
 import test_strategy_split_bundle_v1 as fixtures
 
 
@@ -49,6 +51,37 @@ class Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'TIMING_NOT_EXECUTABLE_YET'):
             prepare_split_bundle(**self.args)
         self.assertFalse(self.base.directory.exists())
+
+    def test_source_locks_and_cash_change_prevent_stale_switch(self):
+        from core.strategy_monthly_target_store import StrategyMonthlyTargetStore
+        from core.saved_monthly_frontier_proposal import build_frontier_proposal
+        from data.monthly_peak_exit_store import MonthlyPeakExitStore
+        root=self.base.source.path.parent
+        paths=dict(account=self.base.source.path,target=root/'target.sqlite3',risk=root/'risk.sqlite3')
+        target=self.args['target']
+        StrategyMonthlyTargetStore(paths['target']).append(target['payload'])
+        MonthlyPeakExitStore(paths['risk']).advance(account_id='synthetic-account',
+            expected_previous_session=None,observations=self.args['observations'][:1],
+            baseline_targets=build_frontier_proposal(target=target)['payload']['proposed_target_quantities'],
+            target_month=target['payload']['target_month'])
+        prepare_split_bundle(**self.args)
+        arguments=dict(paths=paths,bundle_directory=self.base.directory,
+            expected_manifest_sha256=sha256((self.base.directory/'complete.json').read_bytes()).hexdigest())
+        with bound_split_sources(**arguments) as bound:
+            self.assertTrue(bound['source_consistency_verified'])
+            self.assertFalse(bound['production_activated'])
+            for path in paths.values():
+                with closing(sqlite3.connect(path,timeout=0)) as connection:
+                    with self.assertRaises(sqlite3.OperationalError):
+                        connection.execute('BEGIN IMMEDIATE')
+        # A real journal append after preparation must invalidate that generation.
+        state=self.base.source.read()
+        self.base.source.append(dict(event_id='later-cash',kind='CASH_CONFIRM',amount='7000',
+            cash_basis='TOTAL_UNINVESTED'),expected_revision=state['revision'])
+        with self.assertRaisesRegex(ValueError,'SPLIT_LIVE_ACCOUNT_CHANGED'):
+            with bound_split_sources(**arguments): self.fail('stale bundle accepted')
+        with closing(sqlite3.connect(paths['account'],timeout=0)) as connection:
+            connection.execute('BEGIN IMMEDIATE');connection.rollback()
 
 
 if __name__=='__main__':unittest.main()

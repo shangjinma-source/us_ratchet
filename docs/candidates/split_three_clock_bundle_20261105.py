@@ -1,5 +1,6 @@
 """Isolated three-clock account/risk preparation; original journal preserved. Not activation."""
-from contextlib import closing
+from contextlib import closing, contextmanager
+from types import FunctionType
 import sqlite3
 from copy import deepcopy
 from hashlib import sha256
@@ -20,6 +21,22 @@ from docs.candidates.split_three_clock_coordinates_20261105 import project_nativ
 
 
 FILES = ('account.sqlite3', 'risk.sqlite3', 'inputs.json')
+
+
+@contextmanager
+def bound_split_sources(**arguments):
+    """Hold original source locks while rechecking this three-clock bundle.
+
+    Caller must perform only its local switch in scope, never network/model work.
+    This check does not activate any process or authenticate broker evidence.
+    """
+    from data.strategy_split_live_binding_v1 import bound_split_sources as original
+    generator = original.__wrapped__
+    checked = FunctionType(generator.__code__,
+        dict(generator.__globals__, verify_split_bundle=verify_split_bundle),
+        generator.__name__, generator.__defaults__, generator.__closure__)
+    checked.__kwdefaults__ = generator.__kwdefaults__
+    yield from checked(**arguments)
 
 
 def prepare_split_bundle(*, source_account_path, destination_directory, expected_revision,
