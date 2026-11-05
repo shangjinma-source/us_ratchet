@@ -23,6 +23,9 @@ from data.strategy_daily_session_capture import stamp
 
 def verify_transition_ancestry(*, state, transition, risk_before, target, proposal_id):
     """Authenticate the immutable preparation at a real prefix of this journal."""
+    require(transition['payload']['original_target_id'] == target['target_id']
+            and transition['payload']['original_proposal_id'] == proposal_id,
+            'SPLIT_TRANSITION_TARGET_REQUIRES_NEW_MONTHLY_PATH')
     from core.strategy_account_ledger import create_account
     from core.strategy_account_split_v1 import apply_event
     cursor=create_account(state['account_id']);anchor=None;anchored=False
