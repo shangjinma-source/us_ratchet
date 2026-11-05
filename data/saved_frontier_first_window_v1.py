@@ -46,6 +46,12 @@ SOURCES = {
 # Exact independently reviewed notices only, not a category-wide exemption. Original bytes/times
 # remain in closure and every issuer mention still goes through notice review.
 VERIFIED_UNRELATED_FUTURE_NOTICES = {
+    # DTN2026-26 full body: Daily List delivery migration only; no issuer action.
+    'DTN2026-26': (
+        'Data Technical News',
+        'DTN2026-26 - Nasdaq Announces Updates to the Nasdaq Daily List',
+        'News Category Alert Markets What You Need To Know Data Technical News #2026-026 The Nasdaq Stock Market Nasdaq is implementing enhancements and changes to the Daily List that will be available via Nasdaq Data Link, effective prior to June 30, 2027.'),
+
     # Official full-body review: index data products only, no issuer corporate action.
     # Exact signature remains required; never an identifier/category-only bypass.
     'fpnews2026-74': (
@@ -72,6 +78,14 @@ VERIFIED_UNRELATED_FUTURE_NOTICES = {
 # Runtime source pins bind this reviewed scope record; retain the official bytes
 # and receipt in the release evidence archive for independent re-verification.
 VERIFIED_UNRELATED_NOTICE_EVIDENCE = {
+    'DTN2026-26': dict(
+        classification='REVIEWED_DAILY_LIST_DELIVERY_NO_ISSUER_ACTION',
+        official_url='https://www.nasdaqtrader.com/TraderNews.aspx?id=DTN2026-26',
+        reviewed_body_sha256='4515afd8865e7beba1d253d45b42265f6dfa018ab927cb0de5282651ebf578f4',
+        review_schema='OFFICIAL_NOTICE_SCOPE_REVIEW_V1',
+        scope='Daily List API/SFTP delivery and historical table migration before June 30 2027; no issuer share, CUSIP, cash or entitlement change.',
+        runtime_full_body_refetched=False),
+
     'fpnews2026-74': dict(
         classification='REVIEWED_INDEX_DATA_DISSEMINATION_NO_ISSUER_ACTION',
         official_url='https://www.nasdaqtrader.com/TraderNews.aspx?id=fpnews2026-74',
