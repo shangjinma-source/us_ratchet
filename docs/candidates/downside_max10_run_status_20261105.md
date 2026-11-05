@@ -55,3 +55,13 @@ PID4728，tmp/downside_max10_20261105_late_v5，1665源冻结通过。父417行p
 ## v6实际恢复
 
 PID21584，tmp/downside_max10_20261105_late_v6。1726源冻结通过，INSM限定单capture条件absence已通过原gate；旧receipt缺字段按既有legacy原字节/CRC/request/647会话核验，不补造receipt，无新增财务事件。父502行prefix PASS，25选择复用，进入第26次选择。继承累计1923.490542100044秒。完整结果待完成及独审；非官方穷尽无行动证明。
+
+## v6结束：GOOG/KDP剩余窗口股息
+
+实际BLOCKED，541/646会话、new27/replayed25、累计2131.3361789000337秒。2026-02-27 gate无缺流，仅GOOG3/9每股0.21与KDP3/27每股0.23未映射；准备同股票至7/30剩余股息补证及配置式续接，27选择和541日账本保留。未改变策略参数。
+
+## v7结束：ASML美元分红需核最终汇率
+
+v7 summary已确认BLOCKED / ORDER_PROVIDER_NOT_READY，563/646会话、new28/replayed27、累计2260.365469100012秒，independently_reviewed=false。2026-03-31选择持有ASML至4/30，冻结provider记4/27每股3.177 USD，两capture相同；缺流为空。28次选择和563日账本保留，不重新搜索。
+
+官方JPM初始公告（cmsId ed94f9f7e606407d857f7482ba7c32a9，sequenceNo 10）写1/28近似汇率1.1767、EUR2.70、近似gross USD3.177090，5/5支付，并附4/22股东会批准条件。ASML官方资本回报页明确纽约股份换汇定价为4/27，故初始近似美元金额不等于最终到账金额，不能仅因接近provider就通过。已交由news_economic_cases核最终公告/汇率与剩余窗口事件；不改变生产或策略参数。

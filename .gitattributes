@@ -174,3 +174,10 @@ scripts/research/run_downside_account_candidate_20261105_v6.py -text
 tests/test_downside_resume_v6_20261105.py -text
 
 tests/test_downside_v6_independent_review_20261105.py -text
+docs/candidates/downside_max10_resume_v7_contract_20261105.md -text
+scripts/research/prepare_downside_max10_resume_v7_freeze_20261105.py -text
+scripts/research/prepare_goog_kdp_dividends_20261105.py -text
+scripts/research/review_downside_account_20261105_v7.py -text
+scripts/research/run_downside_account_candidate_20261105_v7.py -text
+tests/test_downside_resume_v7_20261105.py -text
+tests/test_downside_v7_independent_review_20261105.py -text

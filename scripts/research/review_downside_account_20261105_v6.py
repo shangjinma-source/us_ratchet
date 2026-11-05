@@ -40,16 +40,19 @@ def validate_insm_absence(artifact,original_events,inventory):
     require(all(ref in artifact['source_hashes'] for ref in row['source_references']),'INSM_REFERENCE_PINS')
     return []
 
-def validate_resume(directory):
-    freeze=base.read(ROOT/FREEZE);chain.v2.check_pins(freeze['source_hashes'])
-    require(freeze['schema']=='DOWNSIDE_MAX10_RESUME_EXECUTION_V6','V6_FREEZE')
+def validate_resume(directory,freeze_path=FREEZE,schema='DOWNSIDE_MAX10_RESUME_EXECUTION_V6',parent_rows=502,parent_budget=None,additional=(),absence_origin=None):
+    freeze=base.read(ROOT/freeze_path);chain.v2.check_pins(freeze['source_hashes'])
+    require(freeze['schema']==schema,'RESUME_FREEZE')
     extra=[(prior.prior.AZN_PATH,prior.prior.AZN_SHA,prior.prior.validate_azn_pairs),(prior.prior.CTSH_PATH,prior.prior.CTSH_SHA,prior.prior.validate_ctsh_pairs),(prior.LRCX_PATH,prior.LRCX_SHA,prior.validate_lrcx_pairs),(INSM_PATH,INSM_SHA,validate_insm_absence)]
+    extra.extend(additional)
     require(freeze['additional_execution_artifacts']==[chain.v2.META_PATH,chain.CEG_PATH,*[x[0] for x in extra]],'V6_ARTIFACT_ORDER')
     require(all(freeze['source_hashes'][p]==h for p,h,_ in extra),'APPROVED_ARTIFACT_HASHES')
-    result=chain.validate_resume(directory,parent_rows=502,parent_budget=dict(new=25,reused=0,replayed=21),additional=extra)
+    result=chain.validate_resume(directory,parent_rows=parent_rows,parent_budget=parent_budget or dict(new=25,reused=0,replayed=21),additional=extra)
     require(result[0]['parent_output']==freeze['parent_output'] and result[0]['inherited_seconds']==freeze['inherited_seconds'],'V6_FREEZE_PARENT')
     # Original blocked gate must have exactly the one source-scoped INSM absence.
-    old=base.read(ROOT/freeze['parent_output']/'2025-12-31.exposure.json',True)
+    origin=absence_origin or freeze['parent_output']
+    require((ROOT/origin/'contract.json').relative_to(ROOT).as_posix() in result[1]['hashes'],'ABSENCE_ORIGIN_ANCESTOR')
+    old=base.read(ROOT/origin/'2025-12-31.exposure.json',True)
     require(not old['unmapped_events'] and len(old['missing_action_streams'])==1,'INSM_ORIGINAL_GATE')
     missing=old['missing_action_streams'][0];row=base.read(ROOT/INSM_PATH)['review_rows'][0]
     require(missing['security_id']==row['security_id'] and missing['source'] in row['selected_price_sources'] and all(s['source_path'] in row['selected_price_sources'] for s in missing['selected_source_segments']),'INSM_OLD_SOURCE_SCOPE')
