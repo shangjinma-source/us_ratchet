@@ -65,6 +65,7 @@ class NativeMonthCaptureReader:
         directory=capture_namespace(self.capture_root,started=self.clock(),session=prepared['session'])/'native-gzip-v1'
         capture=capture_supplement(directory=directory,request=prepared['request'],binding=prepared['binding'],read_binding=read_binding,execute=True,clock=self.clock,fetch_daily=self.fetch_daily,fetch_official=self.fetch_official)
         unchanged()
+        require(capture.get('status')=='CAPTURED_REVIEW_REQUIRED','NATIVE_CAPTURE_INCOMPLETE_REQUIRES_RECOVERY')
         # This separate authority must bind exact returned bytes and its own basis evidence.
         review_started=stamp(self.clock())
         admitted=self.review_capture(capture=deepcopy(capture),prepared=deepcopy(prepared),state=deepcopy(state),target=deepcopy(target),proposal=deepcopy(proposal),risk_state=deepcopy(before),now=review_started)

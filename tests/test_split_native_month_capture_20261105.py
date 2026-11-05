@@ -50,4 +50,22 @@ class Tests(unittest.TestCase):
    with patch('socket.socket.connect',side_effect=AssertionError('NETWORK_FORBIDDEN')),patch('data.strategy_monthly_supplement_gzip_v1.GzipRssTransport',side_effect=lambda **kw:GzipRssTransport(fetch=rss_fetch,**kw)):
     with self.assertRaisesRegex(ValueError,'NATIVE_CAPTURE_ACCOUNT_OR_TARGET_CHANGED'):reader(before,target,clock(),proposal=proposal)
    self.assertEqual(reader.risk.read(before['account_id']),prior)
+
+ def test_incomplete_capture_stops_before_review_or_risk_write(self):
+  from types import SimpleNamespace
+  from unittest.mock import Mock
+  from datetime import timezone
+  now=datetime(2026,11,3,15,tzinfo=timezone.utc)
+  state={'account_id':'isolated'};target={'target_id':'target'};proposal={'proposal_id':'proposal'}
+  risk=Mock();risk.read.return_value=None
+  monthly=SimpleNamespace(accounts=SimpleNamespace(read=lambda:state),current=lambda:target)
+  view=SimpleNamespace(monthly=monthly,require_proposal=lambda **kw:proposal)
+  reviewer=Mock(side_effect=AssertionError('REVIEW_MUST_NOT_RUN'))
+  prepared=dict(binding={},request={},session=dict(date='2026-11-03',open='2026-11-03T14:30:00+00:00',close='2026-11-03T21:00:00+00:00'))
+  with TemporaryDirectory(dir=fixture.ROOT/'tmp') as folder:
+   context=dict(calendar={},identities={})
+   reader=NativeMonthCaptureReader(monthly_view=view,risk_store=risk,research_root=folder,capture_root=folder,context_sha256=fixture.digest(canonical(context)),review_capture=reviewer,clock=lambda:now,validate_sources=lambda:None,**context)
+   with patch('docs.candidates.split_native_month_capture_20261105.prepare_request',return_value=prepared),patch('docs.candidates.split_native_month_capture_20261105.capture_supplement',return_value=dict(status='NEEDS_RECOVERY')),patch('docs.candidates.split_native_month_capture_20261105.project_native_month_daily') as project:
+    with self.assertRaisesRegex(ValueError,'NATIVE_CAPTURE_INCOMPLETE_REQUIRES_RECOVERY'):reader(state,target,now,proposal=proposal)
+   reviewer.assert_not_called();project.assert_not_called()
 if __name__=='__main__':unittest.main()
