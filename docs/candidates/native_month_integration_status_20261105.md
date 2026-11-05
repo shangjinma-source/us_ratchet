@@ -16,6 +16,8 @@
 
 ## 上线前真实缺口
 
+单一配置入口 `ConfiguredNativeAdmission` 已通过真实profiled路由、授权审核、capture、风险及保护报价集成（37644，exit0，50.784秒）。固定源码范围补齐采集/停牌/补采依赖，继承原monthly gate；配置、源码、未知目标授权及缺风险库拒绝。使用明确合成来源、隔离风险库，不是正式准入。下一步使用同一入口完成HTTP现金/成交联调，详见 `split_native_capture_configuration_20261105.md`。
+
 `NativeCaptureReview` 已替换简化审核回调完成实际采集至风险集成（32053，exit0，28.928秒）。目标/时点/基线/逐证券口径和股息授权核对、未知事件拒绝及未解决权益保留已测试；正式源授权与生产配置仍未完成，详见 `split_native_capture_review_20261105.md`。哈希匹配不代表独立供应商真实性。
 
 采集至受保护建议联调已通过：句柄35075，exit0，1项35.209秒。NativeMonthCaptureReader直接接NativeSplitRollingAdmission，真实补采等待与第二次分钟读取完成；坏gzip收据明确RSS_GZIP_INTEGRITY_FAILED，建议仅卖出、无买入，账户不变。此测试仍使用受控来源审核和路由适配；真实路由由下述独立测试覆盖。另将归档保留路径冲突检查前移至风险写入前，扩展负例测试41187通过（19.355秒），避免已知冲突在风险更新后才报错。未部署。
