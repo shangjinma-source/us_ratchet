@@ -35,3 +35,9 @@
 `tmp/pullback_mechanism_readonly_20261105/calculate.py` / `result.json` 保存算术和各book、signals、contract SHA256。输入为 `tmp/pullback_account_20261105/{early_staged_price_v1,early_staged_volume_v1,late_staged_price_v3,late_staged_volume_v3}`。
 
 本轮只核完整状态和计算暴露/计数，未冒称重新独立审计所有历史源；原完整账户独审及条件性公司行动/价格限制继续适用。两独立窗不拼接成连续账户。无生产修改。
+
+## 原方案成绩核查（2026-11-05）
+
+主办方[2025最终排名](https://financial-competitions.com/previousstandings/2026/1/24/december-standings-2025)列明2025全年、20,000美元以上账户股票组Martin Luk +969.8%，位列该组首位。这个年度竞赛成绩有主办方记录支持；本次未取得逐笔账本、940笔/22.23%胜率的原始统计或完整机械执行规则，不能把二手截图摘要视为可直接复现全部收益的算法规格。日线代理失败不推翻主办方成绩。
+
+已实际取得的Dukascopy 2022分钟样本为CFD BID报价，非交易所成交量与真实账户成交证据，详见dukascopy_2022_minute_probe_20261105.md。暂不以此启动声称复现原方案的收益回测，避免又用不相等的代理替代用户目标。
