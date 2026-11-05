@@ -126,3 +126,7 @@ tests/test_downside_resume_chain_20261105.py -text
 scripts/research/prepare_ceg_dividend_evidence_20261105.py -text
 
 scripts/research/prepare_early_dividend_gaps_20261105.py -text
+
+scripts/research/review_downside_account_20261105_v3.py -text
+
+tests/test_downside_chain_independent_review_20261105.py -text
