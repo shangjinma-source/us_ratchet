@@ -158,3 +158,19 @@ scripts/research/run_downside_account_candidate_20261105_v5.py -text
 tests/test_downside_resume_v5_20261105.py -text
 
 tests/test_downside_v5_independent_review_20261105.py -text
+
+docs/candidates/downside_absence_artifact_20261105.py -text
+
+docs/candidates/downside_max10_resume_v6_contract_20261105.md -text
+
+scripts/research/prepare_downside_max10_resume_v6_freeze_20261105.py -text
+
+scripts/research/prepare_insm_absence_20261105.py -text
+
+scripts/research/review_downside_account_20261105_v6.py -text
+
+scripts/research/run_downside_account_candidate_20261105_v6.py -text
+
+tests/test_downside_resume_v6_20261105.py -text
+
+tests/test_downside_v6_independent_review_20261105.py -text

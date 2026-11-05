@@ -47,3 +47,11 @@ v4结束BLOCKED / ORDER_PROVIDER_NOT_READY，417/646会话、累计new21/replaye
 ## v5实际恢复
 
 PID4728，tmp/downside_max10_20261105_late_v5，1665源冻结通过。父417行prefix PASS，21次选择已复用，进入第22次新选择。LRCX新SID两笔股息补齐，另两笔已存在未重复。继承累计1585.3732661000104秒。结果仍待完整及独审。
+
+## v5结束：INSM原源行动列表缺失
+
+实际BLOCKED / ORDER_PROVIDER_NOT_READY，502/646会话，累计new25/replayed21，1923.490542100044秒。2025-12-31 gate无unmapped events，仅INSM security:0001104506:457669307选中原源缺action stream；需核完整div/splits请求及覆盖后按既有条件无行动模式准入，不能以空列表直接放行。准备保留25选择/502日账本续接，尚无完整经济结论。
+
+## v6实际恢复
+
+PID21584，tmp/downside_max10_20261105_late_v6。1726源冻结通过，INSM限定单capture条件absence已通过原gate；旧receipt缺字段按既有legacy原字节/CRC/request/647会话核验，不补造receipt，无新增财务事件。父502行prefix PASS，25选择复用，进入第26次选择。继承累计1923.490542100044秒。完整结果待完成及独审；非官方穷尽无行动证明。
