@@ -96,7 +96,10 @@ def review_selection(selected,sidecar,returns,reference,pins):
 
 def provenance(directory,contract,summary,book):
  from scripts.research import run_downside_cap20_account_20261105 as runner
- if contract.get('conditional_assumption_dependency'):
+ if contract.get('azn_zero_recovery_assumption'):
+  from scripts.research.run_downside_cap20_azn_zero_recovery_20261105 import make_runner
+  runner=make_runner();require(contract.get('production_eligible') is False and contract.get('full_account_equity_certified') is False,'ZERO_RECOVERY_NOT_CERTIFIED')
+ elif contract.get('conditional_assumption_dependency'):
   if contract.get('conditional_assumption_dependencies'):
    from scripts.research.run_downside_cap20_alxn_june_exit_20261105 import make_runner
   else:
@@ -140,7 +143,7 @@ def audit(directory):
  require(not a['distribution_events'] and not a['cash_stock_merger_events'],'UNSUPPORTED_MIXED_RIGHTS')
  require([r['date'] for r in book['daily_ledger']]==days[1:] and len(book['provider_audit'])==count,'FULL_SESSIONS')
  require(F(book['fee_bps'])==0 and F(book['slippage_bps'])==5,'FIXED_COSTS')
- cash=F(20000);shares={};peak=F(20000);dd=F(0);baseline={};peaks={};exited=set();accrued={};paid={};claims={};released={};selection_count=0;selection_checks={};terminated=set()
+ cash=F(20000);shares={};peak=F(20000);dd=F(0);baseline={};peaks={};exited=set();accrued={};paid={};claims={};released={};selection_count=0;selection_checks={};terminated=set();unpaid_fraction=[]
  events={e['event_id']:e for e in document['dividend_events']};require(len(events)==len(document['dividend_events']),'DUPLICATE_DIVIDEND')
  fills=[];order_ids=set()
  for i,(row,provider) in enumerate(zip(book['daily_ledger'],book['provider_audit']),1):
@@ -188,7 +191,12 @@ def audit(directory):
   for e in a['actions']:
    if e['date']!=day:continue
    s=e['security_id'];kind=e['type']
-   if kind=='merger':
+   if kind=='ads_conversion':
+    require(contract.get('azn_zero_recovery_assumption') and not unpaid_fraction,'REGISTERED_ONE_ZERO_RECOVERY_ONLY')
+    require(s=='security:0000901832:046353108' and e['new_security_id']=='internal:issuer:0000901832:ORDINARY_USD025' and day=='2026-02-02' and shares.get(s)==49 and F(e['new_shares'])/F(e['old_shares'])==F(1,2),'INDEPENDENT_EXACT49_DTC')
+    n=e['new_security_id'];require(not shares.get(n,0) and not any(o['security_id']==n for o in orders),'SUCCESSOR_CONFLICT');orders=[o for o in orders if o['security_id']!=s];shares[s]=0;shares[n]=24;terminated.add(s)
+    unpaid_fraction=[dict(event_id=e['event_id'],kind='PARENT_FRACTIONAL_CASH_RIGHT',security_id=n,units='1/2',effective_date=day,source_references=list(e['source_references']),delivery_date=None,payment_date=None,tradable=False,origin='ADS_CONVERSION')]
+   elif kind=='merger':
     if shares.get(s,0):claims[e['event_id']]=dict(amount=shares[s]*F(e['share_cash']),due=None)
     shares[s]=0;orders=[o for o in orders if o['security_id']!=s];terminated.add(s)
    else:
@@ -209,14 +217,16 @@ def audit(directory):
    if key not in paid and due is not None and due<=day:cash+=value;paid[key]=day
   pending=sum((v for k,v in accrued.items() if k not in paid),F(0));merger=sum((v['amount'] for v in claims.values()),F(0));stock=sum((q*F(bars[s][day]['close']) for s,q in shares.items() if q),F(0));equity=cash+stock+pending+merger
   require(cash>=0 and F(row['cash'])==cash and row['shares']==shares,'DAILY_CASH_SHARES:'+day);require(F(row['dividend_receivable'])==pending and F(row['receivable'])==merger and F(row['stock_value'])==stock and F(row['equity'])==equity,'DAILY_EQUITY_RIGHTS:'+day)
-  require(not row['distribution_rights'] and not row['merger_entitlements'] and F(row['external_flow'])==0,'UNEXPECTED_RIGHTS_FLOW');peak=max(peak,equity);dd=max(dd,1-equity/peak)
+  require(row['distribution_rights']==unpaid_fraction and not row['merger_entitlements'] and F(row['external_flow'])==0,'UNEXPECTED_RIGHTS_FLOW');peak=max(peak,equity);dd=max(dd,1-equity/peak)
  require(selection_count==months and set(selection_checks)==set(plans),'ALL_MONTHLY_SELECTIONS')
  actual_fills=[(x['date'],x['id'],x['security_id'],x['side'],x['quantity'],F(x['price']),F(x['fee']),F(x['cash_after'])) for x in book['order_log'] if x['event']=='ASSUMED_NEXT_OPEN_FILLED'];require(actual_fills==fills,'EXACT_FILL_LOG')
  require(F(book['cash'])==cash and book['shares']==shares and F(book['fees'])==0,'TERMINAL_CASH_SHARES');require(F(book['total_return'])==equity/F(20000)-1 and F(book['drawdown']['maximum_close_drawdown'])==dd,'TERMINAL_RETURN_DRAWDOWN')
  dl=book['dividend_ledger'];require(set(dl['events'])==set(accrued),'DIVIDEND_EVENT_SET')
  for key,value in accrued.items():require(dl['events'][key]['event']==events[key] and F(dl['events'][key]['net'])==value,'DIVIDEND_RIGHTS')
  require(len(dl['payments'])==len({p['event_id'] for p in dl['payments'].values()})==len(paid),'DUPLICATE_PAYMENT');require({p['event_id']:p['session_date'] for p in dl['payments'].values()}==paid and F(dl['receivable'])==pending and F(dl['paid_cash'])==sum((accrued[k] for k in paid),F(0)),'PAYMENTS_AND_UNPAID')
- return dict(status='INDEPENDENT_CAP20_CONDITIONAL_ACCOUNT_ARITHMETIC_PASS' if contract.get('conditional_assumption_dependency') else 'INDEPENDENT_CAP20_ACCOUNT_PASS',conditional_assumptions=contract.get('conditional_assumption_dependencies',[contract['conditional_assumption_dependency']] if contract.get('conditional_assumption_dependency') else []),production_eligible=False,assumption_exposure=[assumption_exposure(book,document,dict(conditional_assumption_dependency=d)) for d in contract.get('conditional_assumption_dependencies',[contract['conditional_assumption_dependency']] if contract.get('conditional_assumption_dependency') else [])],window=contract['window'],sessions=count,months_checked=months,trades_checked=len(fills),selection_checks=selection_checks,final_equity=str(equity),maximum_drawdown=str(dd),merger_unpaid_claims=len(claims),scope='Independent exact accounting and retained candidate score/risk/cap20/owner checks. Original observed all-candidate dominance cannot be independently proven without full observation stream. No candidate apply or search.',economic_replays=0)
+ if contract.get('azn_zero_recovery_assumption'):
+  require(len(unpaid_fraction)==1 and book['distribution_rights']==unpaid_fraction and not a['distribution_fractional_cash_values'],'PERMANENT_UNKNOWN_HALF_NOT_PAID')
+ return dict(status='INDEPENDENT_CAP20_ZERO_RECOVERY_CASH_PATH_PASS' if contract.get('azn_zero_recovery_assumption') else 'INDEPENDENT_CAP20_CONDITIONAL_ACCOUNT_ARITHMETIC_PASS' if contract.get('conditional_assumption_dependency') else 'INDEPENDENT_CAP20_ACCOUNT_PASS',conditional_assumptions=contract.get('conditional_assumption_dependencies',[contract['conditional_assumption_dependency']] if contract.get('conditional_assumption_dependency') else []),production_eligible=False,azn_zero_recovery_assumption=contract.get('azn_zero_recovery_assumption'),unvalued_fractional_rights=unpaid_fraction,full_account_equity_certified=False,assumption_exposure=[assumption_exposure(book,document,dict(conditional_assumption_dependency=d)) for d in contract.get('conditional_assumption_dependencies',[contract['conditional_assumption_dependency']] if contract.get('conditional_assumption_dependency') else [])],window=contract['window'],sessions=count,months_checked=months,trades_checked=len(fills),selection_checks=selection_checks,final_equity=str(equity),maximum_drawdown=str(dd),merger_unpaid_claims=len(claims),scope='Independent exact accounting and retained candidate score/risk/cap20/owner checks. Original observed all-candidate dominance cannot be independently proven without full observation stream. No candidate apply or search.',economic_replays=0)
 
 def assumption_exposure(book,document,contract):
  dependency=contract.get('conditional_assumption_dependency')
