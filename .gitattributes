@@ -208,3 +208,10 @@ scripts/research/inventory_momentum_actions_20261105.py -text
 scripts/research/prepare_momentum_early_dividends_20261105.py -text
 scripts/research/recheck_momentum_inventory_20261105.py -text
 scripts/research/verify_momentum_dividend_batch_20261105.py -text
+docs/candidates/momentum_sgen_admission_20261105.py -text
+docs/candidates/momentum_split_admission_20261105.py -text
+scripts/research/check_momentum_capital_grid_20261105.py -text
+scripts/research/prepare_momentum_execution_20261105.py -text
+scripts/research/run_momentum_account_20261105.py -text
+docs/candidates/momentum_full_account_execution_contract_20261105.md -text
+research_contracts/momentum_account_execution_20261105/freeze.json -text
