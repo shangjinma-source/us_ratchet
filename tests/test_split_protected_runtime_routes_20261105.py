@@ -132,12 +132,30 @@ class Tests(unittest.TestCase):
     self.assertEqual(accounts.read(),state)
     old_binding=dict(expected_revision=state['revision'],target_id=news_target['target_id'],expected_proposal_id=news_target['proposal_id'])
     self.assertEqual(prepared['news_service'].bound_context(old_binding)[0],state)
+    # Synthetic cached opinion only: exercise the actual status endpoint's
+    # invalidation, without claiming a real model run or economic benefit.
+    news_service=prepared['news_service'];news_service.clock=lambda:now[0]
+    from data.news_risk_skill_v1 import load_risk_skill
+    cached=dict(job_id='a'*32,status='COMPLETE',binding=old_binding,
+        started_at=now[0].isoformat(),finished_at=now[0].isoformat(),
+        news_generation=news_service.news_generation(),proposal=dict(
+            review_valid_until=(now[0]+timedelta(minutes=10)).isoformat(),
+            skill_context_binding=load_risk_skill(Path(folder))['binding'],
+            synthetic_test_only=True))
+    with closing(news_service.connection()) as connection:
+     news_service.save(connection,cached);connection.commit()
+    cached_before=client.get('/api/news/investment-review/job',params={'job_id':cached['job_id']})
+    self.assertEqual(cached_before.status_code,200)
+    self.assertEqual(cached_before.json()['status'],'COMPLETE')
     fill=dict(event_id='user-sale-A',kind='DIRECT_FILL',ticker='A',side='SELL',quantity=16,price='8.8',fees='0',executed_at=now[0].isoformat())
     sold=client.post('/api/strategy-account/events',json=dict(expected_revision=state['revision'],event=fill))
     self.assertEqual(sold.status_code,200,sold.text)
     self.assertEqual(accounts.read()['shares'].get('A',0),0)
     with self.assertRaisesRegex(ValueError,'STALE_ACCOUNT_OR_TARGET'):
      prepared['news_service'].bound_context(old_binding)
+    cached_after=client.get('/api/news/investment-review/job',params={'job_id':cached['job_id']})
+    self.assertEqual(cached_after.json()['status'],'STALE')
+    self.assertNotIn('proposal',cached_after.json())
     after=accounts.read()
     retry=client.post('/api/strategy-account/events',json=dict(expected_revision=state['revision'],event=fill))
     self.assertEqual(retry.status_code,200,retry.text);self.assertEqual(accounts.read(),after)

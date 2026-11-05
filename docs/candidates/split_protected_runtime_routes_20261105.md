@@ -9,3 +9,5 @@
 最初缺成交resolver身份原文时正确拒绝，夹具随后补充同resolver已验证原字节；同一分钟旧限价输入拒绝新账户，改为真实下一分钟采集，没有放松时间或身份门槛。真实SQLite记录、原始行情解析和HTTP路由运行，外部数据均为合成，实际网络禁止。worker只验证单次生命周期，不运行外部新闻抓取。
 
 限制：monthly._for_target仍为测试边界固定原provider/runtime；跨月release/训练单位认证、生产源码发布授权和成组激活尚未完成。未写真实账户、未下单、未切换线上策略。
+
+补充缓存结果HTTP验收：在临时新闻jobs库保存明确合成的COMPLETE结果（不调用模型），成交前`GET /api/news/investment-review/job`返回该结果；成交后同job返回STALE且不含proposal。最终session40175，1项综合测试14.905秒通过。首轮测试误用无/job的POST路径得到405，纠正为现有正式GET接口后通过，未修改生产接口。
