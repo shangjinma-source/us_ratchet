@@ -1,0 +1,25 @@
+# 从隔离现金链路到当前V27的接入差距
+
+本轮代码核对改变下一步顺序：先接连续32原生目标及实际frontier提案，再接现有新闻服务。不能把基础月目标测试当当前V27已闭合。
+
+## 已核实的接口差异
+
+`tests/test_split_monthly_publication_v1.py`使用拆股版基础目标服务，产物为REAL_STRATEGY_TARGET_DECISION_V1。`core/saved_monthly_frontier_proposal.py`要求REAL_STRATEGY_CONTINUOUS32_TARGET_DECISION_V1及完整原生搜索结果，并真实核算候选提案。两者不能通过补一个proposal_id混接。
+
+`SplitRuntime`当前使用基础月目标数量。当前正式daily composition使用frontier提案数量；必须验证二者不同的案例，不能只验证相同数量。
+
+`NewsInvestmentService.normalize_preview`只接受READY/HOLD，且正式proposal builder要求账户版本、真实target/proposal ID和风险有效期。候选CONDITIONAL_PREVIEW_READY不能直接改标签准入。现有SavedFrontierProposalStore可复用真实提案持久化；实际模型和来源准入仍独立要求。
+
+下一实现位置：`strategy_continuous32_target_decision.py`引用旧build_target_inputs，`strategy_continuous32_target_service.py`引用旧preview；已有拆股input及preview候选可复用。须保持原经济算法，接实际连续32决策、提案、日风险和差额，而非构造假的决策字典。
+
+## 原始历史的真实证据与限制
+
+原normalizer拒绝所有公司行动并要求close==adjclose；daily evidence审核还要求空corporate_actions及不跨单位。补采路径再次调用相同normalizer并比较重叠原价。只接历史投影函数不能闭合。
+
+现有SNDK两份原始缓存（20261014及monthly_recovery_20261103）共同252会话close一致、无拆股事件，不含未来计划拆股后的行情。不能把合成8:1样本当已经发生的真实事实。
+
+限定检查的历史AVGO、NVDA缓存已有拆后调整的close坐标：AVGO 2024-07-12约170.067，对应拆前名义1700.670；NVDA 2024-06-07约120.888，对应名义1208.880。原始缓存位于data/cache/research/current_raw_capture_20261013_v1和20261014_v1；既有核对记录tmp/avgo_independent_20261105/review.json、tmp/momentum_split_mapping_20261105/mapping.json。两次抓取都晚于拆股，不能证明事件前后供应商改写发生时点。adjclose还含股息调整，不能把close/adjclose差异解释成拆股比例。
+
+最小完整历史路径需明确已审核raw价格坐标和quote_unit_effective_at，保留原始字节/行动与哈希，以同一单位投影风险历史及补采重叠比较，并拒绝未知行动。不得对已经拆股调整的close再次除比例。真实来源/券商认证和生产激活仍不由这些算术测试授权。
+
+本轮不改线上配置、策略或账户；未新增仅用于拒绝的新闻适配器。此记录是接入缺口的定位，不是已部署成果。
