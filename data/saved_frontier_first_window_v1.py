@@ -46,6 +46,12 @@ SOURCES = {
 # Exact independently reviewed notices only, not a category-wide exemption. Original bytes/times
 # remain in closure and every issuer mention still goes through notice review.
 VERIFIED_UNRELATED_FUTURE_NOTICES = {
+    'ECA2026-800': ('Equity Corporate Actions Alert', 'ECA2026-800 - Information Regarding the Reverse Stock Split, Par Value and CUSIP Number Change for SMX (Security Matters) Public Limited Company (SMX)', 'News Category Alert Markets What You Need To Know Equity Corporate Actions Alert #2026-800 The Nasdaq Stock Market'),
+    'ECA2026-802': ('Equity Corporate Actions Alert', 'ECA2026-802 - Information Regarding the Reverse Stock Split, Par Value, and CUSIP Number Change for Alps Group Inc (ALPS)', 'News Category Alert Markets What You Need To Know Equity Corporate Actions Alert #2026-802 The Nasdaq Stock Market'),
+    'ECA2026-799': ('Equity Corporate Actions Alert', 'ECA2026-799 - Information Regarding the Reverse Stock Split, Ratio Change and CUSIP Number Change for Steakholder Foods Ltd. (STKH)', 'News Category Alert Markets What You Need To Know Equity Corporate Actions Alert #2026-799 The Nasdaq Stock Market'),
+    'eca2026-798': ('Equity Corporate Actions Alert', 'eca2026-798 - Information Regarding the Reverse Stock Split, Par Value, and CUSIP Number Change for Wellchange Holdings Company Limited (WCT)', 'News Category Alert Markets What You Need To Know Equity Corporate Actions Alert #2026-798 The Nasdaq Stock Market'),
+    'ECA2026-796': ('Equity Corporate Actions Alert', 'ECA2026-796 - Information Regarding the Merger of Bowman Consulting Group Ltd. (BWMN)', 'News Category Alert Markets What You Need To Know Equity Corporate Actions Alert #2026-796 The Nasdaq Stock Market'),
+
     # DTN2026-26 full body: Daily List delivery migration only; no issuer action.
     'DTN2026-26': (
         'Data Technical News',
@@ -78,6 +84,12 @@ VERIFIED_UNRELATED_FUTURE_NOTICES = {
 # Runtime source pins bind this reviewed scope record; retain the official bytes
 # and receipt in the release evidence archive for independent re-verification.
 VERIFIED_UNRELATED_NOTICE_EVIDENCE = {
+    'ECA2026-800': {'classification': 'REVIEWED_OTHER_ISSUER_ACTION', 'official_url': 'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-800', 'reviewed_body_sha256': 'f3806231c16a9743841a71ac1ef89ffbfe0b6ce0b403fde0ef0ea4c50a24a3b0', 'scope': 'SMX ordinary shares reverse split and par value/CUSIP change on 2026-11-09; no SNDK or MRNA action.', 'runtime_full_body_refetched': False},
+    'ECA2026-802': {'classification': 'REVIEWED_OTHER_ISSUER_ACTION', 'official_url': 'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-802', 'reviewed_body_sha256': '5aeecc9fb33e50dc9dafc5c8eafefb23f9e9869f8bd1bb10a3a7c285fbbf155f', 'scope': 'Reviewed full notice concerns ECA2026-802 subject only; no SNDK or MRNA action.', 'runtime_full_body_refetched': False},
+    'ECA2026-799': {'classification': 'REVIEWED_OTHER_ISSUER_ACTION', 'official_url': 'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-799', 'reviewed_body_sha256': '1312ab4a254eeaef68e85a86c0d6a167879324000d1e64c9576afe92e443ab8d', 'scope': 'Reviewed full notice concerns ECA2026-799 subject only; no SNDK or MRNA action.', 'runtime_full_body_refetched': False},
+    'eca2026-798': {'classification': 'REVIEWED_OTHER_ISSUER_ACTION', 'official_url': 'https://www.nasdaqtrader.com/TraderNews.aspx?id=eca2026-798', 'reviewed_body_sha256': '42fd11acd00f0890dec53d135d2061bd293ead38c2aa43dd89bd679a1188757a', 'scope': 'Reviewed full notice concerns eca2026-798 subject only; no SNDK or MRNA action.', 'runtime_full_body_refetched': False},
+    'ECA2026-796': {'classification': 'REVIEWED_OTHER_ISSUER_ACTION', 'official_url': 'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-796', 'reviewed_body_sha256': 'edc03a954f2fe14519df0ff70f0f19941d13ab500305981f5b08c1b0d8c98a11', 'scope': 'Reviewed full notice concerns ECA2026-796 subject only; no SNDK or MRNA action.', 'runtime_full_body_refetched': False},
+
     'DTN2026-26': dict(
         classification='REVIEWED_DAILY_LIST_DELIVERY_NO_ISSUER_ACTION',
         official_url='https://www.nasdaqtrader.com/TraderNews.aspx?id=DTN2026-26',

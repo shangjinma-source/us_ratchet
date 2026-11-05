@@ -34,10 +34,13 @@ const {captureDailyDom} = require('./capture_daily_ui_acceptance_v3.cjs');
       reads.push((async () => {
         const body = await response.json();
         responses.push({path,status:response.status(),body});
-        assert.equal(response.status(),200);
+        fs.writeFileSync(directory+'/responses.json', JSON.stringify(responses,null,2));
         if (path === '/api/strategy-daily-v3/current') current = body;
         else calendar = body;
-      })());
+      })().catch(error => {
+        responses.push({path,status:response.status(),read_error:String(error)});
+        fs.writeFileSync(directory+'/responses.json', JSON.stringify(responses,null,2));
+      }));
     });
     await page.goto('http://127.0.0.1:8010/', {waitUntil:'domcontentloaded'});
     await page.waitForFunction(() => {
@@ -46,6 +49,9 @@ const {captureDailyDom} = require('./capture_daily_ui_acceptance_v3.cjs');
         document.querySelectorAll('#strategyMonthlyTarget table td').length > 0;
     }, null, {timeout:240000});
     await Promise.all(reads);
+    fs.writeFileSync(directory+'/responses.json', JSON.stringify(responses,null,2));
+    assert(responses.every(response => response.status === 200 && !response.read_error),
+      'API verification failed; see responses.json for the actual gate reason');
     assert(current && calendar, 'Current advice and calendar GET evidence required');
     const capture = await page.evaluate(captureDailyDom);
     capture.api_state = {account:current.account,target:current.target,daily:current.daily};
