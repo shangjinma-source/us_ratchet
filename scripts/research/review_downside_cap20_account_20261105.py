@@ -97,7 +97,10 @@ def review_selection(selected,sidecar,returns,reference,pins):
 def provenance(directory,contract,summary,book):
  from scripts.research import run_downside_cap20_account_20261105 as runner
  if contract.get('conditional_assumption_dependency'):
-  from scripts.research.run_downside_cap20_alxn_assumption_20261105 import make_runner
+  if contract.get('conditional_assumption_dependencies'):
+   from scripts.research.run_downside_cap20_alxn_june_exit_20261105 import make_runner
+  else:
+   from scripts.research.run_downside_cap20_alxn_assumption_20261105 import make_runner
   runner=make_runner();require(contract.get('production_admission') is False,'CONDITIONAL_NOT_PRODUCTION')
  check(contract['source_hashes']);check(contract.get('parent_file_hashes',{}))
  require(contract['schema']==runner.SCHEMA and contract['cap']=='1/5' and contract['max_holdings']==10,'CONTRACT_RULES')
@@ -213,15 +216,18 @@ def audit(directory):
  dl=book['dividend_ledger'];require(set(dl['events'])==set(accrued),'DIVIDEND_EVENT_SET')
  for key,value in accrued.items():require(dl['events'][key]['event']==events[key] and F(dl['events'][key]['net'])==value,'DIVIDEND_RIGHTS')
  require(len(dl['payments'])==len({p['event_id'] for p in dl['payments'].values()})==len(paid),'DUPLICATE_PAYMENT');require({p['event_id']:p['session_date'] for p in dl['payments'].values()}==paid and F(dl['receivable'])==pending and F(dl['paid_cash'])==sum((accrued[k] for k in paid),F(0)),'PAYMENTS_AND_UNPAID')
- return dict(status='INDEPENDENT_CAP20_CONDITIONAL_ACCOUNT_ARITHMETIC_PASS' if contract.get('conditional_assumption_dependency') else 'INDEPENDENT_CAP20_ACCOUNT_PASS',conditional_assumptions=[contract['conditional_assumption_dependency']] if contract.get('conditional_assumption_dependency') else [],production_eligible=False,assumption_exposure=assumption_exposure(book,document,contract),window=contract['window'],sessions=count,months_checked=months,trades_checked=len(fills),selection_checks=selection_checks,final_equity=str(equity),maximum_drawdown=str(dd),merger_unpaid_claims=len(claims),scope='Independent exact accounting and retained candidate score/risk/cap20/owner checks. Original observed all-candidate dominance cannot be independently proven without full observation stream. No candidate apply or search.',economic_replays=0)
+ return dict(status='INDEPENDENT_CAP20_CONDITIONAL_ACCOUNT_ARITHMETIC_PASS' if contract.get('conditional_assumption_dependency') else 'INDEPENDENT_CAP20_ACCOUNT_PASS',conditional_assumptions=contract.get('conditional_assumption_dependencies',[contract['conditional_assumption_dependency']] if contract.get('conditional_assumption_dependency') else []),production_eligible=False,assumption_exposure=[assumption_exposure(book,document,dict(conditional_assumption_dependency=d)) for d in contract.get('conditional_assumption_dependencies',[contract['conditional_assumption_dependency']] if contract.get('conditional_assumption_dependency') else [])],window=contract['window'],sessions=count,months_checked=months,trades_checked=len(fills),selection_checks=selection_checks,final_equity=str(equity),maximum_drawdown=str(dd),merger_unpaid_claims=len(claims),scope='Independent exact accounting and retained candidate score/risk/cap20/owner checks. Original observed all-candidate dominance cannot be independently proven without full observation stream. No candidate apply or search.',economic_replays=0)
 
 def assumption_exposure(book,document,contract):
  dependency=contract.get('conditional_assumption_dependency')
  if not dependency:return None
- require(dependency['absence_proven'] is False and dependency['security_id']=='research:security:alxn' and dependency['start_exclusive']=='2021-04-30' and dependency['end_inclusive']=='2021-05-28','EXACT_CONDITIONAL_SCOPE')
+ require(dependency['absence_proven'] is False and dependency['security_id']=='research:security:alxn' and (dependency['start_exclusive'],dependency['end_inclusive']) in [('2021-04-30','2021-05-28'),('2021-05-28','2021-06-01')],'EXACT_CONDITIONAL_SCOPE')
+ if dependency['end_inclusive']=='2021-06-01':
+  from docs.candidates.cap20_alxn_june_exit_assumption_20261105 import assert_exit
+  assert_exit(book['daily_ledger'])
  sid=dependency['security_id'];start=dependency['start_exclusive'];end=dependency['end_inclusive'];rows=[r for r in book['daily_ledger'] if start<r['date']<=end];before=next(r for r in book['daily_ledger'] if r['date']==start);bars=document['ohlc'][sid];opening=before['shares'].get(sid,0);initial_value=opening*F(bars[start]['close']);last=rows[-1];terminal_value=last['shares'].get(sid,0)*F(bars[end]['close']);fills=[r for r in book['order_log'] if r['event']=='ASSUMED_NEXT_OPEN_FILLED' and r['security_id']==sid and start<r['date']<=end]
  net=sum(((1 if r['side']=='SELL' else -1)*r['quantity']*F(r['price'])-F(r['fee']) for r in fills),F(0))
- return dict(security_id=sid,start_exclusive=start,end_inclusive=end,opening_shares=opening,ending_shares=last['shares'].get(sid,0),opening_market_value=str(initial_value),ending_market_value=str(terminal_value),net_trade_cash=str(net),price_and_trade_contribution=str(terminal_value+net-initial_value),sessions=[dict(date=r['date'],shares=r['shares'].get(sid,0),market_value=str(r['shares'].get(sid,0)*F(bars[r['date']]['close']))) for r in rows],fills=fills,interpretation='Actual accounting path conditional on no unobserved ALXN May action. Not an error bound, not proof that dividend/split rights did not occur, and not production admission.')
+ return dict(security_id=sid,start_exclusive=start,end_inclusive=end,opening_shares=opening,ending_shares=last['shares'].get(sid,0),opening_market_value=str(initial_value),ending_market_value=str(terminal_value),net_trade_cash=str(net),price_and_trade_contribution=str(terminal_value+net-initial_value),sessions=[dict(date=r['date'],shares=r['shares'].get(sid,0),market_value=str(r['shares'].get(sid,0)*F(bars[r['date']]['close']))) for r in rows],fills=fills,interpretation='Actual accounting path conditional on no unobserved ALXN action in the declared interval. Not an error bound, not proof that dividend/split rights did not occur, and not production admission.')
 
 def run(output):
  directory=ROOT/output
