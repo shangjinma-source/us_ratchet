@@ -1,0 +1,11 @@
+# 独立新闻复核线程登记与等待
+
+未部署的 `ReviewWorkerOwner` 在新NewsInvestmentService暴露路由前安装一次，保持原start/job预算/数据库/后台run逻辑，仅私有绑定Thread构造器来保存实际线程句柄。普通start与start_event最终都会通过同一入口。关闭标志先设置，启动锁保证已经获准的start完成登记和Thread.start后才能返回排空结果；后续start在创建job前拒绝。
+
+`close_and_wait` 使用总超时，不强杀线程，不重置模型预算，不触碰金融账户。启动尚未结束或实际线程仍存活均返回超时；即使排空，may_switch仍false，生产切换另须通过请求、新闻发现线程、持久化及其他任务审查。
+
+根线程两项真实线程测试通过，0.038秒：HTTP等价start已返回202、collector仍阻塞时不能报告排空；关闭后无第二个job；释放任务并join后实际线程结束。另测start验证阶段与关闭竞争，必须先等待登记，关闭后的start拒绝。测试使用真实NewsInvestmentService.start/run/status与临时SQLite，不调用模型、不生成真实交易。
+
+第一次测试在断言完成后因测试SQLite连接未显式关闭而清理失败；改用contextlib.closing后通过。没有掩盖运行线程或忽略临时目录清理错误。
+
+当前尚未接入统一builder和总生命周期协调器。正在运行的API回归32276保持源码冻结，待其终态后统一接入并验证；本文件本身不代表已解决生产切换。
