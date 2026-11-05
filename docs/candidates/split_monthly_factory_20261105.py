@@ -96,6 +96,14 @@ def build_runtime(*,root,configuration,approval_pins,timing_bundles,training_rev
  class Provider(SplitProvider):
   def _assemble(self,state,package,historical,**kwargs):
    gate()
+   if kwargs.get('execution_only'):
+    # Frozen-target execution supplies only its manifest. Re-read the pinned
+    # training closure for unit admission, without changing that target.
+    complete,expected_historical=self.training()
+    require(historical==expected_historical,'MONTHLY_EXECUTION_HISTORY_CHANGED')
+    require(all(complete['files'].get(name)==raw and complete['source_hashes'].get(name)==package['source_hashes'].get(name)
+     for name,raw in package['files'].items()),'MONTHLY_EXECUTION_SOURCE_CHANGED')
+    package=complete
    proof=history_admission(package=package,manifest_path=self.manifest_path,state=state,review_bytes=training_review_bytes,review_sha256=training_review_sha256,timing_bundles=timing_bundles,now=self.clock().isoformat())
    package=deepcopy(package);name='split-monthly-training-review.json'
    require(name not in package['files'],'MONTHLY_REVIEW_SOURCE_COLLISION')

@@ -24,3 +24,11 @@
 - 同一新月数据再次调用，状态与有效目标数量一致。
 
 验证命令：`D:/python/python.exe -B -m unittest discover -s tests -p test_split_new_month_risk_20261105.py -q`；1 项测试，5.379 秒，OK。现有风险计算可复用，下一步重点是原生新月 source admission / reader / execution 接线，不需复制一套风险算法。该结果不证明完整两月选择、HTTP 建议、真实成交或生产部署已通过。
+
+## 新月执行资料缺失已修复
+
+真实生成目标后调用 `monthly.execution_provider`，复现 `MANIFEST_SOURCE_CHANGED`：执行路径只传 manifest，而新增月度单位审核需要完整训练资料。工厂现按原 pins 重读完整资料，并对传入 manifest 字节、hash 和历史参数逐项校验；不修改冻结目标、不重新选股、不放松源审核。
+
+`test_split_monthly_execution_20261105.py` 通过真实目标生成、受控完整分钟行情、实际 action review 与限价计算，验证 B 使用 new 单位、账户未变；篡改 manifest 或历史参数分别拒绝。原选股 fixture 只有一根分钟 bar，曾被实际限价检查以 NONCONTIGUOUS_OR_FUTURE_MINUTE 正确拒绝；本测试补足受控原始分钟序列，未绕过检查。
+
+最终验证：execution 1 项 0.721 秒、原 monthly factory 2 项 3.579 秒，均 OK。仍未证明新月完整 daily signal reader、受保护 HTTP 建议及生产上线。
