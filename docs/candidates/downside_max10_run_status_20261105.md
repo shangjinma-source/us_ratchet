@@ -65,3 +65,7 @@ PID21584，tmp/downside_max10_20261105_late_v6。1726源冻结通过，INSM限�
 v7 summary已确认BLOCKED / ORDER_PROVIDER_NOT_READY，563/646会话、new28/replayed27、累计2260.365469100012秒，independently_reviewed=false。2026-03-31选择持有ASML至4/30，冻结provider记4/27每股3.177 USD，两capture相同；缺流为空。28次选择和563日账本保留，不重新搜索。
 
 官方JPM初始公告（cmsId ed94f9f7e606407d857f7482ba7c32a9，sequenceNo 10）写1/28近似汇率1.1767、EUR2.70、近似gross USD3.177090，5/5支付，并附4/22股东会批准条件。ASML官方资本回报页明确纽约股份换汇定价为4/27，故初始近似美元金额不等于最终到账金额，不能仅因接近provider就通过。已交由news_economic_cases核最终公告/汇率与剩余窗口事件；不改变生产或策略参数。
+
+## ASML最终公告已定位，尚待时间边界与成对准入
+
+2026-11-05沿adr.com公开JS的真实API路由取得CUSIP N07059210 final列表。根已直接打开JPM 4月final PDF（cmsId ed94f9f7e606407d857f7482ba7c32a9, sequenceNo14）：公告4/28、FX fixing4/27、EUR2.70、最终汇率1.1735、gross USD3.168450、15%扣税后net2.693183、pay5/5。原provider3.177是初始近似值，不是最终gross舍入；应显式修正映射。7月API final为gross2.137748、pay8/5（晚于回测截止，仅应收）。news_economic_cases准备原文补证；strategy_fit_execution核4/27应收计量是否进入final公布前决策。未准入、未启动v8，不把最终会计金额当事前新闻信号。

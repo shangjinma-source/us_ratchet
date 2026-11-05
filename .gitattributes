@@ -181,3 +181,11 @@ scripts/research/review_downside_account_20261105_v7.py -text
 scripts/research/run_downside_account_candidate_20261105_v7.py -text
 tests/test_downside_resume_v7_20261105.py -text
 tests/test_downside_v7_independent_review_20261105.py -text
+docs/candidates/downside_max10_resume_v8_contract_20261105.md -text
+docs/candidates/asml_final_dividend_timing_20261105.md -text
+scripts/research/prepare_downside_max10_resume_v8_freeze_20261105.py -text
+scripts/research/prepare_asml_final_dividends_20261105.py -text
+scripts/research/review_downside_account_20261105_v8.py -text
+scripts/research/run_downside_account_candidate_20261105_v8.py -text
+tests/test_downside_resume_v8_20261105.py -text
+tests/test_downside_v8_independent_review_20261105.py -text
