@@ -140,3 +140,7 @@ scripts/research/prepare_downside_max10_resume_v4_freeze_20261105.py -text
 scripts/research/run_downside_account_candidate_20261105_v4.py -text
 
 tests/test_downside_resume_v4_20261105.py -text
+
+scripts/research/review_downside_account_20261105_v4.py -text
+
+tests/test_downside_v4_independent_review_20261105.py -text

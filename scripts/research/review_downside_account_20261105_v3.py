@@ -64,11 +64,12 @@ def validate_ceg_pairs(artifact,original_events,inventory):
         require(all(ref in artifact['source_hashes'] for ref in row['source_references']),'CEG_SOURCE_PINS')
     return deepcopy(events)
 
-def validate_resume(directory):
+def validate_resume(directory, parent_rows=83, parent_budget=None, additional=None):
+    parent_budget=parent_budget or dict(new=5,reused=0,replayed=2)
     contract=base.read(directory/'contract.json',True);v2.check_pins(contract['source_hashes'])
     parent=ancestor(ROOT/contract['parent_output'])
     require(contract['parent_file_hashes']==parent['hashes'],'PARENT_RECEIPT_DOMAIN')
-    require(len(parent['book']['daily_ledger'])==83 and parent['summary']['searches']==dict(new=5,reused=0,replayed=2),'FIXED_83_PARENT')
+    require(len(parent['book']['daily_ledger'])==parent_rows and parent['summary']['searches']==parent_budget,'FIXED_PARENT')
     require(contract['inherited_seconds']==parent['summary']['elapsed_seconds'] and contract['inherited_searches']==parent['summary']['searches'],'INHERITED_BUDGET')
     for key in ('window','candidate','max_holdings','initial_cash','fee_bps','slippage_bps','start','end','maximum_new_searches','seconds','monthly_seconds','serialization_policy'):
         require(contract[key]==parent['contract'][key],'PARENT_RULES:'+key)
@@ -76,13 +77,13 @@ def validate_resume(directory):
         require(base.read(directory/(day+'.selection.json'),True)==record['selection'] and base.read(directory/(day+'.sidecar.json'),True)==record['side'],'REPLAY_RECORD')
     book=base.read(directory/'book.json',True);summary=base.read(directory/'summary.json',True)
     require(book['status']==summary['status']=='COMPLETE' and summary['completed_sessions']==summary['required_sessions']==len(book['daily_ledger'])==646,'COMPLETE_REQUIRED')
-    require(book['daily_ledger'][:83]==parent['book']['daily_ledger'],'83_PREFIX_EXACT')
+    require(book['daily_ledger'][:parent_rows]==parent['book']['daily_ledger'],'PARENT_PREFIX_EXACT')
     boundary=base.read(directory/'parent_prefix_boundary.json',True);end=base.read(directory/'parent_prefix_review.json',True)
-    require(boundary['status']=='PASS_BEFORE_NEW_SEARCH' and boundary['rows']==83 and boundary['searches']['new']==5 and end==dict(status='PASS',daily_ledger_rows=83),'PREFIX_BOUNDARY')
-    require(summary['searches']==dict(new=31,reused=0,replayed=5) and contract['inherited_seconds']<=summary['elapsed_seconds']<=10800,'FINAL_CUMULATIVE_BUDGET')
+    require(boundary['status']=='PASS_BEFORE_NEW_SEARCH' and boundary['rows']==parent_rows and boundary['searches']['new']==parent_budget['new'] and end==dict(status='PASS',daily_ledger_rows=parent_rows),'PREFIX_BOUNDARY')
+    require(summary['searches']==dict(new=31,reused=0,replayed=len(parent['records'])) and contract['inherited_seconds']<=summary['elapsed_seconds']<=10800,'FINAL_CUMULATIVE_BUDGET')
     initial=base.read(ROOT/'tmp/old_continuous_baseline_20261026_v9/execution_inputs.json')
     original=list(initial['dividend_events'])+base.read(ROOT/'tmp/equal_four_20261105/source_review/admitted_supplement.json')['dividend_events']['2024_2026']+base.read(directory/'bounded_execution_evidence.json',True)['events']
-    saved=base.read(directory/'additional_execution_evidence.json',True);expected=[(v2.META_PATH,v2.META_SHA,v2.validate_meta_pairs),(CEG_PATH,CEG_SHA,validate_ceg_pairs)]
+    saved=base.read(directory/'additional_execution_evidence.json',True);expected=[(v2.META_PATH,v2.META_SHA,v2.validate_meta_pairs),(CEG_PATH,CEG_SHA,validate_ceg_pairs)]+list(additional or [])
     require([x['path'] for x in saved]==[x[0] for x in expected],'EXACT_ADDITIONAL_ARTIFACTS')
     added=[]
     for item,(name,digest,validator) in zip(saved,expected):
