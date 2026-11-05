@@ -40,3 +40,9 @@
 原因：桥内显式调用基础 `StrategyAccountEvidenceProvider._assemble`，绕过工厂子类新增的完整历史审核、三时钟校验及行动查询窗口扩展。即使工厂直接 execution 已通过，不能据此宣称经过日执行桥也通过。
 
 后续分工：独立 native reader 验证新 proposal 的原生数量、来源、单位与新月风险 epoch；独立 native execution bridge 保留实际 provider 子类审核和冻结目标/lineage。两者组合后再测 HTTP，当前不部署。
+
+## 固定日历延长
+
+新 native reader 的原 timing calendar 可能只覆盖训练结束日。新增 `split_calendar_extension_20261105.validate_calendar_extension`：仅允许完整保留历史 sessions 前缀后追加日期，日历其余字段必须完全一致；全部会话校验纽约日期、开始结束顺序、无重叠及日期递增。原 timing hash 和拆股报价单位边界不重签、不重算。
+
+独立测试 1 项 0.012 秒通过：追加和原样允许；改历史、删除、前插、重复、跨日期及改市场拒绝。该测试仅证明扩展规则，native reader 接入与其完整源测试仍由同轮任务继续验证。
