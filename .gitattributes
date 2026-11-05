@@ -84,3 +84,19 @@ tests/test_downside_account_candidate_20261105.py -text
 tests/test_downside_bounded_execution_supplement_20261105.py -text
 
 research_contracts/downside_max10_20261105/*.json -text
+
+docs/candidates/downside_resume_parent_20261105.py -text
+
+docs/candidates/downside_max10_resume_contract_20261105.md -text
+
+scripts/research/run_downside_account_candidate_20261105_v2.py -text
+
+scripts/research/prepare_downside_max10_resume_freeze_20261105.py -text
+
+scripts/research/prepare_meta_dividend_evidence_20261105.py -text
+
+scripts/research/review_downside_account_20261105_v2.py -text
+
+tests/test_downside_resume_parent_20261105.py -text
+
+tests/test_downside_resume_independent_review_20261105.py -text
