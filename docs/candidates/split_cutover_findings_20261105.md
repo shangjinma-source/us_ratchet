@@ -7,3 +7,13 @@
 正式部署仍需：准备并验证候选配置→排空写请求和确认实际写入者→旧进程退出→重验最终三库及准备包→持锁内发布配置→正式入口启动一次→验证新PID、加载配置和账户/current/news绑定。原金融任务不能默默停用，必须处理其原写路径。尚未执行此流程。
 
 仅升级代码的回退必须继续使用最新账户库；禁止恢复旧数据库快照。真实拆股新库若已有后续现金或成交，不允许回退到旧库丢弃后缀，应保留新库修复兼容代码或单独验证后缀迁移。
+
+## 11月5日实际任务与线程复核
+
+- Windows任务 `UsRatchet-DailySource-Evidence` 当前Ready、带Execute，配置为 `research_contracts/daily_rss_recovery_20261022_v5/configuration.json`。该配置固定读取 `data/strategy_account/real_strategy.sqlite3` 与 `data/strategy_account/monthly_targets.sqlite3`。
+- 其实际入口 `run_local_dynamic_daily_sources_v5.ps1` → `run_daily_dynamic_source_v5.py` 使用旧 `StrategyAccountStore`。代码仅read账户/目标，不调用append；资料任务本身不能据此称为账户写入者。但切换新账本路径/格式时必须同步读端，不能只切8010而让原任务继续读取旧状态。
+- `UsRatchet-CurrentAdvice-Followup` 当前Ready，入口为 `run_local_current_followups_v1.ps1`；其输出与其他任务仍需分别核对，不能把一次任务清单当作全部后台写入者证明。
+- 实际 `news_event_pipeline_v1.stop_worker` 只设置stop_event并join两秒，未核实线程已退出。HTTP测试中mock的启动/停止次数不能证明排空，正在以真实可控线程验证超时拒绝切换与最终退出。
+- 当前Windows任务清单中 `us_ratchet_golden_pit_snapshot` 为Ready；旧操作笔记的disabled描述不能替代当前状态。本轮不改变该任务或任何其他任务。
+
+以上均为只读核验，未停止线程、服务或定时任务，未创建真实成交。OpenClaw/Codex调度与其他进程尚未据此宣称全面排空。
