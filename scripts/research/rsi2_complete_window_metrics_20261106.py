@@ -11,6 +11,12 @@ WINDOWS={'2021_2023':('recent_continuous_baseline_20261026_v7','2020-12-31','202
 def read(path):
  text=Path(path).read_text(encoding='utf8');x=json.loads(text);return loads(text) if x.get('encoding')=='RESEARCH_EXACT_FRACTION_HEX_JSON_V1' else x
 
+def candidate_evidence(book):
+ """Reject screening approximations; never infer evidence quality from COMPLETE."""
+ evidence=book.get('evidence_status','UNSPECIFIED_NOT_DEPLOYMENT_EVIDENCE')
+ if evidence=='DIAGNOSTIC_NOT_DEPLOYABLE':raise ValueError('DIAGNOSTIC_BOOK_NOT_FORMAL_COMPARISON')
+ return evidence
+
 def summarize(book,*,anchor,expected_sessions):
  if book.get('status')!='COMPLETE' or book.get('reason') is not None:raise ValueError('COMPLETE_BOOK_REQUIRED')
  if F(str(book.get('external_flows',0)))!=0:raise ValueError('EXTERNAL_FLOW_UNSUPPORTED')
@@ -47,7 +53,9 @@ def compare(window,rsi_path=None,candidate_label='RSI2'):
    if F(book['order_log'][0]['available_cash'])!=20000:raise ValueError('V27_INITIAL_CAPITAL_MISMATCH')
    if any(F(e.get('withholding_rate','0'))!=0 for e in inputs['dividend_events']):raise ValueError('V27_TAX_MISMATCH')
    book={**book,'initial_cash':'20000'}
+  evidence=candidate_evidence(book) if label==candidate_label else 'FROZEN_REFERENCE_WITH_DOCUMENTED_LIMITATIONS'
   result[label]=summarize(book,anchor=anchor,expected_sessions=expected)
+  result[label]['evidence_status']=evidence
   result[label]['recorded_commission_usd']=str(sum((F(str(fill.get('fee','0'))) for fill in book['order_log'] if fill.get('side') in ('BUY','SELL') and ('event' not in fill or fill['event']=='ASSUMED_NEXT_OPEN_FILLED')),F(0)))
  reinvest_directory=ROOT/'tmp/qqq_reinvest_20261106'
  reinvest_report_path=reinvest_directory/'report.json'
