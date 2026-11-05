@@ -15,11 +15,16 @@ from docs.candidates.strategy_split_frontier_preview_service import SavedFrontie
 
 
 class SplitRuntime:
-    def __init__(self, *, monthly, provider, risk_store, signal_builder, clock):
+    def __init__(self, *, monthly, provider, risk_store, signal_builder, clock, frontier_view=None):
         require(type(monthly.accounts) is SplitStrategyAccountStore and type(risk_store) is MonthlyPeakExitStore,
                 'SPLIT_RUNTIME_STORE_TYPES')
         self.monthly=monthly;self.accounts=monthly.accounts;self.targets=monthly.targets
         self.provider=provider;self.risk=risk_store;self.signal_builder=signal_builder;self.clock=clock
+        if frontier_view is not None:
+            from data.saved_frontier_monthly_view_v1 import SavedFrontierMonthlyView
+            require(type(frontier_view) is SavedFrontierMonthlyView and frontier_view.monthly is monthly,
+                    'RUNTIME_FRONTIER_VIEW_BINDING')
+        self.frontier_view=frontier_view
         self.lock=RLock();self.generation=uuid4().hex;self.jobs={}
         # These are the same bound runtime, not cached copies of an older service.
         self.daily_observer=self;self.ui=self;self.ai=self
@@ -27,6 +32,11 @@ class SplitRuntime:
     def _state(self):
         account=self.accounts.read();target=self.targets.current()
         require(account is not None and target is not None,'RUNTIME_ACCOUNT_TARGET_REQUIRED')
+        if self.frontier_view is not None:
+            view=self.frontier_view.current()
+            require(view is not None and view['target_id']==target['target_id'] and view['payload']==target['payload'],
+                    'RUNTIME_FRONTIER_TARGET_CHANGED')
+            target=view
         risk=self.risk.read(account['account_id'])
         require(risk is not None,'RUNTIME_PERSISTED_RISK_REQUIRED')
         return dict(account=account,target=target,risk=risk,generation=self.generation)
@@ -38,7 +48,9 @@ class SplitRuntime:
         with self.lock:
             snapshot=self._state();account,target,risk=(snapshot[k] for k in ('account','target','risk'))
             signal=self.signal_builder(deepcopy(snapshot),self.clock())
-            baseline=target['payload']['target_quantities']
+            if self.frontier_view is not None:
+                require(signal.get('proposal_id')==target['proposal_id'],'RUNTIME_SIGNAL_PROPOSAL_MISMATCH')
+            baseline=target.get('risk_monthly_targets',target['payload']['target_quantities'])
             require(set(baseline)<=set(risk['peaks']),'RUNTIME_TARGET_REQUIRES_RISK_HISTORY')
             expected={s:0 if s in risk['exited'] else baseline.get(s,0) for s in set(account['shares'])|set(baseline)}
             require(signal['effective_target_quantities']==expected,'RUNTIME_SIGNAL_IGNORES_PERSISTED_EXIT')
