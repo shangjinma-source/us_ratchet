@@ -83,3 +83,7 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 已核对Nasdaq Equity 1 Section 1(a)(17)/(22)：https://listingcenter.nasdaq.com/assets/RuleBook/Nasdaq/rules/Nasdaq%20Equity%201.html 。可以依据营业日及常规时段规则推导有界的2027年1月计划，不必把年度PDF尚未更新当成唯一阻塞。新候选由`scripts/prepare_roa_january_2027_calendar.py`生成，范围2026-12-31至2027-02-01，一月19会话，首日1月4日；真实运行逐项确认原历史训练日期和执行时间完整保留。
 
 产物位于本地tmp/roa_january_calendar_candidate_20261107，未安装。该候选是规则推导，未声称Nasdaq年度日历已经发布；临时休市仍需当日公告核查。官方规则通过web工具读取；本机直接抓取返回403，故保存的是带URL/章节/日期/获取方式的结构化人工审阅记录，而非伪称已下载HTML。后续采用须把候选来源和日历一起绑定并验证完整配置，不能只替换线上单文件。
+
+### Cross-year successor calendar compatibility (2026-11-07)
+The reviewed January candidate used UTC instants, whereas the successor validator requires New York offsets. `scripts/prepare_roa_successor_calendar.py` preserves historical sessions, rejects conflicting overlap, converts extension instants to New York, and validates the joined pinned schedule. Local candidate: `tmp/roa_successor_calendar_20261107/receipt.json` (53 preserved sessions, 73 total, ending 2027-02-01).
+The actual completed November lineage was replayed through the real December plan builder and plan validator; evidence is `tmp/roa_successor_calendar_20261107/generator_validation.json`. It correctly reports not ready before the November 30 close. This does not prove January adoption, future prices, or unattended execution. No active configuration, account, or scheduled task changed.
