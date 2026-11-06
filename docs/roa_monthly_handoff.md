@@ -77,3 +77,9 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 生产日历目前截至2026-12-31，不能据此自动生成完整2027执行日历。重新采集NYSE官方https://www.nyse.com/trade/hours-calendars，核对现存2027-01-04至10-15投影的198个交易日及夏令时开收盘均一致；按NYSE公告一月首个交易日为1月4日。核查脚本`scripts/review_roa_2027_calendar.py`和本地tmp/calendar_2027_review_20261107/review.json可复核。
 
 检查到Nasdaq官方holiday-schedule页面及holidayandtradinghours PDF仍为2026。现存2027投影是规划材料，不在本轮升级为Nasdaq已确认生产日历；实际报告eligible_for_production_adoption=false。下一月草案若缺可信边界仍明确拒绝，不跳月、不猜测。未来正式日历或适用交易所规则依据补齐后再统一更新calendar、training calendar及固定来源，不只改一个日期文件。没有更改账户/生产策略/任务。
+
+### 跨年依据补充：Nasdaq常设规则
+
+已核对Nasdaq Equity 1 Section 1(a)(17)/(22)：https://listingcenter.nasdaq.com/assets/RuleBook/Nasdaq/rules/Nasdaq%20Equity%201.html 。可以依据营业日及常规时段规则推导有界的2027年1月计划，不必把年度PDF尚未更新当成唯一阻塞。新候选由`scripts/prepare_roa_january_2027_calendar.py`生成，范围2026-12-31至2027-02-01，一月19会话，首日1月4日；真实运行逐项确认原历史训练日期和执行时间完整保留。
+
+产物位于本地tmp/roa_january_calendar_candidate_20261107，未安装。该候选是规则推导，未声称Nasdaq年度日历已经发布；临时休市仍需当日公告核查。官方规则通过web工具读取；本机直接抓取返回403，故保存的是带URL/章节/日期/获取方式的结构化人工审阅记录，而非伪称已下载HTML。后续采用须把候选来源和日历一起绑定并验证完整配置，不能只替换线上单文件。
