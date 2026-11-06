@@ -63,3 +63,11 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 本轮12项隔离编排测试通过：advance 7项、后继任务5项，其中覆盖更新后丢失确认、未知更新、后续任务变化及实际采用回执引用传递。外部采用/进程/调度适配器使用替身；此前真实生成器和当前任务只读预检独立通过。尚未将此统一入口接入无人值守采用调度，未对真实未来月份执行；当前真实账户/服务/任务不变。
 
 2026-11-07组合验收补充：`test_roa_monthly_integrated_adoption.py`两项测试使用真实注册、发布、active原子采用、finish协调器及SQLite账本；重复进入只调用一次模拟重启，实际回执与active SHA一致，回滚字节完整。模拟并发现金更新时保留新账本并拒绝success，重试不重复重启。月度输入为合成fixture，V34完整服务构建与进程适配器使用替身；不包含真实未来月份或后继任务安装。不得将它扩大称为全生产端到端通过。
+
+## 从实际准备任务生成采用请求
+
+`scripts.research.build_roa_monthly_adoption_request --descriptor-path ... --descriptor-sha256 ...`读取固定准备任务、完成记录、正式publication及采集封印，并核对当前8010加载的active/config/epoch与读取前后的进程身份。只有同一月包完成后返回ADOPTION_REQUEST_PREPARED_NOT_EXECUTED；可用`--output tmp/.../request.json`排他写出统一advance请求。不会自动采用、重启或安装任务。未完成返回WAIT_PREPARED_MONTH；异常配置、失败或锁待核对返回PREPARATION_REVIEW_REQUIRED，不能当作正常等待。
+
+请求包含后继计划输入；日历是否覆盖下一月仍由正式draft验证器核实，返回中明确successor_calendar_fully_validated=false。若未来日历不足，应先补可信日历，不可在生产猜测日期。
+
+2026-11-07当前runtime_v6真实只读调用返回12月CONFIGURATION_VALID_NO_COMPLETION，未创建请求。6项隔离输入测试覆盖正常生成、尚未完成、错误状态区分、服务旧版本、月份冲突及采集内容改变。尚未接入无人值守采用触发，不能宣称已自动执行真实新月。
