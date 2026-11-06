@@ -3,7 +3,7 @@ from datetime import datetime,timedelta
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from api.strategy_account import StrategyAccountService
+from api.strategy_account import StrategyAccountService,create_router as account_router
 from api.roa_strategy import create_router
 from data.roa_execution_lifecycle import RoaExecutionLifecycle
 from data.roa_strategy_service import RoaStrategyService
@@ -22,6 +22,8 @@ class HttpTests(unittest.TestCase):
     return dict(opening_session=day,opening_prices={'A':'10'},quote_valid_until=(clock+timedelta(seconds=120)).isoformat(),marks={'A':dict(security_id='A',currency='USD',price_basis='current',price='10',observed_at=clock.isoformat())},limits={'A':dict(security_id='A',price_basis='current',buy='10',sell='10',observed_at=clock.isoformat())})
    service=RoaStrategyService(account_service=account,lifecycle=life,signal_provider=lambda:signal,session_provider=session,quote_provider=quotes,clock=lambda:now[0],execution_admission=dict(enabled=True,strategy_epoch='e',contract_sha256='a'*64,open_window_seconds=300,close_window_seconds=300))
    app=FastAPI();app.include_router(create_router(coordinator=service))
+   app.include_router(account_router(database_path=Path(directory)/'a.sqlite3',account_id='test',clock=lambda:now[0],
+    resolver=lambda ticker:dict(ticker=ticker,security_id='A',source_references=['synthetic'],source_hashes={'synthetic':'b'*64})))
    with TestClient(app) as client:
     config=client.get('/api/strategy-roa/config').json();self.assertEqual(config['strategy_epoch'],'e')
     plan=client.get('/api/strategy-roa/snapshot').json();self.assertEqual(plan['status'],'PENDING_OPEN');self.assertTrue(plan['advice_ready']);self.assertFalse(plan['executable']);self.assertIsNone(plan['rows'][0]['quantity']);self.assertEqual(calls,[])
@@ -31,7 +33,29 @@ class HttpTests(unittest.TestCase):
     ready=client.post('/api/strategy-roa/advice-retry',json={}).json();self.assertIsNone(ready['cash_saved']);self.assertEqual(ready['status'],'READY',ready);self.assertTrue(ready['executable']);self.assertEqual(ready['target_quantities'],{'A':9});self.assertEqual(ready['rows'][0]['quantity'],9);self.assertEqual(len(ready['proposal_id']),64)
     self.assertEqual(account.store.read(),ledger)
     self.assertTrue(client.post('/api/strategy-roa/cash-status',json=body).json()['cash_saved'])
+    fill=dict(expected_revision=ledger['revision'],event=dict(event_id='actual-test-fill',kind='DIRECT_FILL',ticker='A',side='BUY',quantity=4,price='10',fees='0',executed_at=now[0].isoformat()))
+    recorded=client.post('/api/strategy-account/events',json=fill)
+    self.assertEqual(recorded.status_code,200,recorded.text)
+    revision=recorded.json()['account']['revision']
+    confirmed=client.post('/api/strategy-roa/cash-save-and-preview',json=dict(expected_revision=revision,event=dict(kind='CASH_CONFIRM',event_id='cash-after-fill',amount='960',cash_basis='AVAILABLE_AFTER_RESERVATIONS'))).json()
+    self.assertEqual(confirmed['target_quantities'],{'A':9})
+    self.assertEqual(confirmed['rows'][0]['held'],4)
+    self.assertEqual(confirmed['rows'][0]['quantity'],5)
+    self.assertEqual(confirmed['account']['available_cash'],'960')
+    ledger=account.store.read()
+    retried=client.post('/api/strategy-roa/advice-retry',json={}).json()
+    self.assertEqual(retried['rows'][0]['quantity'],5)
+    self.assertEqual(account.store.read(),ledger)
     now[0]=datetime.fromisoformat('2026-11-06T15:00:00+00:00')
     missed=client.get('/api/strategy-roa/snapshot').json();self.assertEqual(missed['status'],'MISSED');self.assertFalse(missed['executable']);self.assertIsNone(missed['rows'][0]['quantity'])
     self.assertEqual(account.store.read(),ledger)
+    remainder=dict(expected_revision=ledger['revision'],event=dict(event_id='remaining-test-fill',kind='DIRECT_FILL',ticker='A',side='BUY',quantity=5,price='10',fees='0',executed_at='2026-11-06T14:32:00+00:00'))
+    recorded=client.post('/api/strategy-account/events',json=remainder)
+    self.assertEqual(recorded.status_code,200,recorded.text)
+    revision=recorded.json()['account']['revision']
+    complete=client.post('/api/strategy-roa/cash-save-and-preview',json=dict(expected_revision=revision,event=dict(kind='CASH_CONFIRM',event_id='cash-complete',amount='910',cash_basis='AVAILABLE_AFTER_RESERVATIONS'))).json()
+    self.assertEqual(complete['status'],'HOLD',complete)
+    self.assertFalse(complete['executable'])
+    self.assertEqual(complete['rows'][0]['held'],9)
+    self.assertIsNone(complete['rows'][0]['quantity'])
 if __name__=='__main__':unittest.main()

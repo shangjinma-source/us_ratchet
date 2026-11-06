@@ -41,7 +41,8 @@ function mount(container,dependencies){
    tr.appendChild(element('td',row.ticker||row.security_id));
    tr.appendChild(element('td',String(row.held??0)+' → '+(Number.isSafeInteger(row.target_quantity)?row.target_quantity:'待确认')));
    const action=element('td');
-   action.appendChild(element('strong',actionable?(row.side==='BUY'?'买入 ':'卖出 ')+row.quantity+' 股':row.side==='HOLD'&&advice?.executable===true?'无需操作':'等待'));
+   const noAction=!state.busy&&!state.error&&((row.side==='HOLD'&&advice?.executable===true)||(advice?.status==='HOLD'&&row.reason==='HOLD'));
+   action.appendChild(element('strong',actionable?(row.side==='BUY'?'买入 ':'卖出 ')+row.quantity+' 股':noAction?'无需操作':'等待'));
    if(actionable)action.appendChild(element('small','限价 '+legacyUi.dollars(row.limit_price),'daily-secondary'));
    const reason=reasons[row.reason]||(actionable?(advice.phase==='CLOSE'?'按已触发的退出计划处理':'按本次固定目标调整'):
      row.side==='HOLD'?reasons.HOLD:reasons[advice?.status]||'等待有效策略判断');

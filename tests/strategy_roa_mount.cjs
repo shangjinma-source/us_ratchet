@@ -18,7 +18,7 @@ const text=n=>[n.textContent||'',...n.children.map(text)].join(' ');
   return {strategy_kind:'ROA_DEFENSIVE_V1',strategy_epoch:'test',account_revision:account.revision,account,
    status:mode,phase:'OPEN',executable:mode==='READY',advice_ready:true,cash_saved:body?true:undefined,
    target_id:'b'.repeat(64),proposal_id:'c'.repeat(64),valid_from:'2026-11-06T14:30:00Z',valid_until:'2026-11-06T21:00:00Z',quote_valid_until:'2026-11-06T14:32:00Z',
-   rows:[{security_id:'A',ticker:'AAA',held:0,target_quantity:mode==='READY'?5:null,side:'BUY',quantity:5,limit_price:'100',reason:'阶段测试'}]};
+   rows:[{security_id:'A',ticker:'AAA',held:0,target_quantity:mode==='READY'?5:null,side:'BUY',quantity:5,limit_price:'100',reason:mode==='HOLD'?'HOLD':'阶段测试'}]};
  };
  const container=new Node('div',doc);
  const app=mount(container,{request,readAccount:async()=>account,eventId:()=>String(writeCount),expectedEpoch:'test',now:()=>time,
@@ -30,5 +30,7 @@ const text=n=>[n.textContent||'',...n.children.map(text)].join(' ');
  assert.equal(writeCount,1);assert.ok(text(container).includes('买入 5 股'));assert.ok(text(container).includes('$100.00'));
  time=Date.parse('2026-11-06T14:32:00Z');timer();
  assert.ok(!text(container).includes('买入 5 股'));assert.ok(text(container).includes('报价已过期'));
+ mode='HOLD';await app.refresh();
+ assert.ok(text(container).includes('无需操作'));assert.ok(!text(container).includes('买入 5 股'));
  app.dispose();console.log('PASS: pre-open plan, one cash button, actionable row, expiry redraw');
 })().catch(e=>{console.error(e);process.exitCode=1;});
