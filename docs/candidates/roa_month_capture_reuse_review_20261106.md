@@ -56,3 +56,17 @@ D:/python/python.exe -m unittest discover -s tests -p test_roa_fixed_domain_trai
 adapter 已额外写 `completion.json`，使用本次真实写出时刻、六个原 build 输入与实际 manifest/receipt 输出 SHA；不伪装10月末完成时间。新产物位于 `tmp/roa_fixed_domain_training_replay_v2_20261106`。原 `completed_previous` 未放宽，真实重放通过；completion SHA `ff14163110ab5bfc5df5a1d23289cabdc2468a769c5323171b6db4b57e2dca80`。
 
 原 successor 日期读取器要求 NY offset，而现扩展 schedule 记录 UTC；原文件不变，在 v2 目录另存 `schedule_ny_equivalent.json`，仅 astimezone 转换已有时刻，每项断言同一瞬间，并新增原 schedule 哈希来源。用它调用原 `build_next_plan` 已生成 `tmp/roa_fixed_domain_next_december_plan_20261106`：decision 11/30、active 12/1，状态 SUCCESSOR_PLAN_CANDIDATE。没有未来 capture 或未来 manifest；账户/调度/注册均未写。验证摘要见 v2/successor_verification.json。
+
+
+### 后继采集执行入口（尚未安装任务）
+
+`scripts/research/run_roa_monthly_capture.py` 接收显式 plan、training_calendar 哈希引用和独立输出目录。默认 dryrun；即使 `--capture`，未完成月末也返回 WAIT_COMPLETED_MONTH_END、零 HTTP。完成后才调用现有 experimental capture 并固定 successor validator，再运行 adapter。完成 seal 绑定实际三个输出哈希，每次复用调用原 completed_previous 重放；未完成目录/哈希漂移拒绝，不用旧 completion 代替失败。身份/新拆股错误原样阻断，不生成训练完成凭证。
+
+实际当前 request：`tmp/roa_december_runner_request_20261106.json`。真实 11/30 计划 preflight 返回 WAIT_COMPLETED_MONTH_END、http_calls=0、account_writes=false、activated=false；没有实际未来采集。
+
+测试 `tests/test_roa_monthly_capture_runner.py` 2 项包含未收盘显式采集也零HTTP、dryrun、fake transport 编排、完成强哈希与重放调用、幂等零重复fetch、篡改/不完整目录/身份/拆股阻断。fake transport 测试替换底层 capture/build/replay，是编排单测，不冒充完整行情 reader 集成；真实原 build/replay 验证使用前述10/30样本。本入口不做 selection、registry、调度或账户写入。
+
+
+复用加固：sealed receipt 校验后逐项重核其 `source_hashes`，包括 adapter 新增训练日历的官方 PDF/HTML 原始字节。即使日期表本体未变，底层来源改变仍拒绝 REUSED_ADAPTER_SOURCE_CHANGED；已加该嵌套原源变化反例，通过且不再次 fetch。
+
+失败恢复限制：底层 capture 输出是 create-only，部分失败目录不能直接原位自动重试。需人工核查已有 attempt 后建立新的显式计划/输出 attempt；不覆盖旧回执，不自动冒用旧 completion。当前 runner 不宣称自动重试闭环。
