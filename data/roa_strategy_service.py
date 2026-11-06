@@ -55,6 +55,16 @@ class RoaStrategyService(CashAdviceCoordinator):
             else:
                 # Calendar display envelope only: never authorizes execution.
                 open_until=closing;close_from=closing
+            standard_open_until=open_until
+            late_authorized=admitted and self.admission.get('late_open_session')==session
+            if late_authorized:
+                require(opening < close_from, 'LATE_OPEN_SESSION_BOUNDS')
+                # Never replace an already frozen allocation from a different window.
+                prior=self.lifecycle.read()
+                require(not any(e['session']==session and e['phase']=='OPEN' and
+                    e.get('materialized_revision') and timestamp(e['valid_until'])!=close_from
+                    for e in prior['events']), 'LATE_OPEN_ALREADY_MATERIALIZED_REVIEW')
+                open_until=close_from
             self.lifecycle.plan(signal=signal,session=session,open_at=opening.isoformat(),
                 open_until=open_until.isoformat(),close_at=close_from.isoformat(),
                 close_until=(closing+timedelta(microseconds=1)).isoformat())
@@ -81,6 +91,10 @@ class RoaStrategyService(CashAdviceCoordinator):
                 target_id=None,proposal_id=None,target_quantities=targets,quote_valid_until=None,
                 valid_from=event['valid_from'] if event else None,valid_until=event['valid_until'] if event else None,
                 rows=[],orders_created=False,execution_assumption='MANUAL_EXECUTION_NOT_GUARANTEED_HISTORICAL_OPEN_CLOSE')
+            result['late_execution']=bool(late_authorized and event and event['phase']=='OPEN' and now>=standard_open_until)
+            result['standard_open_valid_until']=standard_open_until.isoformat()
+            if result['late_execution']:
+                result['execution_assumption']='USER_AUTHORIZED_LATE_EXECUTION_NOT_BACKTEST_VALIDATED'
             if view['status']=='WINDOW_OPEN' and not admitted:result['status']='WAIT_EXECUTION_ADMISSION'
             if view['status']=='WINDOW_OPEN' and admitted and not state['cash_confirmation_valid']:
                 result.update(status='WAIT_CASH_CONFIRMATION',reason='WAIT_CASH_CONFIRMATION',executable=False,
