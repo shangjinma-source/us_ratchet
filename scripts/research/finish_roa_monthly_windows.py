@@ -94,6 +94,8 @@ class WindowsAdapter:
             raise ValueError('LOADED_RELEASE_API_NOT_IMPLEMENTED_NO_RESTART')
         if self.listener()!=owner or self.process()!=process:
             raise ValueError('HTTP_PROCESS_CHANGED')
+        if not isinstance(binding.get('loaded_active_sha256'),str) or len(binding['loaded_active_sha256'])!=64:
+            raise ValueError('LOADED_ACTIVE_POINTER_PROOF_REQUIRED')
         registry=binding['loaded_monthly_selections']
         if registry.get(self.month,{}).get('sha256')!=self.artifact_sha256:
             return dict(healthy=False, process_identity=process, state='MONTH_ARTIFACT_NOT_LOADED', active_sha256=binding['loaded_active_sha256'], epoch=config.get('strategy_epoch'), month=None)

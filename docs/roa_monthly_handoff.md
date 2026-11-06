@@ -35,3 +35,5 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 - `scripts.prepare_roa_monthly_retry`默认只读预览。显式`--prepare`也只生成新目录内的capture plan/request/launcher，不执行采集、不改任务。必须提供当前descriptor、其blocked.json的精确SHA及复核原因，保留旧失败及半成品；存在锁、旧active改变、完成记录或路径重叠时拒绝。真实失败原因仍须先处理，不能靠新尝试绕过数据或来源校验。
 
 以上新增工具尚未接入常驻自动采用流程；当前线上任务仍仅准备月包。所有实际注册、启动和首个新月执行验收均须保留独立证据。
+
+2026-11-07补充：runtime-binding候选已执行真实候选mount、完整V34构建及来源校验，约232秒通过；配置引用、active SHA和月份注册表与候选加载值逐项相符。当前注册表为空，不能由此声称未来月份已准备好。该验证未启动服务lifespan、未替换生产源码。候选V34静态来源集合显式新增runtime-binding模块，回滚必须同时还原mount、V34及active。正式发布包使用本地`research_contracts/roa_runtime_binding_20261107_v2`；v1已被路由冲突修复取代。

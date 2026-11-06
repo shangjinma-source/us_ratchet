@@ -25,5 +25,11 @@ def mount_strategy_routes(*,app,root,environment):
  if active_reader._read_active(root)!=(active,active_digest):raise ValueError('STRATEGY_ACTIVE_MANIFEST_CHANGED_DURING_STARTUP')
  prepared['validate_code']();app.include_router(prepared['router'])
  from api.roa_runtime_binding import build_runtime_binding_router
- app.include_router(build_runtime_binding_router(active_sha256=active_digest,configuration_path=path,configuration_sha256=digest,configuration=configuration))
+ runtime_router=build_runtime_binding_router(active_sha256=active_digest,configuration_path=path,configuration_sha256=digest,configuration=configuration)
+ for route in runtime_router.routes:
+  if not isinstance(route,APIRoute):raise ValueError('STRATEGY_MOUNT_HTTP_ROUTE_REQUIRED')
+  incoming={(route.path,m) for m in route.methods}
+  if keys.intersection(incoming):raise ValueError('STRATEGY_MOUNT_DUPLICATE_ROUTE')
+  keys.update(incoming)
+ app.include_router(runtime_router)
  return dict(mode='UNIFIED_V34',policy_approved_by_mount=False,roa_enabled=True)

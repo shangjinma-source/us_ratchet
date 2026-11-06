@@ -51,5 +51,14 @@ class RetryTests(unittest.TestCase):
     def test_nested_old_output_refused(self):
         self.arguments['output_directory']='tmp/old/capture/retry'
         with self.assertRaisesRegex(ValueError,'OVERLAPS_OLD'):prepare_retry(**self.arguments,prepare=True)
+    def test_active_race_retains_failed_draft_without_success_receipt(self):
+        def changed(**kwargs):
+            self.write('active.json',dict(later_release=True))
+            return dict(request=kwargs['request'])
+        with patch('scripts.prepare_roa_monthly_retry.make_descriptor',side_effect=changed):
+            with self.assertRaisesRegex(ValueError,'SOURCE_CHANGED_DURING'):
+                prepare_retry(**self.arguments,prepare=True)
+        self.assertTrue((self.root/'tmp/new/preparation_failure.json').exists())
+        self.assertFalse((self.root/'tmp/new/retry_receipt.json').exists())
 
 if __name__=='__main__':unittest.main()

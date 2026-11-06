@@ -17,7 +17,7 @@ class AdapterTests(unittest.TestCase):
   def get(path):
    if path.endswith('runtime-binding'):
     if missing: raise ValueError('404')
-    return dict(loaded_active_sha256='loaded',loaded_monthly_selections={'2026-12':{'sha256':'artifact'}})
+    return dict(loaded_active_sha256='a'*64,loaded_monthly_selections={'2026-12':{'sha256':'artifact'}})
    if path.endswith('/config'):return dict(active=True,strategy_epoch='epoch')
    return dict(execution_session='2026-12-01',strategy_epoch='epoch')
   adapter=WindowsAdapter('.',identity,'2026-12','artifact',powershell=lambda command:json.dumps(identity),get_json=get)
@@ -26,7 +26,7 @@ class AdapterTests(unittest.TestCase):
  def test_missing_binding_refuses(self):
   with self.assertRaisesRegex(ValueError,'NOT_IMPLEMENTED'):self.fixture(True).inspect()
  def test_exact_loaded_evidence(self):
-  observed=self.fixture().inspect();self.assertTrue(observed['healthy']);self.assertEqual(observed['active_sha256'],'loaded')
+  observed=self.fixture().inspect();self.assertTrue(observed['healthy']);self.assertEqual(observed['active_sha256'],'a'*64)
  def test_process_identity_race_blocks_restart(self):
   adapter=self.fixture()
   with self.assertRaisesRegex(ValueError,'PROCESS_IDENTITY'):adapter.restart(expected_process_identity={'pid':123},expected_active_sha256='hash')
