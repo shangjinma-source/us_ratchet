@@ -5,7 +5,7 @@ from hashlib import sha256
 from fractions import Fraction as F
 from copy import deepcopy
 ROOT=Path(__file__).resolve().parents[2]
-PINS={'tmp/roa_amat_first_dividend_20261106.json':'f92906a97b825cc4e997a3e7f8012aee57a19382b843589fd3a4e0be577f17ef','tmp/roa_aapl_actual_dividends_20261106.json': 'ad5b4db8404106e62dde844752392828454d3fde3aadc57bcac2c52a771b2b32', 'tmp/roa_four_split_economic_review_20261106.json': '69f67bcc0658c4f3a7af4d28b1c59d02fb2f290ac5c03a73352f81977e1e55da'}
+PINS={'tmp/roa_qcom_first_dividend_20261106.json':'a430ff2212fab9ee896750fff58f8dc993b015d81d3e7ef5e5fef5b90581d790','tmp/roa_amat_first_dividend_20261106.json':'f92906a97b825cc4e997a3e7f8012aee57a19382b843589fd3a4e0be577f17ef','tmp/roa_aapl_actual_dividends_20261106.json': 'ad5b4db8404106e62dde844752392828454d3fde3aadc57bcac2c52a771b2b32', 'tmp/roa_four_split_economic_review_20261106.json': '69f67bcc0658c4f3a7af4d28b1c59d02fb2f290ac5c03a73352f81977e1e55da'}
 
 def install(packs,pins):
     rows=[]
