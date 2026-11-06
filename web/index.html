@@ -344,7 +344,7 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 
   <div class="page active" id="pageToday"></div>
   <section class="card" id="panelStrategyMonthlyTarget" hidden style="display:none"><div class="card-body" id="strategyMonthlyTarget"></div><div class="card-body preview-chart-grid" id="strategyMonthlyCharts"></div></section>
-  <div class="page" id="pageAccount"><div class="card"><div class="card-body"><div id="realStrategyAccount"></div></div></div></div>
+  <div class="page" id="pageAccount"><div class="card"><div class="card-body"><div id="realStrategyAccount"></div><div id="strategyCashClassification"></div></div></div></div>
   <div class="page" id="pageReview"></div>
   <div class="page" id="pageResearch" hidden></div>
   <div class="page" id="pageGuide" hidden></div>
@@ -690,7 +690,7 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 <div class="toast" id="toast"></div>
 
 <script src="/static/strategy_display_batch_fetch.js?v=20261104-batch-v1"></script>
-<script src="/static/strategy_monthly_target_charts.js?v=20261104-batch-v1"></script>
+<script src="/static/strategy_monthly_target_charts.js?v=roa-58aff02a352f"></script>
 <script src="/static/selected_stock_charts.js?v=20261025-cap-target-v13"></script>
 <script src="/static/current_research_intraday.js?v=20261015-source-freshness-v2"></script>
 <script src="/static/current_research_paper_performance.js?v=20261015-v1"></script>
@@ -700,7 +700,7 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 <script src="/static/strategy_account.js?v=20261024-account-inflight-v5"></script>
 <script src="/static/strategy_daily_controller.js?v=20261029-expiry-reason-r39"></script>
 <script src="/static/strategy_roa_controller.js?v=20261106-roa-1"></script>
-<script src="/static/strategy_roa_mount.js?v=20261106-roa-1"></script>
+<script src="/static/strategy_roa_mount.js?v=52a13ace6909"></script>
 <script src="/static/news_investment_review.js?v=20261029-cash-retrigger-r41"></script>
 <script src="/static/news_scheduled_earnings.js?v=20261104-v29"></script>
 <script src="/static/strategy_daily_mount.js?v=20261104-v29"></script>
@@ -1011,6 +1011,7 @@ function renderRealStrategyAccountState(state) {
     const key = state.account ? JSON.stringify([state.account.account_id, state.account.revision]) : 'NOT_INITIALIZED';
     if (key !== realStrategyTargetAccountKey) {
       realStrategyTargetAccountKey = key;
+      window.dispatchEvent(new Event("strategy-account-updated"));
       if (!realStrategyInitializing) {
         window.RealStrategyMonthlyCharts?.setAccount?.(state.account);
         window.RealStrategyMonthlyCharts?.setFills?.(state.account?.fills || []);
@@ -5060,7 +5061,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if(roaConfiguration!==null){
     if(roaConfiguration.active!==true||roaConfiguration.strategy_kind!=='ROA_DEFENSIVE_V1'||
        !roaConfiguration.strategy_epoch||!roaConfiguration.account_id)throw Error('ROA_CONFIGURATION_INVALID');
-    window.RealStrategyMonthlyCharts?.setActiveStrategy?.(roaConfiguration);
+    if(typeof window.RealStrategyMonthlyCharts?.setActiveStrategy!=='function')throw Error('ROA_CHART_COMPONENT_VERSION_MISMATCH');
+    window.RealStrategyMonthlyCharts.setActiveStrategy(roaConfiguration);
     window.RealStrategyDaily=window.StrategyRoaMount.mount($('strategyMonthlyTarget'),{
       request:roaRequest,readAccount:async()=> (await roaRequest('/api/strategy-account')).account,
       activeStrategy:roaConfiguration,expectedEpoch:roaConfiguration.strategy_epoch,eventId:()=>window.crypto.randomUUID(),
@@ -5156,5 +5158,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 
+<script src="/static/strategy_cash_classification.js?v=405fa65c8e04"></script><script>window.addEventListener("load",()=>{const container=document.getElementById("strategyCashClassification");if(container&&window.StrategyCashClassification)window.CashClassificationPanel=window.StrategyCashClassification.mount({container});});</script>
 </body>
 </html>

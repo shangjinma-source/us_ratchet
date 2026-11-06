@@ -5,6 +5,7 @@ from data.strategy_unified_server_preparation_v7 import _read
 from data.strategy_bounded_source_gate_v1 import _read_digest
 from core.strategy_account_ledger import require
 from data.roa_account_composition import attach_roa
+from data.roa_cash_flow.composition import attach_flow
 SOURCES={
  'data/strategy_unified_server_preparation_v34.py','api/strategy_server_mount_v9.py',
  'data/roa_account_composition.py','data/roa_execution_lifecycle.py','data/roa_strategy_service.py',
@@ -13,7 +14,7 @@ SOURCES={
  'data/roa_limit_policy.py',
  'data/roa_close_recovery.py','data/roa_monthly_loader.py',
  'data/roa_current_signal.py','data/roa_daily_signal.py','data/roa_quote_provider.py','api/roa_strategy.py',
- 'web/strategy_roa_controller.js','web/strategy_roa_mount.js','web/index.html'}
+ 'web/strategy_roa_controller.js','web/strategy_roa_mount.js','web/index.html','data/roa_cash_flow/audit.py','data/roa_cash_flow/composition.py','data/roa_cash_flow/profit.py','data/roa_cash_flow/store.py','data/roa_cash_flow/strategy_cash_classification.js','data/roa_cash_flow/validation.py','data/roa_cash_flow/__init__.py'}
 def build_unified_server_preparation_v34(*,root,configuration_path,configuration_sha256,clock=None):
  root=Path(root).absolute();reference=dict(path=configuration_path,sha256=configuration_sha256)
  raw,config=_read(root,reference)
@@ -29,4 +30,7 @@ def build_unified_server_preparation_v34(*,root,configuration_path,configuration
  previous=prepared['validate_code']
  def gate():previous();validate()
  result=attach_roa(prepared=prepared,root=root,configuration=config['roa'],validate_sources=gate,clock=clock)
+ if config['roa'].get('cash_flow') is not None:
+  from datetime import datetime, timezone
+  result=attach_flow(prepared=result,root=root,configuration=config['roa']['cash_flow'],clock=clock or (lambda:datetime.now(timezone.utc)),validate_sources=gate)
  gate();return dict(result,validate_code=gate)
