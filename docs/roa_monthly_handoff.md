@@ -39,3 +39,9 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 2026-11-07补充：runtime-binding候选已执行真实候选mount、完整V34构建及来源校验，约232秒通过；配置引用、active SHA和月份注册表与候选加载值逐项相符。当前注册表为空，不能由此声称未来月份已准备好。该验证未启动服务lifespan、未替换生产源码。候选V34静态来源集合显式新增runtime-binding模块，回滚必须同时还原mount、V34及active。正式发布包使用本地`research_contracts/roa_runtime_binding_20261107_v2`；v1已被路由冲突修复取代。
 
 2026-11-07 01:05正式部署：runtime-binding v2运行验证通过，29层配置引用核对通过；完整账户、账本、绩效基准及sidecar部署前后不变。页面确认STX 7股、ODFL未成交22股，因STX成交后缺最新购买力而显示WAIT_CASH_CONFIRMATION，未宣称可执行建议通过。月度准备任务Action重绑runtime_v6（683来源），其他12项金融任务不变；当前expected_month=2026-12，状态CONFIGURATION_VALID_NO_COMPLETION。只读页面取证屏蔽非GET及图表请求，不代替现金保存、图表或真实未来月份验收。
+
+## 后继准备任务安装
+
+`scripts/rebind_local_roa_monthly_preparation.ps1`将已复核的新launcher绑定到现有同名月度准备任务。默认只读预检；`-Apply`要求当前任务XML的SHA256及新的私有tmp证据目录。参数为`-ConfigPath`、`-ConfigSha256`、`-ExpectedTaskSha256`，应用时另加`-EvidenceDirectory`。只更新Action，不启动任务，保持Triggers、Principal和Settings；保存前后XML及成功回执。任务正在运行或版本变化时拒绝，部分失败先查看已保存证据，不盲目重试。
+
+2026-11-07验证：当前683来源launcher真实只读预检通过，真实任务XML未变；`tests/rebind_roa_monthly_task_mock.ps1`使用替代Windows调度接口验证Action更新、非Action字段保留、旧任务SHA拒绝覆盖。该测试不证明真实未来后继任务已安装；本轮未修改线上任务或服务。
