@@ -27,7 +27,19 @@ class CashAdviceCoordinator:
             if matches != [body['event']]:
                 return dict(cash_saved=None,advice_ready=False,reason='CASH_WRITE_REQUIRES_RECONCILIATION',
                             account_revision=state['revision'] if state else None,orders_created=False)
-        return self._advice(cash_saved=True)
+        try:
+            return self._advice(cash_saved=True)
+        except Exception:
+            # append (or exact journal reconciliation) already established
+            # durability. A later read/projection failure cannot undo that.
+            revision = None
+            try:
+                state = self.account_service.store.read()
+                revision = state['revision'] if state else None
+            except Exception:
+                pass
+            return dict(cash_saved=True,advice_ready=False,reason='ADVICE_REFRESH_REQUIRED',
+                        account_revision=revision,orders_created=False)
 
     def retry_advice(self):
         # Explicitly no append call; preserve previously committed cash.
