@@ -71,11 +71,51 @@ def build(*,root,descriptor_path,descriptor_sha256,observe=observe_runtime,read_
                 successor_calendar_fully_validated=False,account_writes=False,task_changed=False)
 
 
+def handoff(*, root, descriptor_path, descriptor_sha256, output_directory, execute=False):
+    """Build once, then resume the same adoption request after active changes."""
+    from scripts.research.advance_roa_monthly_release import advance
+    root=Path(root).resolve()
+    descriptor=(root/descriptor_path).resolve()
+    if (Path(descriptor_path).is_absolute() or not descriptor.is_relative_to(root)
+            or sha256(descriptor.read_bytes()).hexdigest()!=descriptor_sha256):
+        raise ValueError('HANDOFF_DESCRIPTOR_CHANGED')
+    out=(root/output_directory).resolve()
+    if (Path(output_directory).is_absolute() or not out.is_relative_to(root/'tmp')
+            or out==root/'tmp'):
+        raise ValueError('PRIVATE_OUTPUT_REQUIRED')
+    saved=out/'handoff-request.json'
+    scope=dict(descriptor_path=descriptor_path,descriptor_sha256=descriptor_sha256)
+    if saved.exists():
+        record=json.loads(saved.read_bytes())
+        if record.get('scope')!=scope:raise ValueError('HANDOFF_SCOPE_CHANGED')
+        request=record['request']
+    else:
+        if out.exists():raise ValueError('PARTIAL_HANDOFF_RECONCILE')
+        prepared=build(root=root,descriptor_path=descriptor_path,descriptor_sha256=descriptor_sha256)
+        if 'request' not in prepared:return prepared
+        request=prepared['request']
+        if execute:
+            out.mkdir(parents=True,exist_ok=False)
+            with saved.open('x',encoding='utf-8') as stream:
+                json.dump(dict(scope=scope,request=request),stream,sort_keys=True)
+    return advance(root=root,request=request,
+                   output_directory=output_directory+'/adoption-run',execute=execute)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for field in ('descriptor-path','descriptor-sha256'):parser.add_argument('--'+field,required=True)
     parser.add_argument('--output')
+    parser.add_argument('--handoff-directory')
+    parser.add_argument('--execute',action='store_true')
     args=parser.parse_args();root=Path(__file__).resolve().parents[2]
+    if args.handoff_directory:
+        if args.output:parser.error('--output and --handoff-directory are mutually exclusive')
+        print(json.dumps(handoff(root=root,descriptor_path=args.descriptor_path,
+                                 descriptor_sha256=args.descriptor_sha256,
+                                 output_directory=args.handoff_directory,execute=args.execute)))
+        return
+    if args.execute:parser.error('--execute requires --handoff-directory')
     result=build(root=root,descriptor_path=args.descriptor_path,descriptor_sha256=args.descriptor_sha256)
     if args.output and 'request' in result:
         destination=(root/args.output).resolve()
