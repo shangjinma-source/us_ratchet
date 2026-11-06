@@ -1,14 +1,23 @@
 """Explicitly mounted ROA HTTP orchestration with cash durability semantics."""
 import json
 import re
+from pathlib import Path
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from starlette.concurrency import run_in_threadpool
 from core.strategy_account_difference import require
 
 
 def create_router(*, coordinator):
     router=APIRouter()
+
+    @router.get('/static/strategy_roa_controller.js')
+    async def controller_asset():
+        return FileResponse(Path(__file__).resolve().parents[1]/'web/strategy_roa_controller.js',media_type='application/javascript')
+
+    @router.get('/static/strategy_roa_mount.js')
+    async def mount_asset():
+        return FileResponse(Path(__file__).resolve().parents[1]/'web/strategy_roa_mount.js',media_type='application/javascript')
 
     async def invoke(request, retry, status=False):
         dispatched=False

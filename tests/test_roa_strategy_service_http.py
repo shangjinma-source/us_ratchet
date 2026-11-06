@@ -25,6 +25,11 @@ class HttpTests(unittest.TestCase):
    app.include_router(account_router(database_path=Path(directory)/'a.sqlite3',account_id='test',clock=lambda:now[0],
     resolver=lambda ticker:dict(ticker=ticker,security_id='A',source_references=['synthetic'],source_hashes={'synthetic':'b'*64})))
    with TestClient(app) as client:
+    for asset in ('strategy_roa_controller.js','strategy_roa_mount.js'):
+     script=client.get('/static/'+asset)
+     self.assertEqual(script.status_code,200)
+     self.assertIn('application/javascript',script.headers['content-type'])
+     self.assertEqual(script.content,(Path(__file__).resolve().parents[1]/'web'/asset).read_bytes())
     config=client.get('/api/strategy-roa/config').json();self.assertEqual(config['strategy_epoch'],'e')
     plan=client.get('/api/strategy-roa/snapshot').json();self.assertEqual(plan['status'],'PENDING_OPEN');self.assertTrue(plan['advice_ready']);self.assertFalse(plan['executable']);self.assertIsNone(plan['rows'][0]['quantity']);self.assertEqual(calls,[])
     body=dict(expected_revision=revision,event=dict(kind='CASH_CONFIRM',event_id='cash',amount='1000',cash_basis='TOTAL_UNINVESTED'))
