@@ -18,3 +18,10 @@ class RoaSessionReader:
   row=rows[0];require(timestamp(row['open'])<timestamp(row['close']),'SESSION_TIMES')
   return dict(session=session,previous_session=max((r['date'] for r in document['sessions'] if r['date']<session),default=None),open_at=row['open'],close_at=row['close'],source_hashes=pins,
    actual_unscheduled_closure_coverage_complete=document['actual_unscheduled_closure_coverage_complete'])
+
+ def sessions(self):
+  raw=(self.root/CALENDAR).read_bytes();require(sha256(raw).hexdigest()==SHA,'CALENDAR_SOURCE_CHANGED')
+  days=[r['date'] for r in json.loads(raw)['sessions']]
+  require(days==sorted(set(days)),'CALENDAR_ORDER')
+  self(days[0])
+  return days

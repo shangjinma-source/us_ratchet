@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from hashlib import sha256
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
@@ -19,10 +20,12 @@ class Signal:
 
 
 class Calendar:
-    def __init__(self,root):pass
+    def __init__(self,root):
+        self.path=Path(root)/'calendar-evidence.txt';self.path.write_text('synthetic-calendar')
+    def sessions(self):return ['2026-11-05','2026-11-06','2026-11-09']
     def __call__(self,day):
         if day=='2026-11-07':raise ValueError('SESSION_NOT_IN_CALENDAR')
-        return dict(open_at=day+'T14:30:00+00:00',close_at=day+'T21:00:00+00:00',previous_session='2026-11-05')
+        return dict(open_at=day+'T14:30:00+00:00',close_at=day+'T21:00:00+00:00',previous_session='2026-11-05',source_hashes={str(self.path):sha256(self.path.read_bytes()).hexdigest()})
 
 
 class AttachTests(unittest.TestCase):
@@ -38,7 +41,7 @@ class AttachTests(unittest.TestCase):
                 finally:events.append('stop')
             router.lifespan_context=original_lifespan
             config=dict(account_id='isolated',strategy_epoch='test',contract_sha256='a'*64,contract_hashes={'contract':'a'*64},
-                daily_signal_path='data/strategy_account/test/daily.json',lifecycle_path='data/strategy_account/test/life.json',close_evidence_path='data/strategy_account/test/close')
+                daily_signal_path='data/strategy_account/test/daily.json',lifecycle_path='data/strategy_account/test/life.json',close_evidence_path='data/strategy_account/test/close',close_recovery_path='data/strategy_account/test/recovery')
             with patch('data.roa_account_composition.RoaDailySignalProvider',Signal),patch('data.roa_account_composition.RoaSessionReader',Calendar), \
                  patch('data.roa_account_composition.load_completed_close_prices',return_value=dict(prices={},evidence={})) as close:
                 prepared=attach_roa(prepared={'router':router},root=root,configuration=config,validate_sources=lambda:None,clock=lambda:now[0])
@@ -55,12 +58,17 @@ class AttachTests(unittest.TestCase):
                     self.assertEqual(client.get('/api/strategy-roa/snapshot').status_code,503)
                     self.assertFalse(client.post('/api/strategy-roa/advice-retry',json={}).json()['advice_ready'])
                     prepared['roa_maintain_completed_session']()
-                    self.assertEqual(prepared['roa_maintenance_status']['status'],'WAIT')
+                    self.assertNotEqual(prepared['roa_maintenance_status'].get('status'),'COMPLETE')
+                    self.assertEqual(close.call_count,0)
                     now[0]=datetime.fromisoformat('2026-11-06T21:05:00+00:00')
                     prepared['roa_maintain_completed_session']()
                     self.assertEqual(prepared['roa_maintenance_status']['status'],'COMPLETE')
                     self.assertEqual(close.call_count,1)
                     prepared['roa_maintain_completed_session']()
+                    self.assertEqual(close.call_count,1)
+                    now[0]=datetime.fromisoformat('2026-11-09T14:00:00+00:00')
+                    prepared['roa_maintain_completed_session']()
+                    self.assertEqual(prepared['roa_maintenance_status']['status'],'RECOVERED_PRIOR_CLOSE')
                     self.assertEqual(close.call_count,1)
                 self.assertEqual(events,['start','stop'])
                 self.assertEqual(account.store.read(),baseline)

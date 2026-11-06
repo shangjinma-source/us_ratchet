@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from data.roa_session_reader import CALENDAR, SHA, RoaSessionReader
 from data.roa_current_signal import load_current_signal
+from data.roa_monthly_loader import RoaMonthlySelectionLoader
 
 SEED='tmp/roa_current_qqq_raw_20261106/QQQ.response.bin'
 SEED_SHA='1edaa989155fc293d500965d986ffbbc1a1ee6bed3aae5f952b6c1e6577703e0'
@@ -109,10 +110,11 @@ def states(prices):
 
 
 class RoaDailySignalProvider:
-    def __init__(self,*,root,path,expected_contract_hashes,clock=lambda:datetime.now(timezone.utc),fetch=fetch_daily_qqq):
+    def __init__(self,*,root,path,expected_contract_hashes,clock=lambda:datetime.now(timezone.utc),fetch=fetch_daily_qqq,monthly_selections=None):
         self.root=Path(root).resolve();self.path=Path(path);self.contracts=expected_contract_hashes
         if not expected_contract_hashes:raise ValueError('APPROVED_CONTRACTS_REQUIRED')
         self.clock=clock;self.fetch=fetch;self.lock=RLock();self.calendar=RoaSessionReader(root)
+        self.months=RoaMonthlySelectionLoader(root=self.root,registry=monthly_selections or {})
 
     def _base(self):
         return load_current_signal(as_of_date='2026-11-06',root=self.root,expected_contract_hashes=self.contracts)
@@ -122,7 +124,15 @@ class RoaDailySignalProvider:
 
         This does not authorize continued selection after November.
         """
+        session=self._execution_session(self.clock())
+        if session[:7] in self.months.registry:return deepcopy(self.months(session)['securities'])
         return deepcopy(self._base()['securities'])
+
+    def _execution_session(self,now):
+        if now.tzinfo is None:raise ValueError('AWARE_CLOCK_REQUIRED')
+        session=next((d for d in self._sessions() if datetime.fromisoformat(self.calendar(d)['close_at'])>now),None)
+        if session is None:raise ValueError('WAIT_VERIFIED_CALENDAR')
+        return session
 
     def _sessions(self):
         raw=(self.root/CALENDAR).read_bytes()
@@ -159,15 +169,12 @@ class RoaDailySignalProvider:
             if now.tzinfo is None:raise ValueError('AWARE_CLOCK_REQUIRED')
             available=[d for d in self._sessions() if d>max(prices) and datetime.fromisoformat(self.calendar(d)['close_at'])<=now]
             if not available:return dict(status='WAIT_COMPLETED_SESSION',updated=[])
-            # Never manufacture next month's selected roster.
-            if available[0][:7]!='2026-11':raise ValueError('WAIT_NEW_MONTH_SIGNAL')
             payload=self.fetch();captured=self.clock();rows=daily_rows(payload)
             if captured.tzinfo is None or captured<now:raise ValueError('DAILY_CAPTURE_CLOCK_INVALID')
             for d,c in prices.items():
                 if d in rows and F(rows[d])!=F(c):raise ValueError('QQQ_HISTORY_COORDINATE_CHANGED')
             additions=[]
             for day in available:
-                if day[:7]!='2026-11':break
                 if day not in rows:raise ValueError('WAIT_MISSING_COMPLETED_QQQ_SESSION:'+day)
                 additions.append(dict(session=day,close=rows[day]))
             digest=sha256(payload).hexdigest();self.path.parent.mkdir(parents=True,exist_ok=True)
@@ -183,16 +190,23 @@ class RoaDailySignalProvider:
     def __call__(self):
         with self.lock:
             now=self.clock()
-            if now.tzinfo is None:raise ValueError('AWARE_CLOCK_REQUIRED')
-            session=next((d for d in self._sessions() if datetime.fromisoformat(self.calendar(d)['close_at'])>now),None)
-            if session is None:raise ValueError('WAIT_VERIFIED_CALENDAR')
-            if session[:7]!='2026-11':raise ValueError('WAIT_NEW_MONTH_SIGNAL')
+            session=self._execution_session(now)
+            month=None
+            if session[:7] in self.months.registry:month=self.months(session)
+            elif session[:7]!='2026-11':raise ValueError('WAIT_NEW_MONTH_SIGNAL')
             self.calendar(session)
             base=self._base();prices,records=self._read();dates=self._sessions()
             previous=max(d for d in dates if d<session)
             if max(prices)!=previous:raise ValueError('WAIT_DAILY_MARKET_SIGNAL')
             result=deepcopy(base);result.update(signal_date=previous,risk_on=states(prices)[previous],
                 execution_not_before_session=session,quote_inputs_asof=previous)
+            if month is not None:
+                result.update(decision_date=month['decision_date'],weights=deepcopy(month['weights']),
+                    securities=deepcopy(month['securities']),financial_cutoff=month['financial_cutoff'],monthly_selection_id=month['selection_id'])
+                result['source_hashes'].update(month['source_hashes'])
+                spec=self.months.registry[session[:7]];result['source_hashes'][spec['path']]=spec['sha256']
             result['daily_updates']=records
-            result['signal_id']=sha256(json.dumps(dict(base=base['signal_id'],session=session,updates=records),sort_keys=True).encode()).hexdigest()
+            identity=dict(base=base['signal_id'],session=session,updates=records)
+            if month is not None:identity['monthly_selection_id']=month['selection_id']
+            result['signal_id']=sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
             return result

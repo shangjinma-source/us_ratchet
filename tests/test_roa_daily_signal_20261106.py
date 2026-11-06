@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 class DailyTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory()
+        self.temp=tempfile.TemporaryDirectory(dir=ROOT/'tmp')
         self.now=datetime(2026,11,6,20,tzinfo=timezone.utc)
         self.calls=0
         def fetch():
@@ -47,6 +47,31 @@ class DailyTests(unittest.TestCase):
     def test_new_month_refused(self):
         self.now=datetime(2026,12,1,14,tzinfo=timezone.utc)
         with self.assertRaisesRegex(ValueError,'WAIT_NEW_MONTH_SIGNAL'):self.provider()
+
+    def test_approved_month_registry_changes_roster_not_market_history(self):
+        from data.roa_monthly_loader import RoaMonthlySelectionLoader
+        artifact=dict(schema='ROA_MONTH_SELECTION_V1',decision_date='2026-11-30',effective_month='2026-12',
+            first_execution_session='2026-12-01',financial_cutoff='2026-09-30',weights={'NEW':'1/10'},
+            securities=[dict(security_id='NEW',ticker='NEW',issuer_id='issuer:new')],source_hashes={})
+        artifact['selection_id']=sha256(json.dumps(artifact,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        path=Path(self.temp.name)/'december.json';path.write_text(json.dumps(artifact))
+        self.provider.months=RoaMonthlySelectionLoader(root=ROOT,registry={'2026-12':dict(path=str(path.relative_to(ROOT)),sha256=sha256(path.read_bytes()).hexdigest())})
+        self.now=datetime(2026,12,1,14,tzinfo=timezone.utc)
+        prices={str(i).zfill(3):'100' for i in range(201)};prices['2026-11-30']='110'
+        expected=states(prices)['2026-11-30']
+        with patch.object(self.provider,'_read',return_value=(prices,[])):
+            result=self.provider()
+        self.assertEqual(result['weights'],{'NEW':'1/10'})
+        self.assertEqual(result['decision_date'],'2026-11-30')
+        self.assertEqual(result['risk_on'],expected)
+        self.assertEqual(result['financial_cutoff'],'2026-09-30')
+        self.assertIn('NEW',[r['security_id'] for r in self.provider.frozen_roster()])
+
+    def test_market_refresh_continues_after_november(self):
+        self.now=datetime(2026,12,1,21,5,tzinfo=timezone.utc)
+        raw=json.loads(self.provider.fetch());raw['chart']['result'][0]['timestamp']=[int(datetime(2026,12,1,14,30,tzinfo=timezone.utc).timestamp())]
+        with patch.object(self.provider,'_read',return_value=({'2026-11-30':'650'},[])),patch.object(self.provider,'fetch',return_value=json.dumps(raw).encode()):
+            self.assertEqual(self.provider.refresh_completed()['updated'],['2026-12-01'])
 
     def test_real_ny_previous_evening_selects_next_session(self):
         # November is EST: 04:56 UTC is still the previous NY evening;

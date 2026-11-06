@@ -16,6 +16,7 @@ from data.roa_strategy_service import RoaStrategyService
 from data.roa_daily_signal import RoaDailySignalProvider,load_completed_close_prices
 from data.roa_quote_provider import RoaQuoteProvider
 from data.roa_session_reader import RoaSessionReader
+from data.roa_close_recovery import TrustedCloseRecovery
 
 
 def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
@@ -30,7 +31,7 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
         require(not any(p.is_symlink() for p in [path,*path.parents]),'ROA_STATE_SYMLINK');return path
     calendar=RoaSessionReader(root)
     signal=RoaDailySignalProvider(root=root,path=local(configuration['daily_signal_path']),
-        expected_contract_hashes=configuration['contract_hashes'],clock=clock)
+        expected_contract_hashes=configuration['contract_hashes'],clock=clock,monthly_selections=configuration.get('monthly_selections'))
     lifecycle=RoaExecutionLifecycle(path=local(configuration['lifecycle_path']),account_id=account.account_id,
         strategy_epoch=configuration['strategy_epoch'],contract_sha256=configuration['contract_sha256'])
     def identities():
@@ -61,35 +62,48 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
         execution_admission=configuration.get('execution_admission'))
     require(not any(getattr(r,'path','').startswith('/api/strategy-roa/') for r in prepared['router'].routes),'ROA_DUPLICATE_ROUTE')
     prepared['router'].include_router(create_router(coordinator=service))
+    def close_prices(session,held):
+        validate_sources();ids=identities()
+        # Historical actual fills may concern a stock no longer held or selected.
+        for event in account.store.read()['events']:
+            evidence=event['payload'].get('identity_evidence')
+            if evidence and evidence.get('security_id') in held:
+                identity=account.resolver(evidence['ticker'])
+                require(identity['security_id']==evidence['security_id'],'ROA_CLOSE_IDENTITY_CHANGED')
+                ids[identity['security_id']]=identity
+        require(set(held)<=set(ids),'ROA_CLOSE_IDENTITY_MISSING')
+        capture=load_completed_close_prices(identity_map={s:ids[s] for s in held},session=session,
+            now=clock(),session_reader=calendar,evidence_dir=local(configuration['close_evidence_path']))
+        pins={row['raw_path']:row['raw_sha256'] for row in capture['evidence'].values()}
+        if not held:pins=calendar(session)['source_hashes']
+        validate_sources()
+        return dict(prices=capture['prices'],source_hashes=pins)
+    recovery=TrustedCloseRecovery(account_store=account.store,lifecycle=lifecycle,
+        directory=local(configuration['close_recovery_path']),evidence_root=root,
+        calendar=calendar,calendar_sessions=calendar.sessions(),price_reader=close_prices,clock=clock)
     def observe_completed_session(session):
-        """Trusted scheduler entry; no account mutation and no inferred broker fills."""
-        validate_sources();now=clock()
-        require(session==now.astimezone(ZoneInfo('America/New_York')).date().isoformat(),'WAIT_CLOSE_HISTORY_RECONCILIATION')
-        state=account.store.read()
-        require(state['cash_confirmation_valid'],'CASH_RECONFIRMATION_REQUIRED')
-        prior=calendar(session)['previous_session'];lstate=lifecycle.read()
-        if any(e.get('materialized_revision') and e['session']<session for e in lstate['events']):
-            require((lstate.get('last_close') or '')>=prior,'WAIT_CLOSE_HISTORY_RECONCILIATION')
-        closing=datetime.fromisoformat(calendar(session)['close_at'])
-        for recorded in state['events']:
-            payload=recorded['payload']
-            if payload.get('kind') in ('FILL','DIRECT_FILL'):
-                require(datetime.fromisoformat(payload['executed_at'])<=closing,'WAIT_CLOSE_HISTORY_RECONCILIATION')
-        held={s:q for s,q in state['shares'].items() if q}
-        ids=identities();capture=load_completed_close_prices(identity_map={s:ids[s] for s in held},session=session,
-            now=now,session_reader=calendar,evidence_dir=local(configuration['close_evidence_path']))
-        require(account.store.read()==state,'ACCOUNT_CHANGED_DURING_CLOSE')
-        result=lifecycle.close_observation(session=session,shares=held,closing_prices=capture['prices'])
-        return dict(state=result,evidence=capture['evidence'],account_revision=state['revision'])
+        validate_sources()
+        result=recovery.observe(session)
+        validate_sources()
+        return result
     maintenance_status={}
     def maintain_completed_session():
         """Only today's completed close; never reconstruct old holdings implicitly."""
         now=clock();day=now.astimezone(ZoneInfo('America/New_York')).date().isoformat()
         try:
-            times=calendar(day)
+            if maintenance_status.get('status')=='COMPLETE' and maintenance_status.get('session')==day and account.store.read()['revision']==maintenance_status.get('account_revision'):return
+            previous=lifecycle.read().get('last_close')
+            if previous:
+                with service.lock:recovered=observe_completed_session(previous)
+                maintenance_status.update(status='RECOVERED_PRIOR_CLOSE',session=previous,account_revision=recovered['account_revision'])
+            try:times=calendar(day)
+            except ValueError as error:
+                if str(error)=='SESSION_NOT_IN_CALENDAR':
+                    if not previous:maintenance_status.update(status='WAIT',session=day,reason='SESSION_NOT_IN_CALENDAR')
+                    return
+                raise
             if now<datetime.fromisoformat(times['close_at']):return
             validate_sources()
-            if maintenance_status.get('status')=='COMPLETE' and maintenance_status.get('session')==day and account.store.read()['revision']==maintenance_status.get('account_revision'):return
             market=signal.refresh_completed()
             with service.lock:
                 observed=observe_completed_session(day)
