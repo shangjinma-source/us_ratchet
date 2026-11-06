@@ -82,7 +82,13 @@ class RoaStrategyService(CashAdviceCoordinator):
                 valid_from=event['valid_from'] if event else None,valid_until=event['valid_until'] if event else None,
                 rows=[],orders_created=False,execution_assumption='MANUAL_EXECUTION_NOT_GUARANTEED_HISTORICAL_OPEN_CLOSE')
             if view['status']=='WINDOW_OPEN' and not admitted:result['status']='WAIT_EXECUTION_ADMISSION'
-            if view['status']=='WINDOW_OPEN' and admitted:
+            if view['status']=='WINDOW_OPEN' and admitted and not state['cash_confirmation_valid']:
+                result.update(status='WAIT_CASH_CONFIRMATION',reason='WAIT_CASH_CONFIRMATION',executable=False,
+                    action_required='UPDATE_CASH_AND_VIEW_ADVICE')
+            elif view['status']=='WINDOW_OPEN' and admitted and not state['execution_ready']:
+                result.update(status='WAIT_ACCOUNT_RESERVATIONS',reason='WAIT_ACCOUNT_RESERVATIONS',executable=False,
+                    action_required='RECONCILE_REAL_ORDERS_AND_CASH')
+            elif view['status']=='WINDOW_OPEN' and admitted:
                 try:
                     needed=set(signal['weights'])|{s for s,q in state['shares'].items() if q}
                     needed|={o['security_id'] for o in state['orders'].values() if o['status']=='OPEN'}

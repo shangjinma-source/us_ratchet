@@ -1,5 +1,13 @@
 # 2026-11-06 ROA工作台部署状态
 
+## v7最新补充
+
+正式服务已采用 `research_contracts/roa_release_20261106_v7/deploy-v34.json`，PID43904。成交后未确认券商现金时，建议明确返回WAIT_CASH_CONFIRMATION，页面提示填写最新可用现金；挂单占用超过确认现金时另给WAIT_ACCOUNT_RESERVATIONS。两者均不取报价、不生成可执行买卖，也不自动把推算余额视作券商确认余额。
+
+完整启动、账户响应前后一致、静态脚本字节、新闻worker及源码哈希均通过。正式现金状态测试、收盘部分成交承接测试、前端状态提示与旧买单隐藏测试通过。真实浏览器绑定本轮遇到工具错误，未取得v7新截图，不以HTTP资源通过代替页面视觉验收。私有回执：`tmp/roa_deployment_20261106_v7/acceptance.json`。
+
+执行准入仍为空，snapshot为PENDING_OPEN、executable=false；实际开盘和收盘手动执行窗口尚待用户答复。真实用户成交和新月实际采用仍未验收。
+
 ## v6最新补充
 
 正式服务已切换至 `research_contracts/roa_release_20261106_v6/deploy-v34.json`，PID13596。完整账户响应与部署前一致；config、snapshot及两个前端脚本返回200，脚本字节与源码一致，新闻worker正常。snapshot仍为PENDING_OPEN、executable=false，执行准入仍为空。
