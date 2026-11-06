@@ -1,0 +1,9 @@
+# 当前月候选输入预检
+
+已只读核对现有正式月目标绑定的训练截止为2026-10-30，训练manifest位于tmp/monthly_recovery_20261103/training_scoped_publication/manifest.json。共98候选、253会话。没有修改目标日志、现金或持仓。
+
+复用冻结研究的年度同accession选择函数及季度财务刷新惯例，金融数据截止固定2026-09-30；按manifest明确issuer CIK对应本地companyfacts，不以ticker猜公司。结果79项存在兼容年度同版字段，其中74项NI/OCF均正；12项无兼容同版字段、7项原companyfacts缺失。全部98项保留在本地输出，不补零、不删缺失记录后假称全域覆盖。
+
+复现入口scripts/research/preflight_roa_november_inputs_20261106.py；输出tmp/roa_november_inputs_20261106.json含来源SHA、年度记录、精确252/21动量和ROA。当前只做输入可行性，不排序、不选出生产名单、不计算实际账户仓位。
+
+剩余：旧训练manifest1144项依赖及价格单位须按原归档方式核验；最新完整交易日QQQ趋势状态须补齐；财务修订链仍是条件资料，不能提升为完整PIT认证；完整账户收益与回撤准入、当前身份行动及真实持仓接线仍待完成。当前输入准备不等于策略正式上线。
