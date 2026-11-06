@@ -1,0 +1,70 @@
+(function(root){
+'use strict';
+const controllerApi=typeof module!=='undefined'&&module.exports?require('./strategy_roa_controller.js'):root.StrategyRoaController;
+const legacyUi=typeof module!=='undefined'&&module.exports?require('./strategy_daily_controller.js'):root.StrategyDailyController;
+function cashText(value){
+ const text=String(value);
+ if(/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text))return text;
+ if(!/^\d{1,40}\/[1-9]\d{0,39}$/.test(text))return null;
+ const [n,d]=text.split('/').map(BigInt);let remainder=n%d,fraction='';
+ for(let i=0;remainder&&i<18;i++){remainder*=10n;fraction+=String(remainder/d);remainder%=d;}
+ return remainder?null:String(n/d)+(fraction?'.'+fraction:'');
+}
+function mount(container,dependencies){
+ const {now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,onAccountChanged=()=>{},onChange=()=>{},...options}=dependencies;
+ const doc=container.ownerDocument,element=(tag,text,cls)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
+ const section=element('section',undefined,'strategy-monthly-target'),title=element('h3','今日买卖建议');
+ const cashPanel=element('div',undefined,'daily-cash-panel'),form=element('form',undefined,'monthly-cash-form');
+ const label=element('label','当前可用现金 USD'),input=element('input');
+ input.name='amount';input.inputMode='decimal';input.autocomplete='off';input.required=true;
+ label.appendChild(input);const save=element('button','更新现金并查看建议');save.type='submit';form.appendChild(label);form.appendChild(save);cashPanel.appendChild(form);
+ const status=element('div',undefined,'daily-status'),summary=element('div',undefined,'monthly-table-scroll');
+ for(const n of [title,cashPanel,status,summary])section.appendChild(n);container.replaceChildren(section);
+ let controller,disposed=false,edited=false,locked=false,timer=null,lastAmount=null,lastRevision=null;
+ const reasons={PENDING_OPEN:'等待开盘后确认目标股数',PENDING_CLOSE:'等待收盘执行时段',MISSED:'已错过本次执行时段，等待策略下一次判断',WAIT_SIGNAL:'等待有效策略信号',WAIT_FRESH_QUOTE:'等待最新有效报价',READY:'',CASH_RECONCILIATION_REQUIRED:'现金保存结果待核对，请刷新核对，勿重复提交',CASH_NOT_YET_OBSERVED:'尚未确认现金保存结果，请刷新核对，勿重复提交',ADVICE_QUOTE_EXPIRED:'报价已过期，请刷新建议',ADVICE_REFRESH_REQUIRED:'建议暂未更新，请重试',ACCOUNT_CHANGED_REFRESH_REQUIRED:'账户已变化，请刷新建议'};
+ function draw(state){
+  if(disposed)return;
+  if(timer!==null){clearTimer(timer);timer=null;}
+  save.disabled=input.disabled=state.busy||locked;save.textContent=state.busy?'正在更新建议…':'更新现金并查看建议';
+  const account=state.account,advice=state.advice;
+  const balance=cashText(account?.available_cash);
+  if(!edited&&account?.cash_confirmation_valid&&balance!==null)input.value=balance;
+  status.textContent=state.busy?'正在读取最新建议…':state.error?(reasons[state.error]||'建议未更新，请刷新核对。'):(reasons[advice?.status]||'等待策略数据');
+  if(state.error&&state.cashSaved===true)status.textContent='现金已保存；'+status.textContent;
+  const table=element('table',undefined,'daily-actions-table'),head=element('tr');
+  for(const text of ['股票','持仓 → 目标','今日建议','原因'])head.appendChild(element('th',text));table.appendChild(head);
+  const rows=advice?.rows||account?.holdings?.map(h=>({security_id:h.security_id,ticker:h.ticker,held:h.quantity}))||[];
+  for(const row of rows){
+   const tr=element('tr'),actionable=advice?.executable===true&&!state.busy&&!state.error&&['BUY','SELL'].includes(row.side)&&Number.isSafeInteger(row.quantity)&&row.quantity>0;
+   tr.appendChild(element('td',row.ticker||row.security_id));
+   tr.appendChild(element('td',String(row.held??0)+' → '+(Number.isSafeInteger(row.target_quantity)?row.target_quantity:'待确认')));
+   const action=element('td');
+   action.appendChild(element('strong',actionable?(row.side==='BUY'?'买入 ':'卖出 ')+row.quantity+' 股':row.side==='HOLD'&&advice?.executable===true?'无需操作':'等待'));
+   if(actionable)action.appendChild(element('small','限价 '+legacyUi.dollars(row.limit_price),'daily-secondary'));
+   tr.appendChild(action);tr.appendChild(element('td',row.reason||reasons[advice?.status]||'等待有效策略判断'));table.appendChild(tr);
+  }
+  summary.replaceChildren(table);
+  if(account&&account.revision!==lastRevision){lastRevision=account.revision;onAccountChanged(structuredClone(account));}
+  onChange(structuredClone(state));
+  if(advice?.executable===true){const expires=Math.min(Date.parse(advice.valid_until),Date.parse(advice.quote_valid_until));if(Number.isFinite(expires)&&expires>now())timer=setTimer(()=>draw(controller.getState()),Math.min(expires-now(),2147483647));}
+ }
+ controller=controllerApi.createController({...options,now,onChange:draw});
+ const edit=()=>{edited=true;};input.addEventListener('input',edit);
+ let lastWork=Promise.resolve();
+ const submit=event=>{
+  event.preventDefault();if(locked||controller.getState().busy)return;
+  const state=controller.getState(),amount=input.value;
+  const retry=state.pending||(state.error&&state.cashSaved===true&&amount===lastAmount);
+  if(!retry)lastAmount=amount;
+  lastWork=(retry?controller.refresh():controller.save(amount)).then(next=>{if(next.cashSaved===true&&!next.error)edited=false;return next;});
+ };
+ form.addEventListener('submit',submit);
+ const resume=()=>{if(doc.visibilityState!=='hidden')draw(controller.getState());};
+ doc.addEventListener?.('visibilitychange',resume);doc.defaultView?.addEventListener('focus',resume);
+ draw(controller.getState());
+ return {...controller,ready:controller.load(),whenIdle:()=>lastWork,
+  elements:{form,input,save,cashPanel,summary},setCapitalBusy(value){locked=!!value;draw(controller.getState());},
+  dispose(){disposed=true;if(timer!==null)clearTimer(timer);form.removeEventListener('submit',submit);input.removeEventListener('input',edit);doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);controller.accountInvalidated();}};
+}
+const api={mount};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.StrategyRoaMount=api;
+})(typeof window!=='undefined'?window:globalThis);

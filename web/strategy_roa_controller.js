@@ -33,6 +33,14 @@ function createController({request,readAccount,eventId,pendingStore,expectedEpoc
    if(!(now()>=Date.parse(d.valid_from)&&now()<Math.min(Date.parse(d.valid_until),Date.parse(d.quote_valid_until))))throw Error('ADVICE_QUOTE_EXPIRED');
   }
   if(typeof d.executable!=='boolean'||!Array.isArray(d.rows))throw Error('ADVICE_SCHEMA_REQUIRED');
+  for(const row of d.rows){
+   if(typeof row.security_id!=='string'||!row.security_id||!Number.isSafeInteger(row.held)||row.held<0||
+      (row.target_quantity!==null&&row.target_quantity!==undefined&&(!Number.isSafeInteger(row.target_quantity)||row.target_quantity<0)))throw Error('ADVICE_ROW_INVALID');
+   if(d.executable&&['BUY','SELL'].includes(row.side)){
+    const parts=String(row.limit_price).split('/'),price=Number(parts[0])/(parts.length===2?Number(parts[1]):1);
+    if(!Number.isSafeInteger(row.quantity)||row.quantity<=0||parts.length>2||!Number.isFinite(price)||price<=0)throw Error('ADVICE_ORDER_INVALID');
+   }
+  }
   state.account=structuredClone(a);state.advice=structuredClone(d);state.error=null;
  }
  async function run(operation){
