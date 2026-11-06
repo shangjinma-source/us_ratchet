@@ -20,11 +20,11 @@ class DraftTests(unittest.TestCase):
    runtime_success=save('success.json',dict(status='MONTH_RUNTIME_VERIFIED',scope=scope,account_and_ledger_unchanged=True)),
    publication=save('publication.json',dict(status='VALIDATED_MONTH_REGISTRATION_NOT_ACTIVATED',month='2026-12',next_active={'sha256':active['sha256']},source_hashes=hashes)),
    capture_receipt=save('capture.json',dict(output_hashes=hashes)),training_calendar=save('training.json',{'sessions':[{'date':'2026-12-31'}]}),
-   session_calendar=save('session.json',{}),calendar_path='session.json',calendar_source_hashes={})
+   session_calendar=save('session.json',{'sessions':[{'date':'2026-12-31'},{'date':'2027-01-04'}]}),calendar_path='session.json',calendar_source_hashes={})
   self.request['calendar_source_hashes']={'session.json':self.request['session_calendar']['sha256']}
  def build(self,**kwargs):
   self.assertEqual(kwargs['completed_target_month'],'2026-12')
-  return dict(target_month='2027-01',artifacts={'next/capture_plan.json':b'{}','next/boundary.json':json.dumps({'training_dates':['2026-12-31']}).encode()})
+  return dict(target_month='2027-01',artifacts={'next/capture_plan.json':b'{}','next/boundary.json':json.dumps({'training_dates':['2026-12-31'],'decision_date':'2026-12-31','active_date':'2027-01-04'}).encode()})
  def run_it(self):
   with patch('scripts.research.draft_roa_next_month.build_next_plan',side_effect=self.build),patch('scripts.research.draft_roa_next_month.make_descriptor',return_value={'schema':'test'}):
    return draft(root=self.root,request=self.request,output_directory='next',python_path='unused')
@@ -49,6 +49,12 @@ class DraftTests(unittest.TestCase):
  def test_no_calendar_no_output(self):
   self.build=lambda **kwargs: (_ for _ in ()).throw(ValueError('SUCCESSOR_NEXT_MONTH_BOUNDARY_UNAVAILABLE'))
   with self.assertRaisesRegex(ValueError,'BOUNDARY_UNAVAILABLE'):self.run_it()
+  self.assertFalse((self.root/'next').exists())
+ def test_execution_calendar_must_cover_new_month_before_output(self):
+  reference=self.save('session.json',{'sessions':[{'date':'2026-12-31'}]})
+  self.request['session_calendar']=reference
+  self.request['calendar_source_hashes']['session.json']=reference['sha256']
+  with self.assertRaisesRegex(ValueError,'EXECUTION_CALENDAR_MONTH_BOUNDARY_INCOMPLETE'):self.run_it()
   self.assertFalse((self.root/'next').exists())
  def test_stale_active_refused(self):
   (self.root/'active.json').write_text('later')

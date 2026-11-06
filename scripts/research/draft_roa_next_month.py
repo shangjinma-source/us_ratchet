@@ -32,7 +32,7 @@ def draft(*,root,request,output_directory,python_path,clock=lambda:datetime.now(
   if seal['output_hashes'].get(ref['path'])!=ref['sha256'] or publication['source_hashes'].get(ref['path'])!=ref['sha256']:
    raise ValueError('CAPTURE_NOT_BOUND_TO_ADOPTED_PUBLICATION')
   read(ref)
- training=read(request['training_calendar']);read(request['session_calendar'])
+ training=read(request['training_calendar']);execution_calendar=read(request['session_calendar'])
  for name,h in request['calendar_source_hashes'].items():verified_bytes(dict(path=name,sha256=h))
  out=path(output_directory)
  if out.exists():raise ValueError('OUTPUT_ALREADY_EXISTS')
@@ -43,6 +43,9 @@ def draft(*,root,request,output_directory,python_path,clock=lambda:datetime.now(
  boundary=json.loads(plan['artifacts'][output_directory+'/boundary.json'])
  dates={r['date'] for r in training['sessions']}
  if not set(boundary['training_dates']).issubset(dates):raise ValueError('TRUSTED_TRAINING_CALENDAR_INCOMPLETE')
+ execution_dates={r['date'] for r in execution_calendar['sessions']}
+ if not {boundary['decision_date'],boundary['active_date']}.issubset(execution_dates):
+  raise ValueError('EXECUTION_CALENDAR_MONTH_BOUNDARY_INCOMPLETE')
  def recheck():
   for name,h in checked.items():
    if sha256(path(name).read_bytes()).hexdigest()!=h:raise ValueError('INPUT_CHANGED_DURING_DRAFT')

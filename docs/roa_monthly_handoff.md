@@ -90,3 +90,5 @@ The actual completed November lineage was replayed through the real December pla
 
 ### Non-JSON calendar evidence fix (2026-11-07)
 `draft_roa_next_month` previously JSON-decoded every calendar source pin, including official HTML/PDF evidence and Python provenance files. It now verifies raw bytes for source evidence and parses JSON only for structured inputs. Eight draft tests passed, including binary/HTML acceptance and changed-evidence rejection before output creation. This fixes a real successor preparation blocker; no live monthly adoption or scheduler replacement was performed.
+
+The successor draft now also requires both decision and activation dates in the execution calendar before writing any output. Previously only training coverage was checked, allowing a January launcher to retain a December-only execution calendar. Nine draft tests pass, including this missing-boundary rejection. Installed runtime_v6 preparation descriptor remains valid; it has not been rebound or executed by this check.
