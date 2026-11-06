@@ -1,0 +1,30 @@
+# ROA月度换仓衔接
+
+月末自动准备与生产正式采用是两步。当前经济规则不变；不得用前月名单代替未验证的新月名单。
+
+## 已有入口
+
+1. `scripts.run_local_roa_monthly_preparation`：核对固定绑定的活动版本与来源，月末收盘后采集、训练、准备月份包及注册方案；不自动采用。
+2. `scripts.research.prepare_roa_monthly_publication`：只允许月份注册追加，核对当前及候选V34完整来源链。
+3. `scripts.research.adopt_roa_monthly_registration`：显式执行后原子切换活动配置指针；指针已换不等于服务已加载。
+4. `scripts.inspect_roa_monthly_preparation`：只读检查descriptor、活动配置和准备状态。输出锁待核对时不能推断任务仍活跃，更不能直接删除锁重跑。
+
+从仓库PowerShell运行状态检查，参数使用当前任务Action中的实际descriptor引用：
+
+```powershell
+D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-path <当前descriptor路径> --descriptor-sha256 <当前descriptor的SHA256>
+```
+
+## 尚未完成的自动衔接
+
+- 月包采用后，须检查实际加载的配置与目标月份、受控重启完成、账户及完整账本前后不变。现有正式采用入口不能独立证明这些。
+- 成功采用后须准备下一月份计划并重新绑定该任务。`scripts.build_monthly_successor_plan.build_next_plan`已有严格下一月边界生成逻辑，可复用；缺少下一月可信日历时应明确等待补齐，不能猜测日期。
+- 失败尝试及其原始输入要保留；恢复需核对失败指纹和当前版本后建立新尝试。当前不得清除失败文件或无界自动重试。
+
+真实首个新月执行窗口、用户成交、部分成交或撤单按真实事件验收。隔离测试及只读状态检查均不替代这些证据。
+
+## 已测试但尚未部署的收尾候选
+
+`finish_roa_monthly_adoption`及Windows CLI `finish_roa_monthly_windows`保留重启意图、前后账本和运行态证据，未知重启结果只核对，不重复启动。Windows适配器绑定旧/新进程的PID、创建时间和完整命令行，并核对HTTP读取前后的监听进程一致。
+
+它依赖启动时固定的`/api/strategy-roa/runtime-binding`接口。当前生产未挂载该接口，所以不可宣称已能自动采用月包。候选挂载源码保存在`docs/candidates/strategy_server_mount_v9_runtime_binding.py`，需经过正式来源绑定、发布校验及受控上线后才能启用。隔离测试不替代真实未来月份验收。
