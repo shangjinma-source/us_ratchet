@@ -65,7 +65,8 @@ class FrozenTargetProvider:
         result = preview_target_weights(account=state,expected_revision=expected_revision,
             weights=payload['weights'], marks=payload['marks'],limits=payload['limits'],
             signal_at=payload['signal_at'],valid_from=payload['valid_from'],
-            valid_until=payload['valid_until'],now=now,contract_hash=self.contract)
+            valid_until=payload['valid_until'],now=now,contract_hash=self.contract,
+            frozen_quantities=payload.get('target_quantities'))
         require(self._load() == document, 'TARGET_CHANGED_DURING_PREVIEW')
         require(self.store.read() == state, 'ACCOUNT_CHANGED_DURING_PREVIEW')
         checked = self.clock().isoformat()

@@ -37,6 +37,13 @@ class FrozenTargetBuilder:
             valid_from=self.policy['valid_from'],valid_until=self.policy['valid_until'],
             marks=quotes['marks'],limits=quotes['limits'],
             previous_target_id=self.versions[-1]['target_id'] if self.versions else None)
+        # Quantities are an explicit server policy, never a client override.
+        # Cash/quote refresh changes affordability, not the frozen allocation.
+        if 'target_quantities' in self.policy:
+            quantities = self.policy['target_quantities']
+            require(type(quantities) is dict and set(quantities) <= set(self.policy['weights']), 'FROZEN_TARGET_SCOPE')
+            require(all(type(q) is int and q >= 0 for q in quantities.values()), 'FROZEN_TARGET_INTEGER_REQUIRED')
+            payload['target_quantities'] = deepcopy(self.policy['target_quantities'])
         # Identical successful refresh is idempotent, but still revalidates
         # file/account/quote freshness through the current provider.
         if self.current is not None:

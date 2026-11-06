@@ -8,7 +8,8 @@ from data.strategy_account_preview import preview_scoped_account
 
 
 def preview_target_weights(*, account, expected_revision, weights, marks, limits,
-                           signal_at, valid_from, valid_until, now, contract_hash):
+                           signal_at, valid_from, valid_until, now, contract_hash,
+                           frozen_quantities=None):
     require(account['revision'] == expected_revision, 'STALE_REVISION')
     require(len(contract_hash) == 64 and all(c in '0123456789abcdef' for c in contract_hash), 'CONTRACT_HASH_REQUIRED')
     require(timestamp(signal_at) < timestamp(valid_from) <= timestamp(now) < timestamp(valid_until), 'SIGNAL_EXECUTION_WINDOW')
@@ -25,6 +26,10 @@ def preview_target_weights(*, account, expected_revision, weights, marks, limits
             equity += quantity * Fraction(marks[sid]['price'])
     require(equity > 0, 'POSITIVE_TRADABLE_EQUITY_REQUIRED')
     targets = {sid: int(equity * weight / Fraction(marks[sid]['price'])) for sid, weight in allocation.items()}
+    if frozen_quantities is not None:
+        require(type(frozen_quantities) is dict and set(frozen_quantities) <= set(allocation), 'FROZEN_TARGET_SCOPE')
+        require(all(type(q) is int and q >= 0 for q in frozen_quantities.values()), 'FROZEN_TARGET_INTEGER_REQUIRED')
+        targets = deepcopy(frozen_quantities)
     execution_domain = {sid for sid, q in account['shares'].items() if q} | {sid for sid, q in targets.items() if q}
     execution_domain |= {order['security_id'] for order in account['orders'].values() if order['status'] == 'OPEN'}
     difference = preview_scoped_account(state=account, legacy_shares={}, marks={sid: marks[sid] for sid in execution_domain},
