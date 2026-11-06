@@ -108,6 +108,54 @@ class NewMonthTests(unittest.TestCase):
                     self.assertEqual(actions,{'OLD':('SELL',14),'NEW':('BUY',9)})
                     self.assertEqual(service.lifecycle.read()['events'][-1]['reason'],'MONTHLY_TARGET')
                     self.assertEqual(account.store.read(),before)
+                    # Exercise real HTTP ledger entry across the month transition.
+                    # A partial old-position sale must invalidate cash, not fund
+                    # new purchases until the user confirms the broker balance.
+                    sale=dict(kind='DIRECT_FILL',event_id='month-partial-sale',ticker='OLD',
+                        side='SELL',quantity=4,price='10',fees='0',executed_at=now.isoformat())
+                    request_body=dict(expected_revision=before['revision'],event=sale)
+                    response=client.post('/api/strategy-account/events',json=request_body)
+                    self.assertEqual(response.status_code,200,response.text)
+                    after_sale=account.store.read()
+                    self.assertEqual(after_sale['shares']['OLD'],10)
+                    self.assertFalse(after_sale['cash_confirmation_valid'])
+                    waiting=client.get('/api/strategy-roa/snapshot').json()
+                    self.assertEqual(waiting['status'],'WAIT_CASH_CONFIRMATION',waiting)
+                    self.assertFalse(waiting['executable'])
+                    duplicate=client.post('/api/strategy-account/events',json=request_body)
+                    self.assertEqual(duplicate.status_code,200,duplicate.text)
+                    self.assertEqual(account.store.read(),after_sale)
+                    confirmation=dict(expected_revision=after_sale['revision'],event=dict(
+                        kind='CASH_CONFIRM',event_id='month-sale-cash',amount='900',
+                        cash_basis='TOTAL_UNINVESTED'))
+                    response=client.post('/api/strategy-account/events',json=confirmation)
+                    self.assertEqual(response.status_code,200,response.text)
+                    before=account.store.read()
+                    for _ in range(2):
+                        remainder=client.get('/api/strategy-roa/snapshot').json()
+                        self.assertEqual(remainder['status'],'READY',remainder)
+                        self.assertEqual(remainder['target_quantities'],{'NEW':9})
+                        self.assertEqual({r['ticker']:(r['side'],r['quantity']) for r in remainder['rows']},
+                            {'OLD':('SELL',10),'NEW':('BUY',9)})
+                        self.assertEqual(account.store.read(),before)
+                    purchase=dict(expected_revision=before['revision'],event=dict(
+                        kind='DIRECT_FILL',event_id='month-partial-buy',ticker='NEW',
+                        side='BUY',quantity=4,price='10',fees='0',executed_at=now.isoformat()))
+                    response=client.post('/api/strategy-account/events',json=purchase)
+                    self.assertEqual(response.status_code,200,response.text)
+                    self.assertEqual(client.get('/api/strategy-roa/snapshot').json()['status'],
+                        'WAIT_CASH_CONFIRMATION')
+                    response=client.post('/api/strategy-account/events',json=dict(
+                        expected_revision=account.store.read()['revision'],event=dict(
+                        kind='CASH_CONFIRM',event_id='month-buy-cash',amount='860',
+                        cash_basis='TOTAL_UNINVESTED')))
+                    self.assertEqual(response.status_code,200,response.text)
+                    before=account.store.read()
+                    remaining=client.get('/api/strategy-roa/snapshot').json()
+                    self.assertEqual(remaining['status'],'READY',remaining)
+                    self.assertEqual({r['ticker']:(r['side'],r['quantity']) for r in remaining['rows']},
+                        {'OLD':('SELL',10),'NEW':('BUY',5)})
+                    self.assertEqual(account.store.read(),before)
                     missing=service.signal_provider.months.registry.pop('2026-12')
                     self.assertFalse(client.post('/api/strategy-roa/advice-retry',json={}).json()['advice_ready'])
                     service.signal_provider.months.registry['2026-12']=missing
