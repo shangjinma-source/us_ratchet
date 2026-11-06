@@ -28,3 +28,10 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 `finish_roa_monthly_adoption`及Windows CLI `finish_roa_monthly_windows`保留重启意图、前后账本和运行态证据，未知重启结果只核对，不重复启动。Windows适配器绑定旧/新进程的PID、创建时间和完整命令行，并核对HTTP读取前后的监听进程一致。
 
 它依赖启动时固定的`/api/strategy-roa/runtime-binding`接口。当前生产未挂载该接口，所以不可宣称已能自动采用月包。候选挂载源码保存在`docs/candidates/strategy_server_mount_v9_runtime_binding.py`，需经过正式来源绑定、发布校验及受控上线后才能启用。隔离测试不替代真实未来月份验收。
+
+## 下一轮草案与失败恢复入口
+
+- `scripts.research.draft_roa_next_month`读取正式采用、运行验收、活动版本、采集封印及可信日历引用，复用既有下一月生成器写出request/launcher草案，不安装任务。隔离测试覆盖成功、已有目录、缺日历、活动版本变化、未正式采用；既有生成器和descriptor构造使用替身，未声称实际2027月包可用。
+- `scripts.prepare_roa_monthly_retry`默认只读预览。显式`--prepare`也只生成新目录内的capture plan/request/launcher，不执行采集、不改任务。必须提供当前descriptor、其blocked.json的精确SHA及复核原因，保留旧失败及半成品；存在锁、旧active改变、完成记录或路径重叠时拒绝。真实失败原因仍须先处理，不能靠新尝试绕过数据或来源校验。
+
+以上新增工具尚未接入常驻自动采用流程；当前线上任务仍仅准备月包。所有实际注册、启动和首个新月执行验收均须保留独立证据。
