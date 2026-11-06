@@ -26,4 +26,3 @@ class OrderCashAudit(unittest.TestCase):
     body,a=event(dict(event_id='cancel',kind='CANCEL',order_id='broker1'));self.assertEqual((a['available_cash'],a['reserved_cash'],a['total_uninvested_cash']),('818','0','818'))
     self.assertEqual(c.post('/api/strategy-account/events',json=body).json()['account']['revision'],a['revision']);self.assertEqual(len(a['holdings']),1);self.assertEqual(a['holdings'][0]['quantity'],2)
 if __name__=='__main__':unittest.main()
-
