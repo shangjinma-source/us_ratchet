@@ -16,3 +16,9 @@
 因此不能把组合响应原样替换saveCash：当前要求updated.revision，候选返回account_revision且没有账户投影；当前月目标展示/binding仍要求target_month等frontier字段，候选权重目标不是该schema。最小正式改动应在daily controller增加显式组合依赖及分支：保留account controller写前失效/写后读回投影，按cash_saved三态更新界面，advice失败只调用retry；成功采纳经过验证的同revision账户/目标/建议快照，不再额外生成旧月目标。HTTP依赖层选择专属新策略组合，不改变既有V27路径。
 
 当前候选缺生产可采纳的完整前端target快照和经济准入。不能通过把研究false改true或伪造旧monthly字段强行复用页面。没有新页面、没有修改正式前端或已pin路由。
+
+## 固定整股候选组合验证
+
+roa_account_composition_20261106.py已将正式账户事件router、候选现金编排router及绑定建议router组合到同一个隔离账户库；强制提供固定target_quantities，不接受普通刷新重新配权的默认模式。组合本身未注册到生产mount，不启动服务，不修改真实库。
+
+test_roa_account_composition_20261106.py实际TestClient验证：同一临时SQLite初始化→保存1000现金但报价失败→仅重试建议恢复9股目标→通过正式事件HTTP模拟买入4股→确认600现金后只建议剩余5股→重复提交同event幂等、账户未重复记账。此为合成交易，仅证明候选接口闭环；未验证真实页面、当前实际持仓迁移、策略盈利或用户真实成交。
