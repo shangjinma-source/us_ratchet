@@ -49,10 +49,13 @@ class DailyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'WAIT_NEW_MONTH_SIGNAL'):self.provider()
 
     def test_real_ny_previous_evening_selects_next_session(self):
-        self.now=datetime(2026,11,6,5,tzinfo=timezone.utc)
-        result=self.provider()
-        self.assertEqual(result['execution_not_before_session'],'2026-11-06')
-        self.assertEqual(result['signal_date'],'2026-11-05')
+        # November is EST: 04:56 UTC is still the previous NY evening;
+        # 05:00 UTC is already midnight and alone would miss the regression.
+        for hour,minute in ((4,56),(5,0)):
+            self.now=datetime(2026,11,6,hour,minute,tzinfo=timezone.utc)
+            result=self.provider()
+            self.assertEqual(result['execution_not_before_session'],'2026-11-06')
+            self.assertEqual(result['signal_date'],'2026-11-05')
 
     def test_exact_close_and_weekend_select_monday(self):
         self.now=datetime(2026,11,6,21,tzinfo=timezone.utc)
