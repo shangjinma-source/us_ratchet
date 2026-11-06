@@ -1,0 +1,93 @@
+"""Fixed same-engine profitability eligibility increment; only two arms."""
+import json,hashlib
+from pathlib import Path
+from fractions import Fraction as F
+from backtest.research_exact_fraction_json import loads
+from docs.candidates.profitability_smci_price_bridge_20261106 import load_bridge,old_share_series,OLD
+def affordable_targets(equity,names,prior,pending=()):
+ def targets(base):return {s:min(base/10,prior.get(s,0.)) if s in pending else base/10 for s in names}
+ def fee(target):return .0005*sum(abs(target.get(s,0.)-prior.get(s,0.)) for s in set(target)|set(prior))
+ lo,hi=0.,equity
+ for _ in range(60):
+  mid=(lo+hi)/2;target=targets(mid)
+  if sum(target.values())+fee(target)<=equity:lo=mid
+  else:hi=mid
+ target=targets(lo);cost=fee(target);return target,equity-sum(target.values())-cost,cost
+ROOT=Path(__file__).resolve().parents[2]
+PANEL='tmp/annual_quality_local_diagnostic_20261106/descriptive_panel.json'
+CONTRACT='docs/candidates/profitability_momentum_control_v2_contract_20261106.md'
+def build_decision(roster,panel,arm):
+ assert arm in ('CONTROL','PROFITABLE')
+ section=max((s for s in panel['results'] if s['cutoff']<=roster['decision_date']),key=lambda s:s['cutoff']);financial={r['security_id']:r for r in section['rows']};selected=[];issuers=set();audit=[]
+ for candidate in roster['ranked']:
+  sid=candidate['security_id'];f=financial.get(sid);reason='ELIGIBLE';available=False
+  if f is None:reason='NOT_IN_AVAILABLE_QUARTER_DOMAIN'
+  elif f['status']!='DESCRIPTIVE_RAW_SAME_VERSION':reason=f['status']
+  else:
+   fields=f['fields'];ni=F(fields['NetIncomeLoss']['value_exact']);ocf=F(fields['NetCashProvidedByUsedInOperatingActivities']['value_exact']);assets=F(fields['Assets']['value_exact']);assert assets>0
+   assert all(all(d<section['cutoff'] for d in fields[k]['filed_dates']) for k in ('NetIncomeLoss','NetCashProvidedByUsedInOperatingActivities','Assets'))
+   available=True
+   if ni<=0 or ocf<=0:reason='NI_OR_OCF_NOT_POSITIVE'
+  accepted=arm=='CONTROL' or reason=='ELIGIBLE';decision='NOT_SELECTED_FINANCIAL_QUALIFICATION'
+  if accepted:
+   if candidate['issuer_id'] in issuers:decision='ISSUER_ALREADY_SELECTED'
+   elif len(selected)>=10:decision='BELOW_TOP_TEN'
+   else:
+    item=dict(candidate)
+    item['financial_version']=None if not available else {k:f.get(k) for k in ('accession','period_end','acceptance','availability_layer','fields','source_hashes')}
+    selected.append(item);issuers.add(candidate['issuer_id']);decision='SELECTED'
+  audit.append(dict(security_id=sid,ticker=candidate['ticker'],rank=candidate['rank'],financial_reason=reason,selection_decision=decision))
+ if arm=='CONTROL':assert [r['security_id'] for r in selected]==[r['security_id'] for r in roster['selected']]
+ return dict(cutoff=roster['decision_date'],financial_cutoff=section['cutoff'],domain=len(roster['ranked']),selected=selected,candidate_audit=audit)
+
+def run(arm):
+ pins={}
+ def read(path,exact=False):
+  raw=(ROOT/path).read_bytes();pins[path]=hashlib.sha256(raw).hexdigest();return loads(raw.decode()) if exact else json.loads(raw)
+ panel=read(PANEL);smci_ohlc=load_bridge(pins)
+ for source,digest in panel['source_hashes'].items():
+  if hashlib.sha256((ROOT/source).read_bytes()).hexdigest()!=digest:raise ValueError('PANEL_SOURCE_CHANGED:'+source)
+ rosters=read('tmp/cross_sectional_momentum_static_20261105/result.json')['rows'];quarters=[build_decision(r,panel,arm) for r in rosters];results=[]
+ for window,path in [('2021_2023','tmp/qqq_20201231_anchor_20261025/recent_training_windows_v1.json'),('2024_2026','tmp/old_window_source_reuse_20261026/unified_raw_compilation_v4.json')]:
+  training={}
+  for outer in read(path)['windows']:
+   w=outer.get('window',outer);training[w.get('decision_cutoff',w.get('decision_date'))]=w
+  execution=read('tmp/relative_strength_downside_20261106_'+window+'/execution_inputs.json',True)['document'];rows=[r for r in rosters if r['window']==window];equity=20000.;prior={};cash=equity;ledger=[];months=[];missing=[];proxies=[];fee_total=0;pending=set()
+  for i,row in enumerate(rows[:-1]):
+   day=row['decision_date'];nxt=rows[i+1]['decision_date'];quarter=max((q for q in quarters if q['cutoff']<=day),key=lambda q:q['cutoff']);legal={r['security_id'] for r in row['ranked']};selected=[s for s in quarter['selected'] if s['security_id'] in legal];removed=[s['security_id'] for s in quarter['selected'] if s['security_id'] not in legal];names=[s['security_id'] for s in selected] if row['gate']['risk_on'] else []
+   tw=training[nxt];dates=tw['training_dates'];assert dates==sorted(set(dates)) and dates[-1]==nxt;index=dates.index(day);candidates={c['security_id']:c for c in tw['candidates'] if c.get('security_id')}
+   for sid in names:
+    if sid not in candidates and sid==OLD and day=='2024-09-30':
+     candidates[sid]={'training_close':old_share_series(sid,dates,index,smci_ohlc)}
+     proxies.append(dict(security_id=sid,date=day,kind='EXACT_SMCI_OLD_SHARE_PRICE_COORDINATE_1_TO_10'))
+    if sid not in candidates:
+     values=[]
+     for d in dates:
+      if sid=='research:security:alxn' and d>='2021-07-21':v=F(60)+F('2.1243')*F(execution['ohlc']['research:security:azn'][d]['close']);kind='ALXN_CONTINUOUS_FRACTIONAL_SUCCESSOR_VALUE'
+      elif sid=='security:0001353283:848637104' and d>='2024-03-18':v=F(157);kind='SPLK_CASH157_VALUATION'
+      else:v=execution['ohlc'].get(sid,{}).get(d,{}).get('close');kind=None
+      values.append(v)
+      if kind and d>=day:proxies.append(dict(security_id=sid,date=d,kind=kind))
+     if all(v is not None for v in values[index:]):candidates[sid]={'training_close':values}
+   bad=[s for s in names if s not in candidates or len(candidates[s]['training_close'])!=253 or any(v is None or F(v)<=0 for v in candidates[s]['training_close'][index:])]
+   month=dict(decision_date=day,financial_cutoff=quarter['financial_cutoff'],pending_before=sorted(pending),old_stock_values=prior.copy(),quarter_cutoff=quarter['cutoff'],risk_on=row['gate']['risk_on'],quarter_selected=[s['security_id'] for s in quarter['selected']],removed_not_legal=removed,configured=names,missing_price=bad);months.append(month)
+   if bad:missing.append(dict(day=day,securities=bad));break
+   allocations,cash,fee=affordable_targets(equity,names,prior,pending);assert cash>=-1e-8;fee_total+=fee;month.update(target_values=allocations.copy(),cash_after_cost=cash,reallocation_slippage=fee)
+   peaks={s:1. for s in names};cumulative={s:1. for s in names};pending&=set(names)
+   for j in range(index+1,len(dates)):
+    for sid in list(allocations):
+     prices=candidates[sid]['training_close'];ratio=float(F(prices[j])/F(prices[j-1]));allocations[sid]*=ratio;cumulative[sid]*=ratio;peaks[sid]=max(peaks[sid],cumulative[sid])
+     if sid in pending:fee=allocations[sid]*.0005;fee_total+=fee;cash+=allocations.pop(sid)-fee;pending.remove(sid)
+     elif cumulative[sid]<=peaks[sid]*.8:pending.add(sid)
+    equity=cash+sum(allocations.values());ledger.append(dict(date=dates[j],equity=equity,cash=cash,stock_values=allocations.copy(),quarter_cutoff=quarter['cutoff']))
+   prior=allocations
+  result=dict(window=window,status='MISSING_PRICE_NO_FULL_RESULT' if missing else 'CONDITIONAL_PRICE_DIAGNOSTIC_ONLY',months=months,ledger=ledger,missing=missing,explicit_valuation_proxies=proxies,slippage_cost_proxy=fee_total,terminal_month_excluded=rows[-1]['decision_date'],metrics=None)
+  if not missing:
+   from scripts.research.summarize_cross_month_held_peak_20261105 import metrics
+   result['metrics']=metrics(ledger,rows[0]['decision_date'],0);result['metrics']['fills']=None
+  results.append(result)
+ for source in ('docs/candidates/profitability_smci_price_bridge_20261106.py',CONTRACT,'docs/candidates/profitability_momentum_control_contract_20261106.md',str(Path(__file__).relative_to(ROOT)),'scripts/research/summarize_cross_month_held_peak_20261105.py'):pins[source]=hashlib.sha256((ROOT/source).read_bytes()).hexdigest()
+ out=dict(evidence_status='DIAGNOSTIC_NOT_DEPLOYABLE',arm=arm,monthly_selection_audit=quarters,results=results,source_hashes=pins,financial_sources=panel['source_hashes'],limitations=['Same-close optimistic execution','Fractional stock values, no actual holdings or corporate-action account','Missing complete dividends taxes HSBC commission','Price-only historical conditional coordinate','Last month omitted because next training snapshot unavailable','No PIT or QMJ or independent OOS certification','Fee-affordable target values avoid negative cash; all targets retain 10pct ceiling','Monthly same 252/21 ranking; PROFITABLE adds available quarterly NI and OCF positive qualification; missingness effect not separated','Pending targets capped at prior stock value, no top-up; next-close stop preserved; peaks reset monthly'])
+ target=ROOT/('tmp/profitability_momentum_control_v2_20261106_'+arm+'.json');target.write_text(json.dumps(out,indent=2),encoding='utf8');print(json.dumps([dict(arm=arm,window=r['window'],status=r['status'],metrics=r['metrics'],missing=r['missing']) for r in results],indent=2))
+if __name__=='__main__':
+ for arm in ('CONTROL','PROFITABLE'):run(arm)
