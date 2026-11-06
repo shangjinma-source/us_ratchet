@@ -24,7 +24,10 @@ function createController({request,readAccount,eventId,pendingStore,expectedEpoc
   else if(result.cash_saved===false){state.cashSaved=false;clear();}
   else if(pending)state.cashSaved=null;
   if(token!==generation)throw Error('ACCOUNT_CHANGED_REFRESH_REQUIRED');
-  if(result.advice_ready!==true){state.error=result.reason||'ADVICE_REFRESH_REQUIRED';return;}
+  if(result.advice_ready!==true){
+   if(result.account&&result.account.revision===result.account_revision&&result.strategy_kind==='ROA_DEFENSIVE_V1'&&result.strategy_epoch===expectedEpoch)state.account=structuredClone(result.account);
+   state.error=result.reason||result.status||'ADVICE_REFRESH_REQUIRED';return;
+  }
   const a=result.account,d=result;
   if(!a||!d||a.revision!==result.account_revision||d.account_revision!==a.revision||
      d.strategy_kind!=='ROA_DEFENSIVE_V1'||d.strategy_epoch!==expectedEpoch)throw Error('ADVICE_SNAPSHOT_MISMATCH');

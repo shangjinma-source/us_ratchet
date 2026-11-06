@@ -54,5 +54,11 @@ const response=()=>({cash_saved:true,advice_ready:true,account_revision:'b'.repe
  await planned.controller.load();
  assert.equal(planned.controller.getState().advice.status,'PENDING_OPEN');
  assert.equal(planned.controller.getState().advice.executable,false);
+ const unavailable=fixture(async()=>({...response(),cash_saved:null,advice_ready:false,status:'WAIT_SIGNAL',rows:[]}));
+ await unavailable.controller.load();
+ assert.equal(unavailable.controller.getState().account.revision,'b'.repeat(64));
+ assert.equal(unavailable.controller.getState().advice,null);
+ assert.equal(unavailable.controller.getState().cashSaved,false);
+ assert.equal(unavailable.controller.getState().error,'WAIT_SIGNAL');
  console.log('PASS: uncertain-write reconciliation, no duplicate save, stale response, strategy epoch');
 })().catch(error=>{console.error(error);process.exitCode=1;});
