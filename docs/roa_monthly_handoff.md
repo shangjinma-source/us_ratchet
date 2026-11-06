@@ -45,3 +45,11 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 `scripts/rebind_local_roa_monthly_preparation.ps1`将已复核的新launcher绑定到现有同名月度准备任务。默认只读预检；`-Apply`要求当前任务XML的SHA256及新的私有tmp证据目录。参数为`-ConfigPath`、`-ConfigSha256`、`-ExpectedTaskSha256`，应用时另加`-EvidenceDirectory`。只更新Action，不启动任务，保持Triggers、Principal和Settings；保存前后XML及成功回执。任务正在运行或版本变化时拒绝，部分失败先查看已保存证据，不盲目重试。
 
 2026-11-07验证：当前683来源launcher真实只读预检通过，真实任务XML未变；`tests/rebind_roa_monthly_task_mock.ps1`使用替代Windows调度接口验证Action更新、非Action字段保留、旧任务SHA拒绝覆盖。该测试不证明真实未来后继任务已安装；本轮未修改线上任务或服务。
+
+## 准备到运行确认的统一入口
+
+`scripts.research.advance_roa_monthly_release`复用正式adopt和Windows finish入口，默认只读。参数：`--request`、`--request-sha256`、`--output-directory tmp/<新尝试>`；明确执行才加`--execute`。请求字段严格为active、registration、publication（均为path/sha256）、month、epoch、expected_process（pid/creation_date/command_line）。publication必须绑定同一registration和旧active；正式采用仍重新跑完整V34 gate，不复用预检来跳过。
+
+请求与采用意图保存在私有目录，复跑必须同一请求。已切换且有正式adoption回执时不重复采用；有意图但无回执则要求核对，不能凭超时重跑。已记录重启意图但服务未验证时返回WAIT_RUNTIME_RECONCILIATION_NO_REPEAT_RESTART。成功状态为MONTH_ADOPTED_RUNTIME_VERIFIED_NEXT_TASK_PENDING，明确后继计划及任务重绑尚未完成，不标记整条换月结束。
+
+6项编排隔离测试通过（采用/finish适配器使用替身）：只读无输出、重复运行、切换后丢失确认、未知切换拒绝重复、启动等待不重复重启、后续active不覆盖。尚未对真实未来月包执行此统一入口，尚未纳入常驻调度；账户、服务和任务未改动。
