@@ -6,6 +6,7 @@
 - POST `/api/research-candidate/advice-retry`：仅空对象，绝不写现金。
 - 两端禁止query、重复JSON字段、非有限JSON常量及超过8192字节。无weights/policy入口。
 - 成功返回cash_saved/advice_ready/account_revision及嵌套advice中的已验证target_id/proposal_id；现金已保存但建议失败返回200和明确false，不返回旧建议；保存未知返回503/cash_saved=null。派发后未处理异常保守按保存未知，不依据异常类型断言未保存。
+- 成功响应同时包含正式accountservice投影的account，与advice/account_revision一致。投影后重读账户，期间真实写入会使本次建议失效，不返回混合快照。隔离HTTP测试实际注入并发现金写入550并确认落账，同时验证旧建议未返回。
 
 `tests/test_cash_advice_router_20261106.py`：1项真实TestClient组合测试通过，实际临时SQLite+正式accountservice+可信builder/provider。现金保存1000后报价失败，retry恢复买10且账本不变；重复event幂等、绑定IDs实际生成、JSON可序列化；客户端weights/错误事件/重复字段拒绝；注入保存未知返回503/null。建议依然executable=false，无生产操作。
 

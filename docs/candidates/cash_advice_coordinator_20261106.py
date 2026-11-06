@@ -54,9 +54,16 @@ class CashAdviceCoordinator:
             version = self.builder.rebuild()
             advice = self.builder.preview(expected_revision=version['account_revision'],
                 target_id=version['target_id'],expected_proposal_id=version['proposal_id'])
+            # Return one coherent UI snapshot, not a second independent account
+            # fetch that can mix a new fill with an older target or advice.
+            current = self.account_service.store.read()
+            require(current is not None and current['revision'] == version['account_revision'],
+                    'ACCOUNT_CHANGED_DURING_ADVICE')
+            account = self.account_service.project(current)['account']
+            require(self.account_service.store.read() == current, 'ACCOUNT_CHANGED_DURING_ADVICE')
         except (ValueError,KeyError,TypeError,OSError):
             current = self.account_service.store.read()
             return dict(cash_saved=cash_saved,advice_ready=False,reason='ADVICE_REFRESH_REQUIRED',
                         account_revision=current['revision'],orders_created=False)
         return dict(cash_saved=cash_saved,advice_ready=True,account_revision=version['account_revision'],
-                    advice=advice,orders_created=False)
+                    account=account,advice=advice,orders_created=False)
