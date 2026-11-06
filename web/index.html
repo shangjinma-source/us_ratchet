@@ -315,6 +315,7 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 .daily-news-status{order:1;flex:1 0 100%;min-width:0;margin:0;font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
 .daily-news-status:empty{display:none}
 @media(max-width:700px){.daily-cash-panel{padding:16px}.daily-cash-panel .monthly-cash-form>label{flex:1 0 100%;min-width:0}.daily-cash-panel .monthly-cash-form button{flex:1 1 auto}.daily-cash-panel .monthly-cash-form .daily-news-secondary{flex:1 1 calc(50% - 6px)}}
+.active-strategy-label{display:inline-block;margin-left:14px;font-size:13px;font-weight:600;color:var(--accent,#126c5a);vertical-align:middle}
 </style>
 </head>
 <body class="research-collapsed">
@@ -350,13 +351,13 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 
   <section class="card portfolio-preview" id="panelCurrentPortfolioPreview" aria-labelledby="currentPortfolioPreviewTitle">
     <div class="card-header">
-      <span id="currentPortfolioPreviewTitle">月度组合配置研究</span>
+      <span id="currentPortfolioPreviewTitle">历史组合研究</span>
       <span class="preview-date" id="currentPortfolioPreviewDate">保存快照 · 研究预览</span>
       <button class="btn btn-small" id="btnCurrentPortfolioPreview" onclick="loadCurrentPortfolioPreview()">读取当前金额候选</button>
     </div>
     <details class="preview-chart-details" id="currentStrategyValidation">
       <summary>历史表现 · 查看方法与回测条件</summary>
-      <p class="preview-caption">2021—2023 年 V27 连续研究：税前年化 -17.20%，最大收盘回撤 71.77%。尚未证明回撤已解决；采用历史次日开盘模型，与下方旧窗口研究分开。</p>
+      <p class="preview-caption">历史 V27 回测（2021—2023）：税前年化 -17.20%，最大收盘回撤 71.77%。此处保留旧策略研究记录，不代表当前买卖建议。</p>
       <div class="card-body" id="currentStrategyValidationBody" aria-live="polite">展开后读取检验结果。</div>
     </details>
     <form class="preview-research-controls" onsubmit="runCurrentPortfolioResearch(event)">
@@ -1085,7 +1086,7 @@ async function loadCurrentPortfolioPreview(requestedCash = null, generateLimits 
   input.disabled = true;
   researchButton.textContent = '读取研究候选中…';
   $('currentPortfolioPreviewDate').textContent = '';
-  $('currentPortfolioPreviewTitle').textContent = '配置研究 · 等待当前版本';
+  $('currentPortfolioPreviewTitle').textContent = '历史配置研究 · 等待记录';
   if (currentPortfolioChartController) currentPortfolioChartController.destroy();
   currentPortfolioChartController = null;
   body.innerHTML = '<p class="preview-caption">正在按全额研究现金读取整股候选…</p>';
@@ -1099,7 +1100,7 @@ async function loadCurrentPortfolioPreview(requestedCash = null, generateLimits 
       if (sequence === currentPortfolioPreviewSequence) {
         currentPortfolioResearchVersion = 'CURRENT_QUANTITY_V2_FAIR_K_CASH_ONLY_RESEARCH';
         syncCurrentResearchNavigation();
-        $('currentPortfolioPreviewTitle').textContent = '配置研究 · 来源待复核';
+        $('currentPortfolioPreviewTitle').textContent = '历史配置研究 · 来源待复核';
         $('currentPortfolioResearchCashNote').textContent = '现金输入已保留；研究来源修正前暂停生成建议。';
         body.innerHTML = '<p class="info-strip">这版候选池包含历史价格口径尚未核清的 TRI，已暂停生成新组合和买卖建议。历史研究保留，不代表策略已换股；重复刷新不能解决此数据问题。</p>';
       }
@@ -1150,7 +1151,7 @@ async function loadCurrentPortfolioPreview(requestedCash = null, generateLimits 
     if ($('currentStrategyValidation').open) loadCurrentStrategyValidation();
     if (typeof syncCurrentResearchNavigation === 'function') syncCurrentResearchNavigation();
     input.value = String(data.budget);
-    $('currentPortfolioPreviewTitle').textContent = isV2 ? '现金驱动整股组合研究 · V2' : '月度单股配置研究 · TOP1';
+    $('currentPortfolioPreviewTitle').textContent = isV2 ? '历史整股组合研究 · V2' : '历史单股组合研究 · TOP1';
     $('currentPortfolioResearchCashNote').textContent = isV2
       ? '全额参与配置；点击后生成当日报价建议，不会自动下单。'
       : 'TOP1 使用冻结月度排名中的单只股票，现金仅改变可买整股数量，不重新选股。';
@@ -5059,9 +5060,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   if(roaConfiguration!==null){
     if(roaConfiguration.active!==true||roaConfiguration.strategy_kind!=='ROA_DEFENSIVE_V1'||
        !roaConfiguration.strategy_epoch||!roaConfiguration.account_id)throw Error('ROA_CONFIGURATION_INVALID');
+    window.RealStrategyMonthlyCharts?.setActiveStrategy?.(roaConfiguration);
     window.RealStrategyDaily=window.StrategyRoaMount.mount($('strategyMonthlyTarget'),{
       request:roaRequest,readAccount:async()=> (await roaRequest('/api/strategy-account')).account,
-      expectedEpoch:roaConfiguration.strategy_epoch,eventId:()=>window.crypto.randomUUID(),
+      activeStrategy:roaConfiguration,expectedEpoch:roaConfiguration.strategy_epoch,eventId:()=>window.crypto.randomUUID(),
       pendingStore:window.StrategyRoaController.browserPendingStore(window.localStorage,
         'us-ratchet-roa-cash.'+roaConfiguration.account_id+'.'+roaConfiguration.strategy_epoch),
       onAccountChanged:account=>{

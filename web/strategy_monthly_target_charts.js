@@ -1,11 +1,11 @@
 (function(root){
 'use strict';
 function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.SelectedStockCharts.createSelectedStockCharts,latestDisplayEnabled=false}){
- let charts=null,targetId=null,generation=0,fills=[],account=null,holdingRevision=null,savedTarget=null,selectionKey=null;
+ let charts=null,targetId=null,generation=0,fills=[],account=null,holdingRevision=null,savedTarget=null,selectionKey=null,roaActive=false;
  function priceLabel(value){const parts=String(value??'').split('/'),number=Number(parts[0])/(parts.length===2?Number(parts[1]):1);return parts.length<=2&&Number.isFinite(number)&&number>0?number.toLocaleString('en-US',{maximumFractionDigits:8}):'待核验';}
  function unconfigured(){
   if(targetId||holdingRevision)return;
-  container.textContent='账户目标尚未配置，目标生成后展示对应 K 线。'+(fills.length?' 已录真实成交：'+fills.map(fill=>`${fill.ticker} ${fill.side==='BUY'?'买入':fill.side==='SELL'?'卖出':'方向待核验'} ${fill.quantity} 股 @ $${priceLabel(fill.price)} · ${fill.executed_at}`).join('；'):'');
+  container.textContent=(roaActive?'暂无已录持仓行情。':'账户目标尚未配置，目标生成后展示对应 K 线。')+(fills.length?' 已录真实成交：'+fills.map(fill=>`${fill.ticker} ${fill.side==='BUY'?'买入':fill.side==='SELL'?'卖出':'方向待核验'} ${fill.quantity} 股 @ $${priceLabel(fill.price)} · ${fill.executed_at}`).join('；'):'');
  }
  function clear(){generation++;charts?.destroy();charts=null;targetId=null;holdingRevision=null;selectionKey=null;container.replaceChildren();}
  function showHoldings(){
@@ -22,7 +22,7 @@ function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.Sele
    if(current!==generation||data.scope!=='RECORDED_HOLDING_HISTORY'||data.account_revision!==revision||data.security_id!==stock.security_id||data.ticker!==ticker)throw Error('HOLDING_CHART_CHANGED');
    return {...data,latest_display_fallback:latestDisplayEnabled};
   });
-  charts.setSelection({recorded_holding:true,label:latestDisplayEnabled?'已录真实持仓 · 展示行情 · 账户月度目标尚未配置':'已录真实持仓 · 历史 K 线（非今日报价） · 账户月度目标尚未配置',stocks:stocks.map(row=>({...row}))});
+  charts.setSelection({recorded_holding:true,label:roaActive?(latestDisplayEnabled?'已录真实持仓 · 展示行情':'已录真实持仓 · 历史 K 线（非今日报价）'):(latestDisplayEnabled?'已录真实持仓 · 展示行情 · 账户月度目标尚未配置':'已录真实持仓 · 历史 K 线（非今日报价） · 账户月度目标尚未配置'),stocks:stocks.map(row=>({...row}))});
   charts.setFills?.(fills);
  }
  async function latest(ticker,stock,interval,signal,revision,boundTarget,current,proposalId){
@@ -69,7 +69,7 @@ function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.Sele
   charts.setSelection({monthly_target:true,label:latestDisplayEnabled?'本月股票 · 展示行情 · 绿涨红跌':`本月目标 · 历史日线截至 ${target.historical_training_cutoff} · 非今日报价 · 绿涨红跌`,stocks:stocks.map(row=>({ticker:row.ticker,security_id:row.security_id,quantity:row.quantity,recorded_holding:row.recorded_holding===true}))});
   charts.setFills?.(fills);
  }
- return {setTarget,refresh(){if(!latestDisplayEnabled)return;if(savedTarget){const value=structuredClone(savedTarget);targetId=null;selectionKey=null;setTarget(value);}else{clear();showHoldings();}},setAccount(value){const changed=account?.revision!==value?.revision;account=value?structuredClone(value):null;fills=Array.isArray(account?.fills)?account.fills.map(fill=>({...fill})):[];if(!targetId&&changed){clear();showHoldings();}else if(changed&&savedTarget){setTarget(savedTarget);charts?.setFills?.(fills);}else charts?.setFills?.(fills);},setFills(value){fills=Array.isArray(value)?value.map(fill=>({...fill})):[];charts?.setFills?.(fills);unconfigured();},destroy(){fills=[];account=null;clear();}};
+ return {setActiveStrategy(value){roaActive=value?.active===true&&value.strategy_kind==='ROA_DEFENSIVE_V1'&&Boolean(value.strategy_epoch)&&Boolean(value.account_id);if(roaActive){savedTarget=null;clear();showHoldings();}else if(!targetId){clear();showHoldings();}},setTarget,refresh(){if(!latestDisplayEnabled)return;if(savedTarget){const value=structuredClone(savedTarget);targetId=null;selectionKey=null;setTarget(value);}else{clear();showHoldings();}},setAccount(value){const changed=account?.revision!==value?.revision;account=value?structuredClone(value):null;fills=Array.isArray(account?.fills)?account.fills.map(fill=>({...fill})):[];if(!targetId&&changed){clear();showHoldings();}else if(changed&&savedTarget){setTarget(savedTarget);charts?.setFills?.(fills);}else charts?.setFills?.(fills);},setFills(value){fills=Array.isArray(value)?value.map(fill=>({...fill})):[];charts?.setFills?.(fills);unconfigured();},destroy(){fills=[];account=null;clear();}};
 }
 const api={mount};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.StrategyMonthlyTargetCharts=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

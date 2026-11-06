@@ -11,9 +11,12 @@ function cashText(value){
  return remainder?null:String(n/d)+(fraction?'.'+fraction:'');
 }
 function mount(container,dependencies){
- const {now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,onAccountChanged=()=>{},onChange=()=>{},...options}=dependencies;
+ const {now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,onAccountChanged=()=>{},onChange=()=>{},activeStrategy=null,...options}=dependencies;
  const doc=container.ownerDocument,element=(tag,text,cls)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
  const section=element('section',undefined,'strategy-monthly-target'),title=element('h3','今日买卖建议');
+ if(activeStrategy?.active===true&&activeStrategy.strategy_kind==='ROA_DEFENSIVE_V1'&&activeStrategy.strategy_epoch===options.expectedEpoch&&activeStrategy.account_id){
+  title.appendChild(element('span','ROA · 牛熊切换','active-strategy-label'));
+ }
  const cashPanel=element('div',undefined,'daily-cash-panel'),form=element('form',undefined,'monthly-cash-form');
  const label=element('label','当前可用现金 USD'),input=element('input');
  input.name='amount';input.inputMode='decimal';input.autocomplete='off';input.required=true;
