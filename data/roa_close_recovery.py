@@ -78,8 +78,19 @@ def recover_closes(*, checkpoint, current_lifecycle, account, sessions, calendar
             require(all(e['session']>=day for e in checkpoint['events']),'RECOVERY_CHECKPOINT_TOO_LATE')
         shares=holdings_at(account,times['close_at'])
         require(set(shares)<=set(item['prices']),'RECOVERY_CLOSE_PRICES_MISSING')
+        # Recover a completed, previously triggered stop even if downtime
+        # prevented creation of its CLOSE envelope. This records no plan/fill.
+        prior=lifecycle.read();completed_stops=[]
+        off=any(e['phase']=='OPEN' and e['session']==day and e['risk_on'] is False for e in prior['events'])
+        if previous is not None and not off:
+            scheduled=set().union(*(set(e.get('pending',[])) for e in prior['events'] if e['phase']=='CLOSE' and e['session']==day))
+            completed_stops=sorted(s for s in prior.get('pending',[]) if s not in scheduled and shares.get(s,0)==0)
+            if completed_stops:
+                prior['stopped']=sorted(set(prior.get('stopped',[]))|set(completed_stops))
+                lifecycle._save(prior)
         lifecycle.close_observation(session=day,shares=shares,closing_prices=item['prices'])
-        observations.append(dict(session=day,shares=shares,price_digest=digest(item['prices'])))
+        observations.append(dict(session=day,shares=shares,price_digest=digest(item['prices']),
+            recovered_completed_stops=completed_stops,prior_stop_observed_session=previous if completed_stops else None))
         previous=day
     require(previous>=(current_lifecycle.get('last_close') or previous),'RECOVERY_CANNOT_ROLL_BACK')
     return dict(status='RECOVERY_PROPOSAL_NOT_APPLIED',account_revision=account['revision'],

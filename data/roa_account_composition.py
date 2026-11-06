@@ -16,7 +16,7 @@ from data.roa_strategy_service import RoaStrategyService
 from data.roa_daily_signal import RoaDailySignalProvider,load_completed_close_prices
 from data.roa_quote_provider import RoaQuoteProvider
 from data.roa_session_reader import RoaSessionReader
-from data.roa_close_recovery import TrustedCloseRecovery
+from data.roa_close_recovery import TrustedCloseRecovery,holdings_at
 from data.roa_limit_policy import cent_last_price_limit
 
 
@@ -51,9 +51,20 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
     def quote_provider(state,sids,session,phase,now):
         validate_sources();quotes.identities=identities()
         return quotes(state,sids,session,phase,now)
+    def require_stop_history():
+        state=lifecycle.read();last=state.get('last_close');pending=set(state.get('pending',[]))
+        if not last or not pending:return
+        next_session=next((d for d in calendar.sessions() if d>last),None)
+        require(next_session is not None,'WAIT_CLOSE_HISTORY_RECONCILIATION')
+        if clock()<datetime.fromisoformat(calendar(next_session)['close_at']):return
+        covered=set().union(*(set(e.get('pending',[])) for e in state['events'] if e['phase']=='CLOSE' and e['session']==next_session))
+        historical=holdings_at(account.store.read(),calendar(next_session)['close_at'])
+        remaining={sid for sid in pending if historical.get(sid,0)>0}
+        require(remaining<=covered,'WAIT_CLOSE_HISTORY_RECONCILIATION')
     class Guarded(RoaStrategyService):
         def snapshot(self):
-            validate_sources();result=super().snapshot();validate_sources();return result
+            with self.lock:
+                validate_sources();require_stop_history();result=super().snapshot();validate_sources();return result
         def save_cash(self,body):
             validate_sources();return super().save_cash(body)
         def cash_status(self,body):
@@ -89,26 +100,37 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
         return result
     maintenance_status={}
     def maintain_completed_session():
-        """Only today's completed close; never reconstruct old holdings implicitly."""
+        """Catch up completed exchange sessions with journal-time holdings, not today's shares."""
         now=clock();day=now.astimezone(ZoneInfo('America/New_York')).date().isoformat()
         try:
-            if maintenance_status.get('status')=='COMPLETE' and maintenance_status.get('session')==day and account.store.read()['revision']==maintenance_status.get('account_revision'):return
-            previous=lifecycle.read().get('last_close')
+            validate_sources()
+            sessions=calendar.sessions()
+            latest=next((d for d in reversed(sessions) if d<=day and datetime.fromisoformat(calendar(d)['close_at'])<=now),None)
+            completed=[d for d in sessions if latest is not None and d<=latest]
+            if not completed:
+                maintenance_status.update(status='WAIT',session=day,reason='WAIT_COMPLETED_SESSION');return
+            latest=completed[-1]
+            state=lifecycle.read();previous=state.get('last_close')
             if previous:
                 with service.lock:recovered=observe_completed_session(previous)
                 maintenance_status.update(status='RECOVERED_PRIOR_CLOSE',session=previous,account_revision=recovered['account_revision'])
-            try:times=calendar(day)
-            except ValueError as error:
-                if str(error)=='SESSION_NOT_IN_CALENDAR':
-                    if not previous:maintenance_status.update(status='WAIT',session=day,reason='SESSION_NOT_IN_CALENDAR')
-                    return
-                raise
-            if now<datetime.fromisoformat(times['close_at']):return
-            validate_sources()
+                state=lifecycle.read()
+            starts=[e['session'] for e in state['events'] if e['phase']=='OPEN']
+            first=min(starts) if starts else None
+            missing=[d for d in completed if (previous is not None and d>previous) or (previous is None and first is not None and d>=first)]
+            if missing:
+                # Today's already-materialized OPEN is not a historical checkpoint.
+                require(not any(e.get('materialized_revision') and e['session']>missing[0] for e in state['events']), 'WAIT_CLOSE_HISTORY_RECONCILIATION')
+                for session in missing:
+                    with service.lock:
+                        require_stop_history()
+                        observed=observe_completed_session(session)
+                    maintenance_status.update(status='RECOVERED_PRIOR_CLOSE',session=session,account_revision=observed['account_revision'])
+            # QQQ market history also recovers when no OPEN plan has ever existed.
             market=signal.refresh_completed()
-            with service.lock:
-                observed=observe_completed_session(day)
-            maintenance_status.update(status='COMPLETE',session=day,account_revision=observed['account_revision'],market=market)
+            validate_sources()
+            maintenance_status.pop('reason',None)
+            maintenance_status.update(status='COMPLETE',session=latest,account_revision=account.store.read()['revision'],market=market,recovered_sessions=missing,close_scope='OBSERVED_LIFECYCLE_SESSIONS' if previous or first else 'NO_LIFECYCLE_OPEN')
         except Exception as error:
             maintenance_status.update(status='WAIT',session=day,reason=str(error))
             logging.getLogger(__name__).warning('ROA close maintenance deferred: %s',error)
