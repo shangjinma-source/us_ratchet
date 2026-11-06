@@ -4,7 +4,9 @@ Read-only unless --output writes a new private request; never adopts or restarts
 import argparse
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
+from uuid import uuid4
 from scripts.inspect_roa_monthly_preparation import inspect
 from scripts.run_local_roa_monthly_preparation import run as preview
 from scripts.research.finish_roa_monthly_windows import WindowsAdapter
@@ -102,20 +104,56 @@ def handoff(*, root, descriptor_path, descriptor_sha256, output_directory, execu
                    output_directory=output_directory+'/adoption-run',execute=execute)
 
 
+def follow(*, root, descriptor_path, descriptor_sha256, output_directory, execute=False):
+    """One bounded tick; advance the cursor only after verified task binding."""
+    root=Path(root).resolve();out=(root/output_directory).resolve()
+    if Path(output_directory).is_absolute() or not out.is_relative_to(root/'tmp') or out==root/'tmp':
+        raise ValueError('PRIVATE_OUTPUT_REQUIRED')
+    initial=dict(path=descriptor_path,sha256=descriptor_sha256)
+    cursor=out/'cursor.json';lock=out/'follow.lock';token=uuid4().hex
+    if execute:
+        out.mkdir(parents=True,exist_ok=True)
+        with lock.open('x') as stream:stream.write(token)
+    try:
+        state=json.loads(cursor.read_bytes()) if cursor.exists() else dict(initial=initial,current=initial)
+        if state['initial']!=initial:raise ValueError('FOLLOW_SCOPE_CHANGED')
+        current=state['current']
+        result=handoff(root=root,descriptor_path=current['path'],descriptor_sha256=current['sha256'],
+                       output_directory=output_directory+'/attempt-'+current['sha256'],execute=execute)
+        if execute and result.get('status')=='MONTH_RUNTIME_AND_NEXT_TASK_VERIFIED':
+            successor=result['next_month']['launcher']
+            candidate=(root/successor['path']).resolve()
+            if (Path(successor['path']).is_absolute() or not candidate.is_relative_to(root)
+                    or sha256(candidate.read_bytes()).hexdigest()!=successor['sha256'] or successor==current):
+                raise ValueError('VERIFIED_SUCCESSOR_DESCRIPTOR_REQUIRED')
+            staged=out/(token+'.cursor')
+            with staged.open('x',encoding='utf-8') as stream:
+                json.dump(dict(initial=initial,current=successor,previous=current),stream,sort_keys=True)
+                stream.flush();os.fsync(stream.fileno())
+            os.replace(staged,cursor)
+            result=dict(result,follow_cursor_advanced=True)
+        return result
+    finally:
+        if execute and lock.exists() and lock.read_text()==token:lock.unlink()
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for field in ('descriptor-path','descriptor-sha256'):parser.add_argument('--'+field,required=True)
     parser.add_argument('--output')
     parser.add_argument('--handoff-directory')
+    parser.add_argument('--follow',action='store_true',help='Advance to the next descriptor only after verified adoption')
     parser.add_argument('--execute',action='store_true')
     args=parser.parse_args();root=Path(__file__).resolve().parents[2]
     if args.handoff_directory:
         if args.output:parser.error('--output and --handoff-directory are mutually exclusive')
-        print(json.dumps(handoff(root=root,descriptor_path=args.descriptor_path,
+        operation=follow if args.follow else handoff
+        print(json.dumps(operation(root=root,descriptor_path=args.descriptor_path,
                                  descriptor_sha256=args.descriptor_sha256,
                                  output_directory=args.handoff_directory,execute=args.execute)))
         return
     if args.execute:parser.error('--execute requires --handoff-directory')
+    if args.follow:parser.error('--follow requires --handoff-directory')
     result=build(root=root,descriptor_path=args.descriptor_path,descriptor_sha256=args.descriptor_sha256)
     if args.output and 'request' in result:
         destination=(root/args.output).resolve()

@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from scripts.research.build_roa_monthly_adoption_request import handoff
+from scripts.research.build_roa_monthly_adoption_request import handoff, follow
 
 
 class HandoffTests(unittest.TestCase):
@@ -46,6 +46,27 @@ class HandoffTests(unittest.TestCase):
         out=self.root/'tmp/handoff';out.mkdir(parents=True)
         (out/'handoff-request.json').write_text(json.dumps({'scope':{},'request':{}}))
         with self.assertRaisesRegex(ValueError,'HANDOFF_SCOPE_CHANGED'):handoff(**self.args,execute=True)
+
+    def test_follow_wait_does_not_advance_or_leave_lock(self):
+        with patch('scripts.research.build_roa_monthly_adoption_request.handoff',return_value={'status':'WAIT_PREPARED_MONTH'}):
+            follow(**self.args,execute=True)
+        self.assertFalse((self.root/'tmp/handoff/cursor.json').exists())
+        self.assertFalse((self.root/'tmp/handoff/follow.lock').exists())
+
+    def test_follow_uses_next_descriptor_only_after_verified_success(self):
+        raw=b'{"next":true}';(self.root/'next.json').write_bytes(raw)
+        successor=dict(path='next.json',sha256=sha256(raw).hexdigest())
+        result=dict(status='MONTH_RUNTIME_AND_NEXT_TASK_VERIFIED',next_month={'launcher':successor})
+        with patch('scripts.research.build_roa_monthly_adoption_request.handoff',side_effect=[result,{'status':'WAIT_PREPARED_MONTH'}]) as call:
+            self.assertTrue(follow(**self.args,execute=True)['follow_cursor_advanced'])
+            follow(**self.args,execute=True)
+            self.assertEqual(call.call_args.kwargs['descriptor_path'],'next.json')
+
+    def test_follow_partial_runtime_keeps_original_descriptor(self):
+        with patch('scripts.research.build_roa_monthly_adoption_request.handoff',return_value={'status':'WAIT_RUNTIME_RECONCILIATION_NO_REPEAT_RESTART'}) as call:
+            follow(**self.args,execute=True);follow(**self.args,execute=True)
+            self.assertEqual(call.call_args.kwargs['descriptor_path'],'launcher.json')
+        self.assertFalse((self.root/'tmp/handoff/cursor.json').exists())
 
 
 if __name__=='__main__':unittest.main()
