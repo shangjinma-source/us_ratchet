@@ -71,3 +71,9 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 请求包含后继计划输入；日历是否覆盖下一月仍由正式draft验证器核实，返回中明确successor_calendar_fully_validated=false。若未来日历不足，应先补可信日历，不可在生产猜测日期。
 
 2026-11-07当前runtime_v6真实只读调用返回12月CONFIGURATION_VALID_NO_COMPLETION，未创建请求。6项隔离输入测试覆盖正常生成、尚未完成、错误状态区分、服务旧版本、月份冲突及采集内容改变。尚未接入无人值守采用触发，不能宣称已自动执行真实新月。
+
+## 跨年日历实际核查（2026-11-07）
+
+生产日历目前截至2026-12-31，不能据此自动生成完整2027执行日历。重新采集NYSE官方https://www.nyse.com/trade/hours-calendars，核对现存2027-01-04至10-15投影的198个交易日及夏令时开收盘均一致；按NYSE公告一月首个交易日为1月4日。核查脚本`scripts/review_roa_2027_calendar.py`和本地tmp/calendar_2027_review_20261107/review.json可复核。
+
+检查到Nasdaq官方holiday-schedule页面及holidayandtradinghours PDF仍为2026。现存2027投影是规划材料，不在本轮升级为Nasdaq已确认生产日历；实际报告eligible_for_production_adoption=false。下一月草案若缺可信边界仍明确拒绝，不跳月、不猜测。未来正式日历或适用交易所规则依据补齐后再统一更新calendar、training calendar及固定来源，不只改一个日期文件。没有更改账户/生产策略/任务。
