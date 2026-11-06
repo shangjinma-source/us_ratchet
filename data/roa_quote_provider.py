@@ -5,6 +5,7 @@ from decimal import Decimal
 from hashlib import sha256
 import json
 from threading import Lock
+from time import sleep
 
 from data.current_research_intraday_execution import fetch_intraday_chart, decode_intraday_reference
 
@@ -25,12 +26,13 @@ class RoaQuoteProvider:
     an opening price is an observed reference, not a promised opening fill.
     """
     def __init__(self, *, identity_map, session_reader, limit_builder,
-                 fetch=fetch_intraday_chart, clock=lambda: datetime.now(timezone.utc)):
+                 fetch=fetch_intraday_chart, clock=lambda: datetime.now(timezone.utc), wait=sleep):
         self.identities = dict(identity_map)
         self.session_reader = session_reader
         self.limit_builder = limit_builder
         self.fetch = fetch
         self.clock = clock
+        self.wait = wait
         self.cache = {}
         self.lock = Lock()
 
@@ -61,6 +63,23 @@ class RoaQuoteProvider:
                     captures = dict(executor.map(capture, sids))
             except Exception as error:
                 raise ValueError('WAIT_FRESH_QUOTE') from error
+            # Some feeds round timestamps ahead by a second. Wait for real time;
+            # never accept a future quote or change the clock/freshness threshold.
+            observed = stamp(self.clock())
+            future = []
+            for raw, _ in captures.values():
+                value = json.loads(raw)['chart']['result'][0]['meta']['regularMarketTime']
+                if isinstance(value, bool):
+                    raise ValueError('WAIT_FRESH_QUOTE')
+                value = Decimal(str(value))
+                if not value.is_finite():
+                    raise ValueError('WAIT_FRESH_QUOTE')
+                future.append(float(value) - observed.timestamp())
+            delay = max([0.0, *future])
+            if delay > 3:
+                raise ValueError('WAIT_FRESH_QUOTE')
+            if delay > 0:
+                self.wait(delay + 0.01)
             delivered = stamp(self.clock())
             if delivered < now or not opening <= delivered < closing:
                 raise ValueError('WAIT_FRESH_QUOTE')
