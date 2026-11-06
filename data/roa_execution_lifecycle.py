@@ -126,8 +126,12 @@ class RoaExecutionLifecycle:
         if not events:return dict(status='WAIT_SIGNAL',phase=None,event=None,executable=False)
         current=events[-1]
         # OPEN takes precedence until its window ends when both phases exist.
-        for event in reversed(events):
-            if event['session']==current['session'] and event['phase']=='OPEN' and timestamp(now)<timestamp(event['valid_until']):current=event;break
+        latest_open=next((event for event in reversed(events)
+            if event['session']==current['session'] and event['phase']=='OPEN'),None)
+        # A newer plan supersedes an older envelope even after its own expiry.
+        # Preserve all materialized/history records; never revive an older window.
+        if latest_open is not None and timestamp(now)<timestamp(latest_open['valid_until']):
+            current=latest_open
         if timestamp(now)<timestamp(current['valid_from']):status='PENDING_'+current['phase']
         elif timestamp(now)>=timestamp(current['valid_until']):status='MISSED'
         else:status='WINDOW_OPEN'
