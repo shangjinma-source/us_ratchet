@@ -1,0 +1,9 @@
+# 现金提交到候选建议的隔离编排
+
+`CashAdviceCoordinator` 复用正式 StrategyAccountService.append，仅允许 CASH_CONFIRM；成功后调用可信builder重建与provider校验。不接受客户端权重，不更改正式router或生产策略。
+
+新增候选service测试 `test_cash_advice_coordinator_20261106.py`，真实临时SQLite/正式accountservice/真实builder/provider通过：保存1000后建议买10；同event重复提交不重记账；更新3000成功而quote_provider失败时返回cash_saved=true/advice_ready=false及实际读回revision，不返回旧建议；仅retry_advice即可恢复买30，账本不再追加。现金保存因旧revision失败时不调用报价/重建。测试通过，不是用户真实成交验收。
+
+正式accountservice可能已提交但投影失败（WriteOutcomeUncertain），候选只读账本按event_id与完整payload核对；无法确认时cash_saved=null并要求核对，绝不擅自重复写入。该异常恢复分支已补测试：真实临时SQLite durable提交后响应异常，只append一次并核对成功继续建议；未持久化、同event不同payload、读失败和None均返回cash_saved=null且不重建、不重复append。总计3项测试通过（其中未知状态测试含4个子场景）。重复建议重试要求当前现金仍有效。
+
+此处为隔离候选service，未挂HTTP组合端点/生产现金按钮，无订单、真实账户或8010改动。进程并发/持久化编排恢复、获准经济内核、正式发布及前端绑定仍待接入，production_activated/executable仍为false。
