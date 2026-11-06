@@ -10,7 +10,7 @@ from core.strategy_account_difference import require
 def create_router(*, coordinator):
     router=APIRouter()
 
-    async def invoke(request, retry):
+    async def invoke(request, retry, status=False):
         dispatched=False
         try:
             require(not request.query_params,'UNSUPPORTED_PARAMETERS')
@@ -30,14 +30,15 @@ def create_router(*, coordinator):
                 require(type(body['event']) is dict and set(body['event'])=={'event_id','kind','amount','cash_basis'},'CASH_EVENT_FIELDS')
                 require(body['event']['kind']=='CASH_CONFIRM','CASH_CONFIRM_REQUIRED')
             dispatched=True
-            result=await run_in_threadpool(coordinator.retry_advice if retry else coordinator.save_cash, *([] if retry else [body]))
+            operation=coordinator.cash_status if status else coordinator.retry_advice if retry else coordinator.save_cash
+            result=await run_in_threadpool(operation, *([] if retry else [body]))
             return JSONResponse(result,status_code=503 if result['cash_saved'] is None else 200,headers={'Cache-Control':'no-store'})
         except Exception as error:
             # Once dispatched, this router cannot infer durability from the
             # exception class. Conservatively request reconciliation.
-            uncertain=dispatched and not retry
+            uncertain=dispatched and not retry and not status
             reason=str(error) if isinstance(error,ValueError) and re.fullmatch('[A-Z][A-Z0-9_]{0,99}',str(error)) else 'REQUEST_REJECTED'
-            return JSONResponse(dict(cash_saved=None if uncertain or retry else False,advice_ready=False,
+            return JSONResponse(dict(cash_saved=None if uncertain or retry or status else False,advice_ready=False,
                 reason='CASH_WRITE_REQUIRES_RECONCILIATION' if uncertain else reason,orders_created=False),
                 status_code=503 if uncertain else 409 if reason=='STALE_REVISION' else 422,headers={'Cache-Control':'no-store'})
 
@@ -46,5 +47,8 @@ def create_router(*, coordinator):
 
     @router.post('/api/research-candidate/advice-retry')
     async def retry(request:Request):return await invoke(request,True)
+
+    @router.post('/api/research-candidate/cash-status')
+    async def status(request:Request):return await invoke(request,False,True)
 
     return router

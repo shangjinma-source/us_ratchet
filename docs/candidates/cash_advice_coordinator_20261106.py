@@ -47,6 +47,19 @@ class CashAdviceCoordinator:
         require(state is not None and state['cash_confirmation_valid'], 'CASH_RECONFIRMATION_REQUIRED')
         return self._advice(cash_saved=True)
 
+    def cash_status(self, body):
+        """Read-only reconciliation; absence does not prove an in-flight failure."""
+        require(type(body) is dict and set(body) == {'expected_revision','event'}, 'BODY_FIELDS')
+        event = body['event']
+        require(type(event) is dict and event.get('kind') == 'CASH_CONFIRM', 'CASH_CONFIRM_REQUIRED')
+        state = self.account_service.store.read()
+        require(state is not None, 'ACCOUNT_NOT_INITIALIZED')
+        matches = [row['payload'] for row in state['events'] if row['payload']['event_id'] == event.get('event_id')]
+        require(not matches or matches == [event], 'CASH_EVENT_CONFLICT')
+        return dict(cash_saved=True if matches else None,advice_ready=False,
+                    reason='CASH_RECORDED' if matches else 'CASH_NOT_YET_OBSERVED',
+                    account_revision=state['revision'],orders_created=False)
+
     def _advice(self, *, cash_saved):
         state = self.account_service.store.read()
         require(state is not None, 'ACCOUNT_NOT_INITIALIZED')

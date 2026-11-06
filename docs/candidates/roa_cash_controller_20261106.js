@@ -1,0 +1,63 @@
+(function(root){
+'use strict';
+// Candidate only: the production mount must explicitly select this contract.
+function createController({request,readAccount,eventId,pendingStore,expectedEpoch,onChange=()=>{}}){
+ if(typeof expectedEpoch!=='string'||!expectedEpoch)throw Error('STRATEGY_EPOCH_REQUIRED');
+ let pending=pendingStore.read(),generation=0;
+ const state={busy:false,account:null,advice:null,cashSaved:pending?null:false,error:null};
+ const snapshot=()=>structuredClone({...state,pending});
+ const emit=()=>onChange(snapshot());
+ function keep(value){pendingStore.write(structuredClone(value));pending=structuredClone(value);}
+ function clear(){pendingStore.clear();pending=null;}
+ async function call(name,body){
+  try{return await request('/api/research-candidate/'+name,body);}
+  catch(error){if(error.responseBody)return error.responseBody;throw error;}
+ }
+ function accept(result,token){
+  if(result.cash_saved===true){state.cashSaved=true;clear();}
+  else if(result.cash_saved===false){state.cashSaved=false;clear();}
+  else if(pending)state.cashSaved=null;
+  if(token!==generation)throw Error('ACCOUNT_CHANGED_REFRESH_REQUIRED');
+  if(result.advice_ready!==true){state.error=result.reason||'ADVICE_REFRESH_REQUIRED';return;}
+  const a=result.account,d=result.advice;
+  if(!a||!d||a.revision!==result.account_revision||d.account_revision!==a.revision||
+     !/^[a-f0-9]{64}$/.test(d.target_id)||!/^[a-f0-9]{64}$/.test(d.proposal_id)||
+     d.strategy_epoch!==expectedEpoch)throw Error('ADVICE_SNAPSHOT_MISMATCH');
+  state.account=structuredClone(a);state.advice=structuredClone(d);state.error=null;
+ }
+ async function run(operation){
+  if(state.busy)return snapshot();
+  state.busy=true;state.advice=null;state.error=null;const token=generation;emit();
+  try{await operation(token);}
+  catch(error){state.error=error.message;state.advice=null;if(pending)state.cashSaved=null;}
+  finally{state.busy=false;emit();}
+  return snapshot();
+ }
+ return {
+  getState:snapshot,
+  accountInvalidated(){generation++;state.advice=null;emit();},
+  save:amount=>run(async token=>{
+   if(pending)throw Error('CASH_RECONCILIATION_REQUIRED');
+   if(typeof amount!=='string'||!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(amount))throw Error('CASH_AMOUNT_REQUIRED');
+   const account=await readAccount();
+   if(token!==generation)throw Error('ACCOUNT_CHANGED_REFRESH_REQUIRED');
+   if(!account||typeof account.revision!=='string')throw Error('ACCOUNT_REQUIRED');
+   keep({expected_revision:account.revision,event:{event_id:eventId(),kind:'CASH_CONFIRM',amount,cash_basis:'AVAILABLE_AFTER_RESERVATIONS'}});
+   accept(await call('cash-save-and-preview',pending),token);
+  }),
+  refresh:()=>run(async token=>{
+   if(pending){
+    const result=await call('cash-status',pending);
+    // Not observed can still be an in-flight write. Never resend it here.
+    if(result.cash_saved!==true)throw Error(result.reason||'CASH_RECONCILIATION_REQUIRED');
+    clear();state.cashSaved=true;
+   }
+   if(token!==generation)throw Error('ACCOUNT_CHANGED_REFRESH_REQUIRED');
+   accept(await call('advice-retry',{}),token);
+  })
+ };
+}
+const api={createController};
+if(typeof module!=='undefined'&&module.exports)module.exports=api;
+root.RoaCashController=api;
+})(typeof window!=='undefined'?window:globalThis);

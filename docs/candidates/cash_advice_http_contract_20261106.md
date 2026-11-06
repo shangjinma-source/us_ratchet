@@ -4,6 +4,7 @@
 
 - POST `/api/research-candidate/cash-save-and-preview`：仅 expected_revision、event；event仅event_id/kind/amount/cash_basis，kind须CASH_CONFIRM；正式accountservice继续验证值。
 - POST `/api/research-candidate/advice-retry`：仅空对象，绝不写现金。
+- POST `/api/research-candidate/cash-status`：与保存相同的原始body，只读查原event_id及完整payload。找到返回cash_saved=true；未观察到仍返回null，不能据此宣称请求未落账；同ID异payload拒绝。此端点不生成建议、不写账户。
 - 两端禁止query、重复JSON字段、非有限JSON常量及超过8192字节。无weights/policy入口。
 - 成功返回cash_saved/advice_ready/account_revision及嵌套advice中的已验证target_id/proposal_id；现金已保存但建议失败返回200和明确false，不返回旧建议；保存未知返回503/cash_saved=null。派发后未处理异常保守按保存未知，不依据异常类型断言未保存。
 - 成功响应同时包含正式accountservice投影的account，与advice/account_revision一致。投影后重读账户，期间真实写入会使本次建议失效，不返回混合快照。隔离HTTP测试实际注入并发现金写入550并确认落账，同时验证旧建议未返回。
@@ -17,6 +18,12 @@
 因此不能把组合响应原样替换saveCash：当前要求updated.revision，候选返回account_revision且没有账户投影；当前月目标展示/binding仍要求target_month等frontier字段，候选权重目标不是该schema。最小正式改动应在daily controller增加显式组合依赖及分支：保留account controller写前失效/写后读回投影，按cash_saved三态更新界面，advice失败只调用retry；成功采纳经过验证的同revision账户/目标/建议快照，不再额外生成旧月目标。HTTP依赖层选择专属新策略组合，不改变既有V27路径。
 
 当前候选缺生产可采纳的完整前端target快照和经济准入。不能通过把研究false改true或伪造旧monthly字段强行复用页面。没有新页面、没有修改正式前端或已pin路由。
+
+## 显式候选前端控制器
+
+`roa_cash_controller_20261106.js` 提供save/refresh/accountInvalidated/getState；生产仍未挂载。集成方须注入账户隔离的持久pendingStore、expectedEpoch及请求/账户读取依赖。保存前保留完整原event，未知写入时拒绝新保存；刷新只读cash-status，确认原记录后仅advice-retry。账户失效通知使在途旧建议不能采纳，同步核对账户revision与策略epoch。不将候选response伪装成旧frontier目标。
+
+Node场景验证实际请求顺序：网络中断→新金额保存被阻止→未观察到原记录继续等待→原记录确认→只重试建议；另验证在途账户失效及错误策略epoch不会显示建议。仍需正式mount、当前目标展示、执行时段与页面验收，不能将控制器测试称作已上线。
 
 ## 固定整股候选组合验证
 
