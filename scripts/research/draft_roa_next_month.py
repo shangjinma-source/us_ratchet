@@ -14,10 +14,11 @@ def draft(*,root,request,output_directory,python_path,clock=lambda:datetime.now(
   p=(root/name).resolve()
   if Path(name).is_absolute() or not p.is_relative_to(root) or p==root:raise ValueError('PATH_OUTSIDE_ROOT')
   return p
- def read(ref):
+ def verified_bytes(ref):
   raw=path(ref['path']).read_bytes()
   if sha256(raw).hexdigest()!=ref['sha256']:raise ValueError('INPUT_CHANGED:'+ref['path'])
-  checked[ref['path']]=ref['sha256'];return json.loads(raw)
+  checked[ref['path']]=ref['sha256'];return raw
+ def read(ref):return json.loads(verified_bytes(ref))
  active=read(request['active']);success=read(request['runtime_success'])
  adoption=read(request['adoption']);publication=read(request['publication']);seal=read(request['capture_receipt'])
  month=publication['month'];digest=request['active']['sha256']
@@ -32,7 +33,7 @@ def draft(*,root,request,output_directory,python_path,clock=lambda:datetime.now(
    raise ValueError('CAPTURE_NOT_BOUND_TO_ADOPTED_PUBLICATION')
   read(ref)
  training=read(request['training_calendar']);read(request['session_calendar'])
- for name,h in request['calendar_source_hashes'].items():read(dict(path=name,sha256=h))
+ for name,h in request['calendar_source_hashes'].items():verified_bytes(dict(path=name,sha256=h))
  out=path(output_directory)
  if out.exists():raise ValueError('OUTPUT_ALREADY_EXISTS')
  plan=build_next_plan(root=root,previous_manifest_path=manifest_ref['path'],previous_manifest_sha256=manifest_ref['sha256'],

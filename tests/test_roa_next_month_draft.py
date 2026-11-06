@@ -34,6 +34,18 @@ class DraftTests(unittest.TestCase):
  def test_no_overwrite(self):
   self.run_it()
   with self.assertRaisesRegex(ValueError,'ALREADY_EXISTS'):self.run_it()
+ def test_calendar_evidence_accepts_pinned_html_and_pdf(self):
+  for name,raw in [('exchange.html',b'<html>Holiday schedule</html>'),('exchange.pdf',b'%PDF-1.7\n\xff')]:
+   (self.root/name).write_bytes(raw)
+   self.request['calendar_source_hashes'][name]=sha256(raw).hexdigest()
+  result=self.run_it()
+  self.assertEqual(result['source_hashes']['exchange.html'],self.request['calendar_source_hashes']['exchange.html'])
+  self.assertIn('exchange.pdf',result['source_hashes'])
+ def test_changed_non_json_evidence_rejected_before_output(self):
+  (self.root/'exchange.html').write_bytes(b'changed')
+  self.request['calendar_source_hashes']['exchange.html']=sha256(b'original').hexdigest()
+  with self.assertRaisesRegex(ValueError,'INPUT_CHANGED:exchange.html'):self.run_it()
+  self.assertFalse((self.root/'next').exists())
  def test_no_calendar_no_output(self):
   self.build=lambda **kwargs: (_ for _ in ()).throw(ValueError('SUCCESSOR_NEXT_MONTH_BOUNDARY_UNAVAILABLE'))
   with self.assertRaisesRegex(ValueError,'BOUNDARY_UNAVAILABLE'):self.run_it()
