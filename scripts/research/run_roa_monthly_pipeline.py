@@ -29,7 +29,7 @@ def publish(**kwargs):
     return prepare_publication(**kwargs)
 
 
-def run(*,root,request,execute=False,clock=lambda:datetime.now(timezone.utc),fetch=None):
+def _run(*,root,request,execute=False,clock=lambda:datetime.now(timezone.utc),fetch=None):
     root=Path(root).resolve();stage="REQUEST"
     try:
         if set(request)!={"capture","active","package","coordination_directory","publication_directory"}:
@@ -73,6 +73,44 @@ def run(*,root,request,execute=False,clock=lambda:datetime.now(timezone.utc),fet
     except Exception as error:
         return dict(status="FAILED_NOT_ACTIVATED",stage=stage,error=str(error),activated=False,
                     automatic_retry=False,retained_outputs=True)
+
+
+def run(*,root,request,execute=False,clock=lambda:datetime.now(timezone.utc),fetch=None):
+    if not execute:
+        return _run(root=root,request=request,execute=False,clock=clock,fetch=fetch)
+    root=Path(root).resolve()
+    token=uuid4().hex
+    try:
+        # Serialize all ROA month preparation runs in this workspace, even if requests
+        # use different output directories but share the same capture plan.
+        bounded(root,request["capture"]["output_directory"])
+        lock=bounded(root,"tmp/roa_monthly_pipeline_execution.lock")
+        reports=bounded(root,request["coordination_directory"])/"pipeline-reports"
+        lock.parent.mkdir(parents=True,exist_ok=True)
+        try:
+            with lock.open("x",encoding="utf-8") as stream:
+                json.dump(dict(token=token,request_sha256=sha256(json.dumps(request,sort_keys=True).encode()).hexdigest(),
+                               started_at=clock().isoformat()),stream)
+        except FileExistsError:
+            return dict(status="BUSY_OR_NEEDS_LOCK_RECONCILIATION",stage="PIPELINE_LOCK",activated=False,
+                        automatic_retry=False,lock_path=lock.relative_to(root).as_posix())
+        try:
+            try:
+                result=_run(root=root,request=request,execute=True,clock=clock,fetch=fetch)
+            except Exception as error:
+                result=dict(status="FAILED_NOT_ACTIVATED",stage="UNEXPECTED_PIPELINE_ERROR",error=str(error),activated=False,automatic_retry=False)
+            reports.mkdir(parents=True,exist_ok=True)
+            path=reports/(token+".json")
+            result=dict(result,report_path=path.relative_to(root).as_posix(),finished_at=clock().isoformat())
+            with path.open("x",encoding="utf-8") as stream:json.dump(result,stream,indent=2,sort_keys=True)
+            return result
+        finally:
+            # Never remove a replacement or pre-existing lock belonging to another run.
+            if lock.is_file() and json.loads(lock.read_bytes()).get("token")==token:
+                lock.unlink()
+    except Exception as error:
+        return dict(status="FAILED_NOT_ACTIVATED",stage="PIPELINE_LOCK_OR_REPORT",error=str(error),
+                    activated=False,automatic_retry=False)
 
 
 def exit_code(result):

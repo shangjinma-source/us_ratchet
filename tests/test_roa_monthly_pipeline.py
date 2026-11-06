@@ -1,4 +1,5 @@
 import json
+from threading import Thread, Event
 import tempfile
 import unittest
 from pathlib import Path
@@ -51,6 +52,36 @@ class PipelineTests(unittest.TestCase):
             with patch.object(module,"run_capture") as cap:
                 result=module.run(root=root,request=request,execute=True)
                 self.assertEqual(result["stage"],"REQUEST");cap.assert_not_called()
+
+    def test_exclusive_run_failure_release_and_abandoned_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            request=dict(capture={"output_directory":"prepared"},coordination_directory="coord")
+            entered=Event();release=Event();results=[]
+            def blocked(**kwargs):
+                entered.set();release.wait(3)
+                return dict(status="FAILED_NOT_ACTIVATED",stage="CAPTURE_AND_TRAINING",error="fake transport error")
+            with patch.object(module,"_run",side_effect=blocked) as inner:
+                thread=Thread(target=lambda:results.append(module.run(root=root,request=request,execute=True)))
+                thread.start();self.assertTrue(entered.wait(2))
+                second=module.run(root=root,request=request,execute=True)
+                self.assertEqual(second["status"],"BUSY_OR_NEEDS_LOCK_RECONCILIATION")
+                self.assertEqual(inner.call_count,1)
+                release.set();thread.join(3);self.assertFalse(thread.is_alive())
+            lock=root/"tmp/roa_monthly_pipeline_execution.lock"
+            self.assertFalse(lock.exists())
+            report=json.loads((root/results[0]["report_path"]).read_bytes())
+            self.assertEqual(report["stage"],"CAPTURE_AND_TRAINING")
+            lock.write_text('{"token":"previous-run"}')
+            with patch.object(module,"_run") as inner:
+                result=module.run(root=root,request=request,execute=True)
+                self.assertEqual(result["status"],"BUSY_OR_NEEDS_LOCK_RECONCILIATION")
+                inner.assert_not_called()
+            self.assertEqual(json.loads(lock.read_bytes())["token"],"previous-run")
+            lock.unlink()
+            with patch.object(module,"_run",side_effect=RuntimeError("unexpected")):
+                self.assertEqual(module.run(root=root,request=request,execute=True)["status"],"FAILED_NOT_ACTIVATED")
+            self.assertFalse(lock.exists())
 
 
 if __name__=="__main__":unittest.main()
