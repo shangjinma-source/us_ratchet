@@ -7,6 +7,10 @@ const errors={STALE_REVISION:'记录已变化，请刷新账户后重新核对�
 function issue(code){const e=Error(code);e.code=code;if(code==='RECONCILE_REQUIRED'){e.reconcile_before_retry=true;e.write_may_have_occurred=true;}return e;}
 errors.ACCOUNT_REQUEST_TIMEOUT='账户读取超时，请重新刷新账户。';
 errors.RECONCILE_REQUIRED='这笔操作可能已经保存。请先刷新账户核对记录，勿重复录入。';
+errors.ORDER_ALREADY_EXISTS='该券商订单编号已记录，请核对未结订单，勿重复录入。';
+function rational(value){const text=String(value);if(/^\d+\/\d+$/.test(text)){const [n,d]=text.split('/').map(BigInt);if(d>0n)return [n,d];}if(/^\d+(?:\.\d+)?$/.test(text)){const [a,b='']=text.split('.');return [BigInt(a+b),10n**BigInt(b.length)];}throw Error('INVALID_AMOUNT');}
+function equalAmount(a,b){try{const [an,ad]=rational(a),[bn,bd]=rational(b);return an*bd===bn*ad;}catch(_){return false;}}
+function equalReserve(order,intent){try{if(order.side==='SELL')return equalAmount(order.reserved_cash,'0');const [pn,pd]=rational(intent.limit_price),[fn,fd]=rational(intent.fee_per_share);return equalAmount(order.reserved_cash,String((pn*fd+fn*pd)*BigInt(order.remaining_quantity))+'/'+String(pd*fd));}catch(_){return false;}}
 function amount(value){let text=String(value).trim();if(/^[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?$/.test(text))text=text.replace(/,/g,'');if(!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text))throw issue('请输入非负金额。');return text;}
 function shares(value){const n=Number(value);if(!Number.isSafeInteger(n)||n<=0)throw issue('请输入正整数股数。');return n;}
 function beijingTime(value){
@@ -56,12 +60,13 @@ function render(model){
  const choices=[...new Set([...(model.recommendedTickers||[]),...a.holdings.map(h=>h.ticker)])];
  const defaultTicker=choices[0]||'';
  html+='<section class="account-trades"><h4>成交记录</h4>';
- if(model.pendingFill)html+='<p>上次成交尚未确认，暂不接受新的录入。</p><button type="button" data-action="recover-fill" '+disabled+'>继续核对并保存上次成交</button>';
- else html+='<form data-form="fill"><label>股票 <input name="ticker" list="strategy-fill-tickers" value="'+esc(defaultTicker)+'" placeholder="输入股票代码" required autocomplete="off"><datalist id="strategy-fill-tickers">'+choices.map(ticker=>'<option value="'+esc(ticker)+'">'+((model.recommendedTickers||[]).includes(ticker)?'今日推荐':'已有持仓')+'</option>').join('')+'</datalist></label> <label>方向 <select name="side"><option value="BUY">买入</option><option value="SELL">卖出</option></select></label> <label>股数 <input name="quantity" type="number" min="1" step="1" required></label> <label>成交价 USD <input name="price" inputmode="decimal" required></label> <label>成交时间（北京时间）<input name="executed_at" type="datetime-local" step="1" required></label> <button '+disabled+'>保存真实成交</button></form>';
+ if(model.pendingFill)html+='<p>上次操作尚未确认，暂不接受新的录入。</p><button type="button" data-action="recover-fill" '+disabled+'>继续核对上次操作</button>';
+ else html+='<form data-form="fill"><label>股票 <input name="ticker" list="strategy-fill-tickers" value="'+esc(defaultTicker)+'" placeholder="输入股票代码" required autocomplete="off"><datalist id="strategy-fill-tickers">'+choices.map(ticker=>'<option value="'+esc(ticker)+'">'+((model.recommendedTickers||[]).includes(ticker)?'今日推荐':'已有持仓')+'</option>').join('')+'</datalist></label> <label>方向 <select name="side"><option value="BUY">买入</option><option value="SELL">卖出</option></select></label> <label>关联委托 <select name="order_id"><option value="">无委托 / 唯一同向委托自动关联</option>'+a.orders.map(o=>'<option value="'+esc(o.order_id)+'">'+esc(o.order_id)+' · '+esc(o.ticker)+' · '+(o.side==='BUY'?'买入':'卖出')+' · 剩余 '+esc(o.remaining_quantity)+' 股</option>').join('')+'</select></label> <label>股数 <input name="quantity" type="number" min="1" step="1" required></label> <label>成交价 USD <input name="price" inputmode="decimal" required></label> <label>成交时间（北京时间）<input name="executed_at" type="datetime-local" step="1" required></label> <button '+disabled+'>保存真实成交</button></form>';
  if(a.fills?.length){html+='<details><summary>已录真实成交 · '+esc(a.fills.length)+' 笔</summary><table><thead><tr><th>成交时间（北京时间）</th><th>股票</th><th>方向</th><th>股数</th><th>成交价 USD</th></tr></thead><tbody>';for(const f of [...a.fills].reverse())html+='<tr><td>'+esc(displayTime(f.executed_at))+'</td><td>'+esc(f.ticker)+'</td><td>'+(f.side==='BUY'?'买入':'卖出')+'</td><td>'+esc(f.quantity)+'</td><td>'+esc(display(f.price))+'</td></tr>';html+='</tbody></table></details>';}
  html+='</section>';
 
- if(a.orders.length){html+='<details><summary>未结订单</summary>';for(const o of a.orders)html+='<p>'+esc(o.ticker)+' · '+(o.side==='BUY'?'买入':'卖出')+' '+esc(o.remaining_quantity)+' 股 <button type="button" data-action="cancel" data-order="'+esc(o.order_id)+'" '+disabled+'>已在券商撤单，记录撤销</button></p>';html+='</details>';}
+ html+='<details data-account-disclosure="broker-order"><summary>已在券商挂单，记录未成交委托</summary><p>仅记账，不向券商下单。若已部分成交，请先录成交，再记录剩余未成交股数。记录后请更新券商显示的可用现金。</p><form data-form="order"><label>券商订单编号 <input name="order_id" required autocomplete="off"></label><label>股票 <input name="ticker" list="strategy-fill-tickers" value="'+esc(defaultTicker)+'" required autocomplete="off"></label><label>方向 <select name="side"><option value="BUY">买入</option><option value="SELL">卖出</option></select></label><label>当前未成交股数 <input name="quantity" type="number" min="1" step="1" required></label><label>限价 USD <input name="limit_price" inputmode="decimal" required></label><label>每股费用预留 USD <input name="fee_per_share" value="0" inputmode="decimal" required></label><button '+disabled+'>记录已挂委托</button></form></details>';
+ if(a.orders.length){html+='<details data-account-disclosure="open-orders"><summary>未结订单</summary>';for(const o of a.orders)html+='<p>'+esc(o.ticker)+' · '+(o.side==='BUY'?'买入':'卖出')+' '+esc(o.remaining_quantity)+' 股 <button type="button" data-action="cancel" data-order="'+esc(o.order_id)+'" '+disabled+'>已在券商撤单，记录撤销</button></p>';html+='</details>';}
  return html+'</section>';
 }
 function browserPendingFillStore(storage,key){
@@ -100,7 +105,7 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
   let data;
   try{data=await response.json();}catch(error){throw issue(body!==undefined?'RECONCILE_REQUIRED':'服务返回异常，请刷新核对账户后再操作。');}
   if(body!==undefined&&(!data||typeof data!=='object'||response.status>=500))throw issue('RECONCILE_REQUIRED');
-  if(data.reconcile_before_retry===true||data.write_may_have_occurred===true)throw issue('RECONCILE_REQUIRED');if(!response.ok||data.status==='BLOCKED')throw issue(data.reason||'保存未确认，请刷新核对后再试。');return data;
+  if(data.reconcile_before_retry===true||data.write_may_have_occurred===true)throw issue('RECONCILE_REQUIRED');if(!response.ok||data.status==='BLOCKED'){const error=issue(data.reason||'保存未确认，请刷新核对后再试。');if(body!==undefined&&response.status>=400&&response.status<500)error.definitive_write_rejection=true;throw error;}return data;
   };
   try{return await Promise.race([operation(),deadline]);}
   finally{clearTimeout(timer);}
@@ -113,12 +118,14 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
    const saved=pendingFillStore?.read();if(saved){reconciliation=saved;retry={...saved};}
    const account=validate(await request(''));if(version!==generation)return;
    if(model.account?.revision!==account?.revision)invalidate();
-   const recorded=reconciliation&&account?.fills?.some(fill=>fill.fill_id===reconciliation.eventId);
+   const original=saved?JSON.parse(saved.key):null;
+   const intent=original?.fields;
+   const recorded=reconciliation&&(intent?.kind==='ORDER_OPEN'?account?.orders?.some(o=>o.order_id===intent.order_id&&o.ticker===intent.ticker&&o.side===intent.side&&o.quantity===intent.quantity&&equalAmount(o.limit_price,intent.limit_price)&&equalReserve(o,intent)):!['CANCEL','ORDER_OPEN'].includes(intent?.kind)&&account?.fills?.some(fill=>fill.fill_id===reconciliation.eventId));
    const pendingFill=!!saved&&!recorded&&account?.revision===JSON.parse(saved.key).expected;
-   // A missing fill on the original revision may still be in flight. Only a
-   // recorded fill or a changed CAS revision resolves this persisted request.
+   // Original revision may still have a write in flight. Exact recorded order/fill
+   // or changed CAS revision resolves it; cancellation is never inferred from absence.
    if(saved&&!pendingFill)pendingFillStore.clear(saved.eventId);
-   model={...model,loaded:true,account,busy:false,pendingFill,message:reconciliation?(recorded?'已核对：刚才的成交已经记录，请勿重复录入。':pendingFill?'上次成交结果仍待确认；请继续核对原记录，勿重新录入。':'账户已刷新，请核对刚才的记录后再操作。'):''};reconciliation=null;
+   model={...model,loaded:true,account,busy:false,pendingFill,message:reconciliation?(recorded?(intent?.kind==='ORDER_OPEN'?'已核对：刚才的记录已经保存，请勿重复录入。':'已核对：刚才的成交已经记录，请勿重复录入。'):pendingFill?'上次操作结果仍待确认；请继续核对原记录，勿重新录入。':'账户已刷新，请核对刚才的记录后再操作。'):''};reconciliation=null;
   }
   catch(e){if(version!==generation)return;invalidate();model={loaded:false,account:null,busy:false,message:errors[e.code]||e.message};}
   finally{if(version===generation){model.busy=false;emit();}}
@@ -131,12 +138,12 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
   if(saved&&saved.key!==key)throw issue('RECONCILE_REQUIRED');
   const eventId=saved?.eventId||(retry?.key===key?retry.eventId:makeId());retry={key,eventId};
   const body=path==='/initialize'?{event_id:eventId}:{expected_revision:expected,event:{event_id:eventId,...fields}};
-  const persistedFill=['DIRECT_FILL','FILL'].includes(fields.kind)&&pendingFillStore;
-  // Persist before sending: closing the page must not forget an uncertain fill.
+  const persistedFill=['DIRECT_FILL','FILL','ORDER_OPEN','CANCEL'].includes(fields.kind)&&pendingFillStore;
+  // Persist before sending; retries reuse the original event ID and CAS revision.
   if(persistedFill)pendingFillStore.write({eventId,key});
   const version=++generation;model.busy=true;model.message='';invalidate();emit();
-  try{const data=await request(path,body);if(version!==generation)return;let account;try{account=validate(data);if(!account)throw issue('账户保存结果缺失。');if(persistedFill)pendingFillStore.clear(eventId);}catch(_){throw issue('RECONCILE_REQUIRED');}model={loaded:true,account,busy:false,message:fields.kind?.includes('FILL')?'成交已记录。':'记录已保存，旧建议已撤下。'};retry=null;emit();await automaticValuation();return data;}
-  catch(e){if(version===generation){model.message=errors[e.code]||e.message;if(e.code==='RECONCILE_REQUIRED'){reconciliation={eventId};model.loaded=false;model.account=null;}else if(e.code==='STALE_REVISION'||e.code==='EVENT_ID_CONFLICT'){model.loaded=false;model.account=null;retry=null;}}throw e;}
+  try{const data=await request(path,body);if(version!==generation)return;let account;try{account=validate(data);if(!account)throw issue('账户保存结果缺失。');if(persistedFill)pendingFillStore.clear(eventId);}catch(_){throw issue('RECONCILE_REQUIRED');}model={loaded:true,account,busy:false,message:fields.kind?.includes('FILL')?'成交已记录。':fields.kind==='ORDER_OPEN'?'委托已记录。请在今日建议更新券商显示的可用现金，无需手动加回挂单占款。':'记录已保存，旧建议已撤下。'};retry=null;emit();await automaticValuation();return data;}
+  catch(e){if(version===generation){if(e.definitive_write_rejection&&persistedFill){pendingFillStore.clear(eventId);retry=null;}model.message=errors[e.code]||e.message;if(e.code==='RECONCILE_REQUIRED'){reconciliation={eventId};model.loaded=false;model.account=null;}else if(e.code==='STALE_REVISION'||e.code==='EVENT_ID_CONFLICT'){model.loaded=false;model.account=null;retry=null;}}throw e;}
   finally{if(version===generation){model.busy=false;emit();}}
  }
  const requireAccount=()=>{if(reconciliation||model.pendingFill)throw issue('RECONCILE_REQUIRED');if(!model.loaded||!model.account)throw issue('请先启用并读取新策略账户。');};
@@ -177,7 +184,7 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
    if(!model.loaded||!model.account)throw issue('RECONCILE_REQUIRED');
    const saved=pendingFillStore?.read();if(!saved)return;
    const original=JSON.parse(saved.key);
-   if(original.path!=='/events'||!['DIRECT_FILL','FILL'].includes(original.fields?.kind)||original.expected!==model.account.revision)throw issue('RECONCILE_REQUIRED');
+   if(original.path!=='/events'||!['DIRECT_FILL','FILL','ORDER_OPEN','CANCEL'].includes(original.fields?.kind)||original.expected!==model.account.revision)throw issue('RECONCILE_REQUIRED');
    return mutate(original.path,original.fields);
   },
   setRecommendedTickers:tickers=>{const next=[...new Set((Array.isArray(tickers)?tickers:[]).map(t=>String(t).trim().toUpperCase()).filter(t=>/^[A-Z0-9][A-Z0-9.-]{0,14}$/.test(t)))];if(JSON.stringify(next)===JSON.stringify(recommendedTickers))return;recommendedTickers=next;emit();},
@@ -187,7 +194,7 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
    requireAccount();const ticker=String(input.ticker).trim().toUpperCase(),side=input.side,order_id=String(input.order_id).trim();
    if(!order_id||!/^[A-Z0-9][A-Z0-9.-]{0,14}$/.test(ticker)||!['BUY','SELL'].includes(side))throw issue('请检查订单编号、股票和方向。');
    const limit_price=amount(input.limit_price);if(Number(limit_price)<=0)throw issue('限价必须大于零。');
-   return mutate('/events',{kind:'ORDER_OPEN',order_id,ticker,side,quantity:shares(input.quantity),limit_price,fee_per_share:amount(input.fee_per_share)});
+   return mutate('/events',{kind:'ORDER_OPEN',order_id,ticker,side,quantity:shares(input.quantity),limit_price,fee_per_share:amount(input.fee_per_share??'0')});
   },
   recordFill:input=>{
    requireAccount();const ticker=String(input.ticker).trim().toUpperCase(),side=input.side;if(!/^[A-Z0-9][A-Z0-9.-]{0,14}$/.test(ticker)||!['BUY','SELL'].includes(side))throw issue('请检查股票与买卖方向。');
@@ -203,15 +210,21 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
  };
 }
 function mount({container,initialValuation=true,...options}){
- let lastClearedSuccess=null;
+ let lastClearedSuccess=null;const retainedDrafts=new Map(),retainedDisclosures=new Map();
  const controller=createController({...options,onRender:(html,state)=>{
-  const drafts=Array.from(container.querySelectorAll('form[data-form]')).map(form=>({kind:form.dataset.form,fields:Object.fromEntries(new FormData(form))}));
+  for(const form of container.querySelectorAll('form[data-form]'))retainedDrafts.set(form.dataset.form,Object.fromEntries(new FormData(form)));
+  const drafts=[...retainedDrafts].map(([kind,fields])=>({kind,fields}));
+  for(const n of container.querySelectorAll('details[data-account-disclosure]'))if(n.dataset.accountDisclosure)retainedDisclosures.set(n.dataset.accountDisclosure,n.open);
+  const disclosureStates=[...retainedDisclosures];
   container.innerHTML=html;
-  const success=!state.busy&&['成交已记录。','记录已保存，'].some(prefix=>state.message.startsWith(prefix));
+  for(const [key,open] of disclosureStates){const n=container.querySelector('details[data-account-disclosure="'+key+'"]');if(n)n.open=open;}
+  const success=!state.busy&&['成交已记录。','记录已保存，','委托已记录。'].some(prefix=>state.message.startsWith(prefix));
   const successKey=success?JSON.stringify([state.account?.revision,state.message]):null;
   const clearOnce=success&&successKey!==lastClearedSuccess;if(clearOnce)lastClearedSuccess=successKey;
-  if(!clearOnce){
-   for(const draft of drafts){const form=container.querySelector(`form[data-form="${draft.kind}"]`);if(form)for(const [name,value] of Object.entries(draft.fields)){const input=form.elements.namedItem(name);if(input&&!(draft.kind==='fill'&&name==='ticker'&&!value))input.value=value;}}
+  const clearedForm=clearOnce?(state.message.startsWith('成交已记录。')?'fill':state.message.startsWith('委托已记录。')?'order':null):null;
+  if(clearedForm)retainedDrafts.delete(clearedForm);
+  {
+   for(const draft of drafts){if(draft.kind===clearedForm)continue;const form=container.querySelector(`form[data-form="${draft.kind}"]`);if(form)for(const [name,value] of Object.entries(draft.fields)){const input=form.elements.namedItem(name);if(input&&!(draft.kind==='fill'&&name==='ticker'&&!value))input.value=value;}}
   }
   options.onRender?.(html,state);
  }});
