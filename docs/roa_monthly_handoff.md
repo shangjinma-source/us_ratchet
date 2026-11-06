@@ -31,7 +31,7 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 
 ## 下一轮草案与失败恢复入口
 
-- `scripts.research.draft_roa_next_month`读取正式采用、运行验收、活动版本、采集封印及可信日历引用，复用既有下一月生成器写出request/launcher草案，不安装任务。隔离测试覆盖成功、已有目录、缺日历、活动版本变化、未正式采用；既有生成器和descriptor构造使用替身，未声称实际2027月包可用。
+- `scripts.research.draft_roa_next_month`读取正式采用、运行验收、活动版本、采集封印及可信日历引用，复用既有下一月生成器写出request/launcher草案，不安装任务。隔离测试覆盖成功、已有目录、缺日历、活动版本变化、未正式采用。另已通过真实下一月生成器及capture-plan验证器的衔接测试：合成的11月完成证据生成12月计划，决策日11月30日、训练窗口253日，未到收盘仍不可采集；该项仅launcher来源发现使用替身。未声称真实2027月包或任务安装可用。
 - `scripts.prepare_roa_monthly_retry`默认只读预览。显式`--prepare`也只生成新目录内的capture plan/request/launcher，不执行采集、不改任务。必须提供当前descriptor、其blocked.json的精确SHA及复核原因，保留旧失败及半成品；存在锁、旧active改变、完成记录或路径重叠时拒绝。真实失败原因仍须先处理，不能靠新尝试绕过数据或来源校验。
 
 以上新增工具尚未接入常驻自动采用流程；当前线上任务仍仅准备月包。所有实际注册、启动和首个新月执行验收均须保留独立证据。

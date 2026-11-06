@@ -45,4 +45,39 @@ class DraftTests(unittest.TestCase):
   self.request['runtime_success']=self.save('bad.json',dict(status='DRY_RUN'))
   with self.assertRaisesRegex(ValueError,'COMPLETED_ADOPTION'):self.run_it()
 
+ def test_real_successor_builder_preserves_training_and_month_boundary(self):
+  from test_build_monthly_successor_plan import fixture
+  from scripts.build_monthly_successor_plan import prepare
+  with TemporaryDirectory() as directory:
+   root,args,schedule,_,save=fixture(directory)
+   def reference(name,value):
+    return dict(path=name,sha256=save(name,value))
+   active=reference('active.json',{})
+   adoption=reference('adoption.json',dict(status='ACTIVE_POINTER_SWITCHED_RESTART_VALIDATION_REQUIRED',active_sha256=active['sha256']))
+   manifest=dict(path=args['previous_manifest_path'],sha256=args['previous_manifest_sha256'])
+   completion=dict(path=args['previous_completion_path'],sha256=args['previous_completion_sha256'])
+   hashes={ref['path']:ref['sha256'] for ref in (manifest,completion)}
+   prior=json.loads((root/manifest['path']).read_bytes())
+   days=sorted(set(prior['training_dates'])|set(schedule['calendar']))
+   request=dict(active=active,adoption=adoption,manifest=manifest,completion=completion,
+    runtime_success=reference('runtime-success.json',dict(status='MONTH_RUNTIME_VERIFIED',scope=dict(month='2026-11',active_sha256=active['sha256'],adoption_sha256=adoption['sha256']),account_and_ledger_unchanged=True)),
+    publication=reference('publication.json',dict(status='VALIDATED_MONTH_REGISTRATION_NOT_ACTIVATED',month='2026-11',next_active={'sha256':active['sha256']},source_hashes=hashes)),
+    capture_receipt=reference('capture-receipt.json',dict(output_hashes=hashes)),
+    training_calendar=reference('training-calendar.json',dict(sessions=[dict(date=day) for day in days])),
+    session_calendar=dict(path=args['calendar_path'],sha256=args['calendar_source_hashes'][args['calendar_path']]),
+    calendar_path=args['calendar_path'],calendar_source_hashes=args['calendar_source_hashes'])
+   # Only launcher source discovery is substituted: calendar lineage, boundary,
+   # capture plan generation and validation below use their real implementations.
+   with patch('scripts.research.draft_roa_next_month.make_descriptor',return_value={'schema':'ISOLATED_LAUNCHER_NOT_INSTALLED'}):
+    result=draft(root=root,request=request,output_directory='next-month',python_path='unused',clock=args['clock'])
+   self.assertEqual(result['target_month'],'2026-12')
+   name='next-month/capture_plan.json'
+   plan,checked=prepare(name,sha256((root/name).read_bytes()).hexdigest(),root=root,clock=args['clock'])
+   self.assertEqual(plan['session'],'2026-11-30')
+   boundary=json.loads((root/'next-month/boundary.json').read_bytes())
+   self.assertEqual(len(boundary['training_dates']),253)
+   self.assertFalse(checked['ready_after_close'])
+   self.assertFalse(result['capture_executed'])
+   self.assertFalse(result['task_changed'])
+
 if __name__=='__main__':unittest.main()
