@@ -1,0 +1,13 @@
+# ROA 整股账户执行合同（隔离初版）
+
+新文件 roa_daily_account_20261106.py，不修改旧已pin引擎或生产。输入统一session_dates、精确SID名义OHLC、逐日signals（decision_date/weights/risk_on）、已审actions/dividend_events及gate回调；每股<=10%，最多10只，初始现金明确，无分数股/杠杆。跨2023保持同一次run账户状态。
+
+昨日收盘已知market和月末排序，下一OPEN调整；20%从持仓峰值触发后pending在下一CLOSE执行，但market OFF与月目标减仓有OPEN优先权；仍入选pending目标为min(目标,现持股)，不得加仓。次月清除已停出禁买并重置持仓峰值，pending仍保留，不能加仓。月末same-close诊断执行改为next-open，差异不是新alpha。整股数量按当次open可交易权益与执行价构造，先实际卖出后买入，现金严格不负；确定性SID序买单，现金不足不假成交。
+
+真实现金每次成交扣减5bp不利价格滑点，佣金0为用户允许研究假设，不是完整汇丰税费。分红复用historical_dividend_ledger_research，ex日前持仓确权，支付日收盘到账，未到账计权益不买入；现金合并复用Settlement。split/split_identity按事件迁数量和价格参考，identity_alias仅1:1重命名，不产生交易费用；所有行动仍须gate及具体证据。
+
+入场前以实际可负担整数quantity逐笔调用gate；日开始先核旧持仓暴露。未审行动、缺报价或gate拒绝返回BLOCKED及已完成ledger，不宣称完整回测。callback仍需由正式研究runner接现有exposure gate，不能用合成gate直接跑真实资料。
+
+5项合成测试通过：次OPEN9整股且现金准确扣5bp；OFF优先OPEN清pending仓；月目标先OPEN减少、余量次CLOSE止损；拆股后OFF再ON仅用新SID且数量仅转换一次；分红权益先记账、支付收盘现金增加，以及拆股同日股息单位未经审查时明确BLOCKED。尚未运行真实数据，cash-stock merger/分拆权益需额外原引擎适配，未知暴露先阻断；不能照搬价格诊断的ALXN估值代理冒充可交易持股。此初版待独审，未赋予生产可执行权限。
+
+冻结名单每日按已生效精确SID行动链映射，不按ticker匹配；现金合并后旧目标后续亦移除。拆股与股息同日因基准单位未提供，当前先拒绝，不能无条件按旧数量计股息。
