@@ -1,6 +1,7 @@
 """Candidate addon to existing ROA cash route. No alternate cash endpoint."""
 from contextlib import contextmanager, closing
-from datetime import datetime
+from datetime import datetime, timedelta
+from threading import Lock
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -19,6 +20,7 @@ class FlowAddon:
     def __init__(self, *, roa_service, root, configuration, clock):
         if set(configuration)!={'schema','baseline','ledger','sidecar_path'} or configuration['schema']!='ROA_FLOW_CLASSIFICATION_CONFIG_V1':raise ValueError('FLOW_CONFIG_FIELDS')
         self.roa=roa_service;self.account=roa_service.account_service;self.root=Path(root).resolve();self.config=configuration;self.clock=clock
+        self.profit_lock=Lock()
         self.store=ClassificationService(path=self.local(configuration['sidecar_path']),account_id=self.account.account_id,
             read_accounts=lambda:(self.baseline()[1],self.account.store.read()),account_operation=self.operation,
             receipt_resolver=self.receipt,performance_baseline_at=datetime.fromisoformat(self.baseline()[0]['effective_at']),clock=clock)
@@ -64,7 +66,7 @@ class FlowAddon:
         if any(t>received for t in times):raise ValueError('FLOW_AFTER_CASH_CONFIRMATION')
         if any(t<datetime.fromisoformat(baseline['effective_at']) for t in times):raise ValueError('PRE_BASELINE_FACT_RECONCILIATION_REQUIRED')
         return result
-    def current(self):
+    def current(self, *, include_profit=False):
         with self.operation():
             baseline,old=self.baseline();current=self.account.store.read();documents=self.records()
             audit=audit_cash_changes(baseline=old,current=current);state=old;revisions={}
@@ -84,14 +86,24 @@ class FlowAddon:
                     except ValueError as error:blocked=str(error);row['classification_state']='REPAIR_REQUIRED'
                 elif row['unexplained_net_change']!='0':unresolved.append(row)
         # No account/ROA lock held during network valuation.
-        profit=None;reason=blocked
+        profit=None;reason=blocked;valid_until=None
         if not unresolved and blocked is None:
-            try:profit=amount_profit(baseline=baseline,baseline_account=old,current_account=current,valuation=self.account.valuation(),classifications=documents,now=self.clock())
+            try:
+                if not include_profit:reason='VALUATION_PENDING'
+                else:
+                    valuation=self.account.valuation()
+                    profit=amount_profit(baseline=baseline,baseline_account=old,current_account=current,valuation=valuation,classifications=documents,now=self.clock())
+                    times=[datetime.fromisoformat(valuation['valued_at'])]+[datetime.fromisoformat(r['observed_at'].replace('Z','+00:00')) for r in valuation['holdings']]
+                    valid_until=(min(times)+timedelta(seconds=120)).isoformat()
             except ValueError as error:reason=str(error)
         elif unresolved:reason='UNCLASSIFIED_CASH_CHANGE'
         with self.operation():
             if self.account.store.read()!=current or self.records()!=documents or self.baseline()!=[baseline,old]:raise ValueError('STALE_PERFORMANCE_SNAPSHOT')
-        return dict(account_id=current['account_id'],revision=current['revision'],unresolved=unresolved,classified=classified,profit=profit,performance_reason=reason,return_fraction=None,maximum_drawdown_fraction=None,account_mutated=False)
+        return dict(classifications_sha256=sha256(json.dumps(documents,sort_keys=True,separators=(',',':')).encode()).hexdigest(),profit_valid_until=valid_until,account_id=current['account_id'],revision=current['revision'],unresolved=unresolved,classified=classified,profit=profit,performance_reason=reason,return_fraction=None,maximum_drawdown_fraction=None,account_mutated=False)
+    def profit_current(self):
+        if not self.profit_lock.acquire(blocking=False):raise ValueError('VALUATION_ALREADY_RUNNING')
+        try:return self.current(include_profit=True)
+        finally:self.profit_lock.release()
     def save(self,body):
         if set(body) not in ({'expected_revision','document'},{'expected_revision','document','expected_document_sha256'}):raise ValueError('BODY_FIELDS')
         result=self.store.save(**body)
@@ -110,6 +122,10 @@ def attach_flow(*, prepared, root, configuration, clock, validate_sources):
     async def current(request:Request):
         if request.query_params:return JSONResponse({'reason':'UNSUPPORTED_PARAMETERS'},status_code=422)
         return await invoke(addon.current)
+    @router.get('/api/strategy-account/cash-classification/profit')
+    async def profit(request:Request):
+        if request.query_params:return JSONResponse({'reason':'UNSUPPORTED_PARAMETERS'},status_code=422)
+        return await invoke(addon.profit_current)
     @router.post('/api/strategy-account/cash-classification')
     async def save(request:Request):
         raw=await request.body()

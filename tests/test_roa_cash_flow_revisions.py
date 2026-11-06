@@ -40,7 +40,7 @@ class ActualRoaTests(unittest.TestCase):
                 saved=account.store.read();result=client.get('/api/strategy-account/cash-classification').json();row=result['unresolved'][0]
                 doc=dict(schema='CASH_CHANGE_CLASSIFICATION_V1',account_id='test',cash_event_id='new',before_revision=row['before_revision'],after_revision=row['after_revision'],net_change='60',items=[dict(item_id='d',kind='DEPOSIT',amount='50',effective_at='2026-11-06T10:01:00Z'),dict(item_id='i',kind='INCOME',amount='10',effective_at='2026-11-06T10:01:00Z')])
                 for _ in range(2):self.assertEqual(client.post('/api/strategy-account/cash-classification',json=dict(expected_revision=saved['revision'],document=doc)).status_code,200)
-                self.assertEqual(client.get('/api/strategy-account/cash-classification').json()['profit']['profit_amount'],'10');self.assertEqual(account.store.read(),saved)
+                self.assertEqual(client.get('/api/strategy-account/cash-classification/profit').json()['profit']['profit_amount'],'10');self.assertEqual(account.store.read(),saved)
                 import copy
                 original_account=account.store.read();original_db=sha256(account.store.path.read_bytes()).hexdigest()
                 original_hash=client.get('/api/strategy-account/cash-classification').json()['classified'][0]['document_sha256']
@@ -63,7 +63,7 @@ class ActualRoaTests(unittest.TestCase):
                 for _ in range(2):self.assertEqual(post(corrected,original_hash).status_code,200)
                 self.assertEqual(len(history()),2)
                 self.assertEqual(json.loads(history()[0][0]),doc);self.assertEqual(json.loads(history()[1][0]),corrected)
-                current=client.get('/api/strategy-account/cash-classification').json()
+                current=client.get('/api/strategy-account/cash-classification/profit').json()
                 self.assertEqual(current['profit']['profit_amount'],'0');self.assertEqual(current['profit']['net_external_flow'],'60')
                 # Deliberate unrecorded-trade flag blocks performance but remains visible and repairable.
                 blocked=copy.deepcopy(corrected);blocked['items'][0]['kind']='UNRECORDED_TRADE'
@@ -72,7 +72,7 @@ class ActualRoaTests(unittest.TestCase):
                 self.assertIsNone(state['profit']);self.assertEqual(state['classified'][0]['classification_state'],'REPAIR_REQUIRED')
                 self.assertEqual(post(corrected,blocked_hash).status_code,200)
                 self.assertEqual(len(history()),4)
-                self.assertEqual(client.get('/api/strategy-account/cash-classification').json()['profit']['profit_amount'],'0')
+                self.assertEqual(client.get('/api/strategy-account/cash-classification/profit').json()['profit']['profit_amount'],'0')
                 self.assertEqual(account.store.read(),original_account)
                 self.assertEqual(sha256(account.store.path.read_bytes()).hexdigest(),original_db)
                 # A real later account revision invalidates a pending sidecar correction.
@@ -82,3 +82,4 @@ class ActualRoaTests(unittest.TestCase):
                 self.assertEqual(sha256(account.store.path.read_bytes()).hexdigest(),latest_db)
                 print('PASS: stale hash, retry idempotence, history, account revision, corrected profit, blocked repair, untouched account bytes')
 if __name__=='__main__':unittest.main()
+

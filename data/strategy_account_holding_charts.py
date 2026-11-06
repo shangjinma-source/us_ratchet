@@ -42,6 +42,7 @@ class StrategyAccountHoldingCharts:
         rows = [row for row in manifest['candidates'] if row.get('security_id') == security_id]
         require(len(rows) == 1 and rows[0]['ticker'] == ticker and rows[0]['status'] == 'READY_CONDITIONAL', 'CHART_IDENTITY_MISMATCH')
         source = rows[0]['training_source']; digest = manifest['source_hashes'].get(source)
+        training_source, training_digest, training_cutoff = source, digest, cutoff
         display = self.display_sources.get(security_id)
         if display is not None:
             require(type(display) is dict and set(display) == {'ticker','path','sha256','as_of','captured_at'},
@@ -61,6 +62,17 @@ class StrategyAccountHoldingCharts:
                     and metadata.get('fullExchangeName') in ('NasdaqGS','NasdaqGM','NasdaqCM'),
                     'CHART_DISPLAY_EXCHANGE_INVALID')
             require(channel['dates'][-1] == cutoff, 'CHART_DISPLAY_AS_OF_MISMATCH')
+            if cutoff < training_cutoff:
+                training = parse_provider_ohlc(self.reader._read(training_source, training_digest), ticker)
+                old_rows = dict(zip(channel['dates'], channel['values']))
+                new_rows = dict(zip(training['dates'], training['values']))
+                shared = sorted(set(old_rows) & set(new_rows))
+                require(bool(shared) and all(old_rows[d][:4] == new_rows[d][:4]
+                        and all(v is not None for v in old_rows[d][:4]) for d in shared),
+                        'CHART_SOURCE_COORDINATE_CONFLICT')
+                # Choose the complete approved training series; never splice dates.
+                source, digest, cutoff, channel, display = training_source, training_digest, training_cutoff, training, None
+
         daily, missing = [], []
         for session,values in zip(channel['dates'],channel['values']):
             if session > cutoff: continue
