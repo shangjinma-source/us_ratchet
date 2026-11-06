@@ -35,6 +35,8 @@ class CompositionTests(unittest.TestCase):
                 self.assertTrue(recovered['advice_ready'])
                 self.assertEqual(recovered['account']['revision'],recovered['account_revision'])
                 self.assertEqual(recovered['advice']['account_revision'],recovered['account_revision'])
+                self.assertEqual(recovered['advice']['quote_valid_until'],'2026-11-06T14:33:00+00:00')
+                self.assertEqual(recovered['advice']['execution_quotes']['A']['buy'],'100')
                 self.assertEqual(recovered['account']['available_cash'],'1000')
                 self.assertEqual(recovered['advice']['target_quantities'],{'A':9})
                 self.assertEqual(prepared['account_service'].store.read(),state)

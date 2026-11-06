@@ -25,6 +25,8 @@
 
 Node场景验证实际请求顺序：网络中断→新金额保存被阻止→未观察到原记录继续等待→原记录确认→只重试建议；另验证在途账户失效及错误策略epoch不会显示建议。仍需正式mount、当前目标展示、执行时段与页面验收，不能将控制器测试称作已上线。
 
+Provider现返回经原始冻结文档验证的execution_quotes、signal_at、valid_from/until及quote_valid_until（所有报价观察时刻+120秒与目标期限中的最早值）。候选控制器采纳响应与getState时均核对有效期；到期不返回可展示advice。正式mount还须接截止定时重绘、页面恢复重绘；不能仅凭控制器getState测试宣称现有生产页面会自动清除过期报价。
+
 ## 固定整股候选组合验证
 
 roa_account_composition_20261106.py已将正式账户事件router、候选现金编排router及绑定建议router组合到同一个隔离账户库；强制提供固定target_quantities，不接受普通刷新重新配权的默认模式。组合本身未注册到生产mount，不启动服务，不修改真实库。

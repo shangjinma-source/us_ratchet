@@ -1,5 +1,6 @@
 """Non-production, server-pinned target provider for the formal preview router."""
 from copy import deepcopy
+from datetime import timedelta
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -75,5 +76,14 @@ class FrozenTargetProvider:
             require(all(0 <= (timestamp(checked)-timestamp(q['observed_at'])).total_seconds() <= 120
                         for q in payload[kind].values()), 'QUOTE_EXPIRED')
         result.update(target_id=document['target_id'],proposal_id=document['proposal_id'],
-                      strategy_epoch=payload['strategy_epoch'])
+                      strategy_epoch=payload['strategy_epoch'],signal_at=payload['signal_at'],
+                      valid_from=payload['valid_from'],valid_until=payload['valid_until'])
+        # UI must expire the same authenticated quotes as the server. A valid
+        # target date is not permission to show an old intraday limit price.
+        deadlines=[timestamp(payload['valid_until'])]
+        for kind in ('marks','limits'):
+            deadlines.extend(timestamp(q['observed_at'])+timedelta(seconds=120)
+                             for q in payload[kind].values())
+        result['quote_valid_until']=min(deadlines).isoformat()
+        result['execution_quotes']=deepcopy(payload['limits'])
         return deepcopy(result)

@@ -1,11 +1,17 @@
 (function(root){
 'use strict';
 // Candidate only: the production mount must explicitly select this contract.
-function createController({request,readAccount,eventId,pendingStore,expectedEpoch,onChange=()=>{}}){
+function createController({request,readAccount,eventId,pendingStore,expectedEpoch,now=()=>Date.now(),onChange=()=>{}}){
  if(typeof expectedEpoch!=='string'||!expectedEpoch)throw Error('STRATEGY_EPOCH_REQUIRED');
  let pending=pendingStore.read(),generation=0;
  const state={busy:false,account:null,advice:null,cashSaved:pending?null:false,error:null};
- const snapshot=()=>structuredClone({...state,pending});
+ const snapshot=()=>{
+  const result=structuredClone({...state,pending});
+  if(result.advice&&!(now()>=Date.parse(result.advice.valid_from)&&now()<Math.min(Date.parse(result.advice.valid_until),Date.parse(result.advice.quote_valid_until)))){
+   result.advice=null;result.error='ADVICE_QUOTE_EXPIRED';
+  }
+  return result;
+ };
  const emit=()=>onChange(snapshot());
  function keep(value){pendingStore.write(structuredClone(value));pending=structuredClone(value);}
  function clear(){pendingStore.clear();pending=null;}
@@ -23,6 +29,7 @@ function createController({request,readAccount,eventId,pendingStore,expectedEpoc
   if(!a||!d||a.revision!==result.account_revision||d.account_revision!==a.revision||
      !/^[a-f0-9]{64}$/.test(d.target_id)||!/^[a-f0-9]{64}$/.test(d.proposal_id)||
      d.strategy_epoch!==expectedEpoch)throw Error('ADVICE_SNAPSHOT_MISMATCH');
+  if(!(now()>=Date.parse(d.valid_from)&&now()<Math.min(Date.parse(d.valid_until),Date.parse(d.quote_valid_until))))throw Error('ADVICE_QUOTE_EXPIRED');
   state.account=structuredClone(a);state.advice=structuredClone(d);state.error=null;
  }
  async function run(operation){
