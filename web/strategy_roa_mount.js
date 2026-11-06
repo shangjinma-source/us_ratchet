@@ -11,7 +11,7 @@ function cashText(value){
  return remainder?null:String(n/d)+(fraction?'.'+fraction:'');
 }
 function mount(container,dependencies){
- const {now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,onAccountChanged=()=>{},onChange=()=>{},activeStrategy=null,...options}=dependencies;
+ const {now=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,onAccountChanged=()=>{},onRecommendedTickers=()=>{},onChange=()=>{},activeStrategy=null,...options}=dependencies;
  const doc=container.ownerDocument,element=(tag,text,cls)=>{const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
  const section=element('section',undefined,'strategy-monthly-target'),title=element('h3','今日买卖建议');
  if(activeStrategy?.active===true&&activeStrategy.strategy_kind==='ROA_DEFENSIVE_V1'&&activeStrategy.strategy_epoch===options.expectedEpoch&&activeStrategy.account_id){
@@ -23,7 +23,8 @@ function mount(container,dependencies){
  label.appendChild(input);const save=element('button','更新现金并查看建议');save.type='submit';form.appendChild(label);form.appendChild(save);cashPanel.appendChild(form);
  const status=element('div',undefined,'daily-status'),summary=element('div',undefined,'monthly-table-scroll');
  for(const n of [title,cashPanel,status,summary])section.appendChild(n);container.replaceChildren(section);
- let flowRevision=null;
+ let flowRevision=null,lastRecommended='[]',queuedReload=null,lastReloadKey=null,reloadScheduled=false;
+ function flushAccountReload(){if(disposed||reloadScheduled||!queuedReload||!controller||controller.getState().busy)return;reloadScheduled=true;Promise.resolve().then(()=>{reloadScheduled=false;if(disposed||!queuedReload||controller.getState().busy)return;queuedReload=null;void controller.load();});}
  let controller,disposed=false,edited=false,locked=false,timer=null,lastAmount=null,lastRevision=null;
  const reasons={WAIT_CASH_CONFIRMATION:'成交后请填写券商最新可用现金，再更新建议',WAIT_ACCOUNT_RESERVATIONS:'挂单占用与现金不一致，请核对真实挂单及可用现金',PENDING_OPEN:'等待开盘后确认目标股数',PENDING_CLOSE:'等待收盘执行时段',MISSED:'已错过本次执行时段，等待策略下一次判断',WAIT_SIGNAL:'等待有效策略信号',WAIT_FRESH_QUOTE:'等待最新有效报价',READY:'',CASH_RECONCILIATION_REQUIRED:'现金保存结果待核对，请刷新核对，勿重复提交',CASH_NOT_YET_OBSERVED:'尚未确认现金保存结果，请刷新核对，勿重复提交',ADVICE_QUOTE_EXPIRED:'报价已过期，请刷新建议',ADVICE_REFRESH_REQUIRED:'建议暂未更新，请重试',ACCOUNT_CHANGED_REFRESH_REQUIRED:'账户已变化，请刷新建议'};
  Object.assign(reasons,{WAIT_EXECUTION_ADMISSION:'执行方式尚待确认，当前仅展示计划',CANCEL_THEN_RECALCULATE:'现有挂单与新目标冲突，请先核对挂单',WAIT_CASH:'可用现金不足，等待资金到账后更新',WAIT_CASH_NO_SELL_PROCEEDS_ASSUMED:'可用现金不足；卖出款实际到账后再更新',PENDING_RECONCILIATION_REQUIRED:'已有未完成挂单，请先核对成交或撤单状态',HOLD:'当前持仓已符合目标，无需买卖'});
@@ -33,6 +34,7 @@ function mount(container,dependencies){
   if(timer!==null){clearTimer(timer);timer=null;}
   save.disabled=input.disabled=state.busy||locked;save.textContent=state.busy?'正在更新建议…':'更新现金并查看建议';
   const account=state.account,advice=state.advice;
+  if(!state.busy){const tickers=!state.error&&advice?.advice_ready===true?[...new Set(advice.rows.map(r=>String(r.ticker||'').trim().toUpperCase()).filter(t=>/^[A-Z0-9][A-Z0-9.-]{0,14}$/.test(t)))].sort():[];const key=JSON.stringify(tickers);if(key!==lastRecommended){lastRecommended=key;onRecommendedTickers(tickers);}}
   if(!state.busy&&account?.revision&&flowRevision!==account.revision){flowRevision=account.revision;doc.defaultView?.dispatchEvent(new Event("strategy-account-updated"));}
   const balance=cashText(account?.available_cash);
   if(!edited&&account?.cash_confirmation_valid&&balance!==null)input.value=balance;
@@ -55,7 +57,7 @@ function mount(container,dependencies){
   }
   summary.replaceChildren(table);
   if(account&&account.revision!==lastRevision){lastRevision=account.revision;onAccountChanged(structuredClone(account));}
-  onChange(structuredClone(state));
+  onChange(structuredClone(state));flushAccountReload();
   if(advice?.executable===true){const expires=Math.min(Date.parse(advice.valid_until),Date.parse(advice.quote_valid_until));if(Number.isFinite(expires)&&expires>now())timer=setTimer(()=>draw(controller.getState()),Math.min(expires-now(),2147483647));}
  }
  controller=controllerApi.createController({...options,now,onChange:draw});
@@ -73,8 +75,9 @@ function mount(container,dependencies){
  doc.addEventListener?.('visibilitychange',resume);doc.defaultView?.addEventListener('focus',resume);
  draw(controller.getState());
  return {...controller,ready:controller.load(),whenIdle:()=>lastWork,
+  requestAccountReload(revision){if(disposed||!revision||revision===lastReloadKey)return;lastReloadKey=revision;queuedReload=revision;flushAccountReload();},
   elements:{form,input,save,cashPanel,summary},setCapitalBusy(value){locked=!!value;draw(controller.getState());},
-  dispose(){disposed=true;if(timer!==null)clearTimer(timer);form.removeEventListener('submit',submit);input.removeEventListener('input',edit);doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);controller.accountInvalidated();}};
+  dispose(){disposed=true;if(lastRecommended!=='[]'){lastRecommended='[]';onRecommendedTickers([]);}if(timer!==null)clearTimer(timer);form.removeEventListener('submit',submit);input.removeEventListener('input',edit);doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);controller.accountInvalidated();}};
 }
 const api={mount};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.StrategyRoaMount=api;
 })(typeof window!=='undefined'?window:globalThis);

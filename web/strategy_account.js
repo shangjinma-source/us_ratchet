@@ -203,14 +203,16 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
  };
 }
 function mount({container,initialValuation=true,...options}){
- let previousDefaultTicker='';
+ let lastClearedSuccess=null;
  const controller=createController({...options,onRender:(html,state)=>{
   const drafts=Array.from(container.querySelectorAll('form[data-form]')).map(form=>({kind:form.dataset.form,fields:Object.fromEntries(new FormData(form))}));
   container.innerHTML=html;
-  if(state.busy||!['成交已记录。','记录已保存，'].some(prefix=>state.message.startsWith(prefix))){
-   for(const draft of drafts){const form=container.querySelector(`form[data-form="${draft.kind}"]`);if(form)for(const [name,value] of Object.entries(draft.fields)){const input=form.elements.namedItem(name);if(input&&!(draft.kind==='fill'&&name==='ticker'&&(!value||value===previousDefaultTicker)))input.value=value;}}
+  const success=!state.busy&&['成交已记录。','记录已保存，'].some(prefix=>state.message.startsWith(prefix));
+  const successKey=success?JSON.stringify([state.account?.revision,state.message]):null;
+  const clearOnce=success&&successKey!==lastClearedSuccess;if(clearOnce)lastClearedSuccess=successKey;
+  if(!clearOnce){
+   for(const draft of drafts){const form=container.querySelector(`form[data-form="${draft.kind}"]`);if(form)for(const [name,value] of Object.entries(draft.fields)){const input=form.elements.namedItem(name);if(input&&!(draft.kind==='fill'&&name==='ticker'&&!value))input.value=value;}}
   }
-  previousDefaultTicker=state.recommendedTickers?.[0]||state.account?.holdings?.[0]?.ticker||'';
   options.onRender?.(html,state);
  }});
  const show=e=>{const status=container.querySelector('[role="status"]');if(status)status.textContent=errors[e.code]||e.message;else{const p=document.createElement('p');p.setAttribute('role','status');p.textContent=errors[e.code]||e.message;container.prepend(p);}};
