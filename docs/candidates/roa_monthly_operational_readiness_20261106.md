@@ -38,3 +38,15 @@
 - request变更或产物篡改拒绝；active并发变化不发布complete；输出仅PREPARED_REGISTRATION_NOT_ACTIVATED，不写账户、不改任务、不切生产。
 - `tests/test_roa_monthly_offline_coordinator.py` 7项通过：完整包/loader/注册链、WAIT/缺输入、锁、重入并发、失败保留重试、active变化（包括耗时产物hash期间变化）。复用已有临时历史月末fixture，仅选股返回值替身；没有为演练复制真实350MB输入，也不把fixture声称真实选股验收。
 - root已另核新版训练日期至12/31及真实10/30包dryrun通过。本协调器仍需外部真实资料采集manifest，调度和受控激活是下一层，不因本实现宣称自动换月已全通。
+
+## 受控发布前校验入口（未激活）
+
+新增 `scripts/research/prepare_roa_monthly_publication.py::prepare_publication(root,active,registration,output_directory)`；active和registration均必须path+SHA。它复核注册receipt、原始selection一致性、不可变运行包及所有既有月包，严格只允许`monthly_selections`追加一个月；经济contract/epoch/account、执行窗口、源pins及base链任何其他字段变化均拒绝。
+
+完整启动校验直接复用 `api/strategy_server_mount_v9` 使用的 `build_unified_server_preparation_v34`，对当前与拟发布配置分别构造并执行`validate_code()`，不启动lifespan、不发HTTP、不启动服务。通过后保存当前active原字节rollback、next_active及来源绑定报告；全过程复查active及已读源。报告仍是`VALIDATED_MONTH_REGISTRATION_NOT_ACTIVATED`，正式切换前必须重新CAS与验证来源，不能凭旧receipt跳过。
+
+`tests/test_roa_monthly_publication.py` 5项隔离通过：精确追加和两次gate调用、非月字段改变、额外月份、gate内active变化、正式gate失败。测试复用临时registration/loader真实实现；完整V34 builder在小fixture中为边界替身，因此不声称已完成某个真实新月的全链preflight。此轮没有复制巨大月包或触碰生产。
+
+发布校验补强：递归收集当前及提案的全部`base_*`配置与每层声明`source_pins`，拒绝循环/同路径异SHA，将此声明闭包纳入receipt，并在写出validated前再次调用两套正式`validate_code`和全部已收集SHA复核。测试现7项通过，含完整builder返回后写next_active期间源码被改，拒绝输出validated。receipt明确声明其source_hashes不是所有运行数据的全递归闭包；正式switch必须重新构造完整V34并validate，再做active CAS，不能只凭receipt哈希批准。
+
+副作用边界：不进入应用lifespan，不启动ROA60秒维护；ROA lifecycle/recovery构造器仅持有路径/锁，实际文件写发生在_save/_write；cash classification构造不调用显式initialize。未对全部历代base构造器证明“任何辅助文件都只读”，故结果filesystem_read_only=false，account_writes=false仅指本入口不append账本事件。没有执行真实生产构造器，本次仍是隔离fixture校验。
