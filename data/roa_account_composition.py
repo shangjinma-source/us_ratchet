@@ -17,6 +17,7 @@ from data.roa_daily_signal import RoaDailySignalProvider,load_completed_close_pr
 from data.roa_quote_provider import RoaQuoteProvider
 from data.roa_session_reader import RoaSessionReader
 from data.roa_close_recovery import TrustedCloseRecovery
+from data.roa_limit_policy import cent_last_price_limit
 
 
 def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
@@ -31,7 +32,7 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
         require(not any(p.is_symlink() for p in [path,*path.parents]),'ROA_STATE_SYMLINK');return path
     calendar=RoaSessionReader(root)
     signal=RoaDailySignalProvider(root=root,path=local(configuration['daily_signal_path']),
-        expected_contract_hashes=configuration['contract_hashes'],clock=clock,monthly_selections=configuration.get('monthly_selections'))
+        expected_contract_hashes=configuration['contract_hashes'],clock=clock,monthly_selections=configuration.get('monthly_selections'),base_input_root=configuration.get('base_input_root'))
     lifecycle=RoaExecutionLifecycle(path=local(configuration['lifecycle_path']),account_id=account.account_id,
         strategy_epoch=configuration['strategy_epoch'],contract_sha256=configuration['contract_sha256'])
     def identities():
@@ -44,8 +45,8 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
     # A missing execution admission may display plans but cannot fetch/execute orders.
     def limits(price,phase):
         require(configuration.get('execution_admission') is not None,'EXECUTION_ADMISSION_REQUIRED')
-        require(configuration['execution_admission']['limit_policy']=='LAST_PRICE_LIMIT','LIMIT_POLICY_NOT_APPROVED')
-        return dict(buy=str(price),sell=str(price))
+        require(configuration['execution_admission']['limit_policy']=='CENT_LAST_PRICE_LIMIT','LIMIT_POLICY_NOT_APPROVED')
+        return cent_last_price_limit(price,phase)
     quotes=RoaQuoteProvider(identity_map={},session_reader=calendar,limit_builder=limits,clock=clock)
     def quote_provider(state,sids,session,phase,now):
         validate_sources();quotes.identities=identities()

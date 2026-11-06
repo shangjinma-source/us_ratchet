@@ -10,6 +10,7 @@ SOURCES={
  'data/roa_account_composition.py','data/roa_execution_lifecycle.py','data/roa_strategy_service.py',
  'data/roa_cash_advice_coordinator.py','data/roa_target_account_bridge.py','data/roa_session_reader.py',
  'core/strategy_account_ledger.py','core/strategy_account_store.py','core/strategy_account_difference.py',
+ 'data/roa_limit_policy.py',
  'data/roa_close_recovery.py','data/roa_monthly_loader.py',
  'data/roa_current_signal.py','data/roa_daily_signal.py','data/roa_quote_provider.py','api/roa_strategy.py',
  'web/strategy_roa_controller.js','web/strategy_roa_mount.js','web/index.html'}

@@ -110,14 +110,16 @@ def states(prices):
 
 
 class RoaDailySignalProvider:
-    def __init__(self,*,root,path,expected_contract_hashes,clock=lambda:datetime.now(timezone.utc),fetch=fetch_daily_qqq,monthly_selections=None):
+    def __init__(self,*,root,path,expected_contract_hashes,clock=lambda:datetime.now(timezone.utc),fetch=fetch_daily_qqq,monthly_selections=None,base_input_root=None):
         self.root=Path(root).resolve();self.path=Path(path);self.contracts=expected_contract_hashes
+        self.base_root=(self.root/base_input_root).resolve() if base_input_root is not None else self.root
+        if not self.base_root.is_relative_to(self.root):raise ValueError('BASE_INPUT_ROOT_OUTSIDE_WORKSPACE')
         if not expected_contract_hashes:raise ValueError('APPROVED_CONTRACTS_REQUIRED')
         self.clock=clock;self.fetch=fetch;self.lock=RLock();self.calendar=RoaSessionReader(root)
         self.months=RoaMonthlySelectionLoader(root=self.root,registry=monthly_selections or {})
 
     def _base(self):
-        return load_current_signal(as_of_date='2026-11-06',root=self.root,expected_contract_hashes=self.contracts)
+        return load_current_signal(as_of_date='2026-11-06',root=self.base_root,expected_contract_hashes=self.contracts)
 
     def frozen_roster(self):
         """Verified identity lookup, independent of today's signal readiness.
@@ -140,7 +142,7 @@ class RoaDailySignalProvider:
         return [r['date'] for r in json.loads(raw)['sessions']]
 
     def _read(self):
-        raw=(self.root/SEED).read_bytes()
+        raw=(self.base_root/SEED).read_bytes()
         if sha256(raw).hexdigest()!=SEED_SHA:raise ValueError('QQQ_SEED_CHANGED')
         prices=daily_rows(raw)
         if max(prices)!='2026-11-05':raise ValueError('QQQ_SEED_DATE')
