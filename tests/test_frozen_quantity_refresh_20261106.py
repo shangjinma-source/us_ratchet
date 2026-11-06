@@ -10,6 +10,42 @@ from docs.candidates.frozen_target_provider_20261106 import digest
 
 
 class FrozenQuantityRefreshTests(unittest.TestCase):
+    def test_two_stock_cash_priority_reservation_and_partial_fill(self):
+        with TemporaryDirectory() as directory:
+            now=datetime.fromisoformat('2026-11-06T14:31:00+00:00')
+            store=StrategyAccountStore(Path(directory)/'test.sqlite',clock=lambda:now)
+            state=store.initialize('test',operation_id='init')
+            def event(payload):
+                nonlocal state
+                state,_=store.append(payload,expected_revision=state['revision'])
+            policy=dict(strategy_epoch='test',weights={'B':'1/10','A':'1/10'},
+                target_quantities={'B':5,'A':5},signal_at='2026-11-05T21:00:00Z',
+                valid_from='2026-11-06T14:30:00Z',valid_until='2026-11-06T21:00:00Z')
+            quotes=dict(marks={s:dict(security_id=s,currency='USD',price_basis='current',price='100',observed_at=now.isoformat()) for s in ('A','B')},
+                limits={s:dict(security_id=s,price_basis='current',buy='100',sell='100',observed_at=now.isoformat()) for s in ('A','B')})
+            builder=FrozenTargetBuilder(directory=Path(directory)/'targets',policy=policy,
+                contract_sha256=digest(policy),expected_epoch='test',account_id='test',
+                store=store,quote_provider=lambda _:quotes,clock=lambda:now)
+            def preview():
+                version=builder.rebuild()
+                return builder.preview(expected_revision=state['revision'],target_id=version['target_id'],expected_proposal_id=version['proposal_id'])['difference']
+            event(dict(event_id='cash',kind='CASH_CONFIRM',amount='550',cash_basis='TOTAL_UNINVESTED'))
+            result=preview()
+            self.assertEqual([(o['security_id'],o['quantity']) for o in result['new_orders']],[('A',5)])
+            self.assertEqual(result['unallocated_spendable_cash'],'50')
+            self.assertEqual([(o['security_id'],o['quantity']) for o in result['waiting_cash']],[('B',5)])
+            event(dict(event_id='partial',kind='DIRECT_FILL',security_id='A',side='BUY',quantity=2,price='100',fees='0',executed_at=now.isoformat()))
+            event(dict(event_id='reserve',kind='ORDER_OPEN',order_id='buy-a',security_id='A',side='BUY',quantity=1,limit_price='100',fee_per_share='0'))
+            event(dict(event_id='cash2',kind='CASH_CONFIRM',amount='350',cash_basis='TOTAL_UNINVESTED'))
+            result=preview()
+            # A has 2 filled + 1 pending: only 2 new shares. Reservation leaves
+            # 250 spendable; the remaining 50 cannot fund any B share.
+            self.assertEqual([(o['security_id'],o['quantity']) for o in result['new_orders']],[('A',2)])
+            self.assertEqual(result['spendable_cash'],'250')
+            self.assertEqual(result['unallocated_spendable_cash'],'50')
+            self.assertEqual(result['binding']['buy_allocation_policy'],'SORTED_SECURITY_ID_SEQUENTIAL')
+            self.assertEqual(store.read(),state)
+
     def test_defensive_target_requires_pending_buy_cancellation(self):
         # New-month defensive target must not reuse an old bullish proposal
         # or treat the broker's reserved cash as already released.

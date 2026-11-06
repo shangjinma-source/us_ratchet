@@ -3,8 +3,43 @@ Caller must authenticate signals, security identity, corporate actions and quote
 """
 from fractions import Fraction
 from copy import deepcopy
+from hashlib import sha256
+import json
 from core.strategy_account_difference import require, timestamp
 from data.strategy_account_preview import preview_scoped_account
+
+
+def sequential_cash_allocation(difference):
+    """ROA frozen-target allocation, using only already validated real cash."""
+    result=deepcopy(difference)
+    if result['status']=='CANCEL_THEN_RECALCULATE':return result
+    require(result['status'] in ('READY','WAIT_CASH'), 'DIFFERENCE_STATUS')
+    needs={}
+    for row in result['new_orders']:
+        if row['side']=='BUY':needs[row['security_id']]=row['quantity']
+    for row in result['waiting_cash']:
+        sid=row['security_id'];needs[sid]=needs.get(sid,0)+row['quantity']
+    orders=[row for row in result['new_orders'] if row['side']=='SELL']
+    cash=Fraction(result['spendable_cash']);allocated=Fraction(0);waiting=[]
+    rate=Fraction(result['binding']['fee_bps'])/10000
+    for sid,quantity in sorted(needs.items()):
+        price=Fraction(result['binding']['limits'][sid]['buy']);unit=price*(1+rate)
+        assigned=min(quantity,int((cash-allocated)//unit))
+        if assigned:
+            cost=assigned*unit;allocated+=cost
+            orders.append(dict(security_id=sid,side='BUY',quantity=assigned,
+                limit_price=str(price),estimated_cash_change=str(-cost)))
+        if assigned<quantity:
+            waiting.append(dict(security_id=sid,quantity=quantity-assigned,
+                reason='WAIT_CASH_NO_SELL_PROCEEDS_ASSUMED'))
+    result['binding']['buy_allocation_policy']='SORTED_SECURITY_ID_SEQUENTIAL'
+    result['binding_sha256']=sha256(json.dumps(result['binding'],sort_keys=True,
+        separators=(',',':'),ensure_ascii=True).encode()).hexdigest()
+    result.update(status='WAIT_CASH' if waiting else 'READY',new_orders=orders,
+        waiting_cash=waiting,new_buy_cash_required=str(allocated),
+        unallocated_spendable_cash=str(cash-allocated),buy_allocation_fraction=None,
+        buy_allocation_policy='SORTED_SECURITY_ID_SEQUENTIAL')
+    return result
 
 
 def preview_target_weights(*, account, expected_revision, weights, marks, limits,
@@ -34,6 +69,8 @@ def preview_target_weights(*, account, expected_revision, weights, marks, limits
     execution_domain |= {order['security_id'] for order in account['orders'].values() if order['status'] == 'OPEN'}
     difference = preview_scoped_account(state=account, legacy_shares={}, marks={sid: marks[sid] for sid in execution_domain},
         limits={sid: limits[sid] for sid in execution_domain}, target_quantities=targets, now=now, maximum_mark_age_seconds=120, fee_bps='0')
+    if frozen_quantities is not None:
+        difference=sequential_cash_allocation(difference)
     return dict(schema='TARGET_WEIGHT_ACCOUNT_BRIDGE_RESEARCH_V1', account_revision=expected_revision,
         strategy_contract_sha256=contract_hash, tradable_equity=str(equity), target_quantities=targets,
         difference=deepcopy(difference), production_activated=False, executable=False, orders_created=False,
