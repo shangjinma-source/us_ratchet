@@ -1,4 +1,12 @@
-# ROA 月末准备调度入口（未安装）
+# ROA 月末准备调度入口
+
+## 实际安装记录
+
+2026-11-06已安装独立 `UsRatchet-ROA-Monthly-Preparation`，每15分钟检查，当前任务Ready；原12项金融任务XML逐一对比完全不变。持久配置 `research_contracts/roa_monthly_scheduler_20261106_v1/launcher.json` SHA `2a57ddcb62ec93f126f72be68a64dcde23a120f4cef635ff45246748b2539250`，682源码pins、实际active绑定、模块预览及独立审核通过。
+
+新任务仅准备月包，成功后停在待受控采用，不自动改活动策略、不重启、不下单。当前月末未到，实际pipeline预检为WAIT、零HTTP和零正式门禁；任务注册成功本身不证明首次调度执行成功。运行证据仅保存在本地 `tmp/roa_scheduler_install_20261106`。仍有原始研究路径位于tmp，已有精确归档恢复，不得随意清理或声称已解除所有临时路径依赖。以下为安装前测试记录。
+
+首次定时执行已回读确认：Windows LastTaskResult=0，`outputs/roa_monthly_preparation_202612_v1` 落盘结果 `WAIT_COMPLETED_MONTH_END`、http_calls=0、formal_gate_calls=0、activated=false；活动配置SHA仍为 `a6dae610cad9c8b013a4bbac0445788463d2eeb760a9e7e22aee20b35d1d1e60`。这证明真实调度调用到准备入口，尚不证明未来月末采集或发布成功。
 
 - Python：`scripts/run_local_roa_monthly_preparation.py`，通过`python -X utf8 -E -B -m scripts.run_local_roa_monthly_preparation`运行；默认只preview，不导入/执行pipeline，不创建运行日志。
 - 安装器：`scripts/install_local_roa_monthly_preparation.ps1`，默认输出任务预览；只有显式`-Install`才创建独立`UsRatchet-ROA-Monthly-Preparation`。不覆盖旧任务；同名任务配置不一致拒绝。

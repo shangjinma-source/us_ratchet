@@ -1,0 +1,30 @@
+{
+  "capture": {
+    "plan": {
+      "path": "tmp/roa_fixed_domain_next_december_plan_20261106/capture_plan.json",
+      "sha256": "62b3953fb0c5b9b2ac6205b67f429d70cc1b72b17d88bb126a941bd9f79e22cc"
+    },
+    "training_calendar": {
+      "path": "tmp/roa_training_schedule_through_20261231_20261106.json",
+      "sha256": "2e53ff8299638db2b435320c7f3595c9344a6f58c638a20297843ea22ce2d4d9"
+    },
+    "output_directory": "tmp/roa_december_runner_prepared_20261106"
+  },
+  "active": {
+    "path": "config/strategy_server_active.json",
+    "sha256": "a6dae610cad9c8b013a4bbac0445788463d2eeb760a9e7e22aee20b35d1d1e60"
+  },
+  "package": {
+    "session_calendar": {
+      "path": "research_contracts/daily_calendar_2026_extension_v1/calendar.candidate.json",
+      "sha256": "1440d82ecc956baab15df4b49da444e4878459e353cf7c280dd5d3dcf2a109af"
+    },
+    "training_calendar": {
+      "path": "tmp/roa_training_schedule_through_20261231_20261106.json",
+      "sha256": "2e53ff8299638db2b435320c7f3595c9344a6f58c638a20297843ea22ce2d4d9"
+    },
+    "expected_month": "2026-12"
+  },
+  "coordination_directory": "data/strategy_archives/roa_december_coordination_2026_v1",
+  "publication_directory": "data/strategy_archives/roa_december_publication_2026_v1"
+}

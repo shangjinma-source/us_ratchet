@@ -215,3 +215,15 @@ scripts/research/prepare_momentum_execution_20261105.py -text
 scripts/research/run_momentum_account_20261105.py -text
 docs/candidates/momentum_full_account_execution_contract_20261105.md -text
 research_contracts/momentum_account_execution_20261105/freeze.json -text
+
+# Preserve authenticated ROA monthly preparation configuration and new entrypoints.
+research_contracts/roa_monthly_scheduler_20261106_v1/* -text
+scripts/run_local_roa_monthly_preparation.py -text
+scripts/install_local_roa_monthly_preparation.ps1 -text
+scripts/research/run_roa_monthly_pipeline.py -text
+scripts/research/run_roa_monthly_capture.py -text
+scripts/research/coordinate_roa_monthly_offline.py -text
+scripts/research/prepare_roa_monthly_publication.py -text
+scripts/research/adopt_roa_monthly_registration.py -text
+scripts/research/prepare_roa_fixed_domain_training.py -text
+scripts/research/archive_roa_training_sources.py -text
