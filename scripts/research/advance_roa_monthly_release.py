@@ -14,6 +14,7 @@ from scripts.research.adopt_roa_monthly_registration import adopt
 from scripts.research.finish_roa_monthly_adoption import finish
 from scripts.research.finish_roa_monthly_windows import WindowsAdapter
 from core.strategy_account_store import StrategyAccountStore
+from scripts.research.finish_roa_next_month import finish_next
 
 
 def advance(*, root, request, output_directory, execute=False, adapter_factory=WindowsAdapter):
@@ -29,7 +30,7 @@ def advance(*, root, request, output_directory, execute=False, adapter_factory=W
             raise ValueError('INPUT_CHANGED:' + reference['path'])
         return json.loads(raw)
     required = {'active', 'registration', 'publication', 'month', 'epoch', 'expected_process'}
-    if set(request) != required:
+    if set(request) not in (required, required | {'successor'}):
         raise ValueError('REQUEST_FIELDS')
     publication = read(request['publication'])
     registration = read(request['registration'])
@@ -101,6 +102,21 @@ def advance(*, root, request, output_directory, execute=False, adapter_factory=W
         result = dict(status='MONTH_ADOPTED_RUNTIME_VERIFIED_NEXT_TASK_PENDING', runtime_result=result,
                       task_changed=False, account_writes=False, page_verified=False)
         save('progress.json', result)
+        if 'successor' in request:
+            def reference(path):
+                return dict(path=path.relative_to(root).as_posix(), sha256=sha256(path.read_bytes()).hexdigest())
+            successor = request['successor']
+            inputs = dict(successor['inputs'], active=reference(active_path),
+                          runtime_success=reference(out / 'runtime/success.json'),
+                          adoption=reference(adoption_path),
+                          publication=reference(out / 'adoption/validated.json'))
+            next_result = finish_next(root=root, request=inputs,
+                                      output_directory=output_directory + '/successor',
+                                      python_path=successor['python_path'],
+                                      expected_task_sha256=successor['expected_task_sha256'])
+            result = dict(result, status='MONTH_RUNTIME_AND_NEXT_TASK_VERIFIED',
+                          next_month=next_result, task_changed=True)
+            save('progress.json', result)
         return result
     finally:
         if lock.exists() and lock.read_text() == token:

@@ -61,5 +61,22 @@ class AdvanceTests(unittest.TestCase):
         self.run_it();self.save('active.json',{'release':'later'})
         with self.assertRaisesRegex(ValueError,'RECONCILIATION_REQUIRED'):self.run_it()
         self.assertEqual(self.adoptions,1)
+    def test_successor_receives_actual_adopted_receipts(self):
+        self.request['successor']=dict(inputs={'manifest':{'path':'fixture'}},python_path='python',expected_task_sha256='old-task')
+        def finished(**kw):
+            self.save('tmp/attempt/runtime/success.json',{'status':'MONTH_RUNTIME_VERIFIED'})
+            self.save('tmp/attempt/adoption/validated.json',{'month':'2026-12'})
+            return {'status':'MONTH_RUNTIME_VERIFIED'}
+        def next_month(**kw):
+            inputs=kw['request']
+            self.assertEqual(inputs['active']['sha256'],sha256((self.root/'active.json').read_bytes()).hexdigest())
+            self.assertEqual(inputs['publication']['path'],'tmp/attempt/adoption/validated.json')
+            self.assertEqual(inputs['runtime_success']['path'],'tmp/attempt/runtime/success.json')
+            self.assertEqual(kw['expected_task_sha256'],'old-task')
+            return {'status':'NEXT_MONTH_TASK_BOUND','target_month':'2027-01'}
+        with patch('scripts.research.advance_roa_monthly_release.finish_next',side_effect=next_month) as called:
+            result=self.run_it(finish=finished)
+        self.assertEqual(result['status'],'MONTH_RUNTIME_AND_NEXT_TASK_VERIFIED')
+        self.assertEqual(called.call_count,1)
 
 if __name__=='__main__':unittest.main()

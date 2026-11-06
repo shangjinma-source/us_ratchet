@@ -53,3 +53,11 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 请求与采用意图保存在私有目录，复跑必须同一请求。已切换且有正式adoption回执时不重复采用；有意图但无回执则要求核对，不能凭超时重跑。已记录重启意图但服务未验证时返回WAIT_RUNTIME_RECONCILIATION_NO_REPEAT_RESTART。成功状态为MONTH_ADOPTED_RUNTIME_VERIFIED_NEXT_TASK_PENDING，明确后继计划及任务重绑尚未完成，不标记整条换月结束。
 
 6项编排隔离测试通过（采用/finish适配器使用替身）：只读无输出、重复运行、切换后丢失确认、未知切换拒绝重复、启动等待不重复重启、后续active不覆盖。尚未对真实未来月包执行此统一入口，尚未纳入常驻调度；账户、服务和任务未改动。
+
+## 可恢复的完整后继衔接
+
+统一advance请求可增加`successor`：包含`inputs`（manifest、completion、capture_receipt、training_calendar、session_calendar、calendar_path、calendar_source_hashes）、python_path及expected_task_sha256。运行确认后自动使用实际adoption/validated/runtime-success与新active生成引用，再调用真实下一月生成器和Action-only重绑入口。缺日历或存在半成品时停在可核对状态，不伪造日期、不覆盖旧输出。
+
+`finish_roa_next_month`只在advance持有尝试锁时调用。已保存draft复用前核对来源及launcher预检；任务更新成功回执必须与当前任务XML SHA一致。存在更新证据目录但无成功回执时拒绝自动重复更新；成功后出现新的任务配置同样拒绝覆盖。完整状态MONTH_RUNTIME_AND_NEXT_TASK_VERIFIED只说明运行配置与下一月任务绑定，不代表页面、真实成交或未来执行窗口已验收。
+
+本轮12项隔离编排测试通过：advance 7项、后继任务5项，其中覆盖更新后丢失确认、未知更新、后续任务变化及实际采用回执引用传递。外部采用/进程/调度适配器使用替身；此前真实生成器和当前任务只读预检独立通过。尚未将此统一入口接入无人值守采用调度，未对真实未来月份执行；当前真实账户/服务/任务不变。
