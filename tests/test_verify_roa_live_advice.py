@@ -1,7 +1,11 @@
 from copy import deepcopy
 from datetime import datetime, timezone
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
-from scripts.verify_roa_live_advice import review
+from unittest.mock import patch
+from scripts.verify_roa_live_advice import review, capture
 
 class LiveAdviceTests(unittest.TestCase):
     def fixture(self):
@@ -15,6 +19,21 @@ class LiveAdviceTests(unittest.TestCase):
         for status in ('PENDING','HOLD','WAIT_FRESH_QUOTE'):
             args=self.fixture();args['snapshot'].update(status=status,executable=False)
             result=review(**args);self.assertEqual(result['status'],'WAIT_EVENT');self.assertFalse(result['api_advice_passed'])
+    def test_capture_service_failure_is_not_normal_wait(self):
+        for snapshot_code in (200,503):
+            with self.subTest(snapshot_code=snapshot_code),TemporaryDirectory() as folder:
+                fixture=self.fixture();fixture['snapshot'].update(status='WAIT_FRESH_QUOTE',executable=False)
+                class Response:
+                    def __init__(self,name):
+                        self.code=snapshot_code if name=='snapshot' else 200
+                        self.body=json.dumps(fixture[name]).encode()
+                    def read(self):return self.body
+                responses=[Response(name) for name in ('before','config','snapshot','after')]
+                with patch('scripts.verify_roa_live_advice.urlopen',side_effect=responses):
+                    result=capture('http://isolated.test',Path(folder)/'evidence')
+                self.assertEqual(result['status'],'WAIT_EVENT' if snapshot_code==200 else 'FAILED')
+                self.assertFalse(result['api_advice_passed'])
+                self.assertEqual('HTTP_STATUS_INVALID' in result['errors'],snapshot_code!=200)
     def test_negative_cases(self):
         for case in ('changed','budget','expiry','fractional','cent','hash','oversell','stale','target','cash_invalid','bound_limit','phase','session'):
             with self.subTest(case=case):

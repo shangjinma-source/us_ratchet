@@ -102,7 +102,9 @@ def capture(base_url, output):
         records[name]=json.loads(raw)
     result=review(**records,now=datetime.now(timezone.utc))
     result['http_status']=http_status
-    if any(http_status[name]!=200 for name in ('before','config','after')) or (result['api_advice_passed'] and http_status['snapshot']!=200):
+    # A service error is not a normal wait for the trading window, even when
+    # its fallback JSON contains a WAIT status and an unchanged account.
+    if any(code!=200 for code in http_status.values()):
         result.update(status='FAILED',api_advice_passed=False);result['errors'].append('HTTP_STATUS_INVALID')
     (output/'summary.json').write_text(json.dumps(result,indent=2),encoding='utf8')
     return result
