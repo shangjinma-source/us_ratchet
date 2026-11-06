@@ -14,3 +14,5 @@
 脚本 `scripts/research/screen_residual_price_diagnostic_20261106.py`；合同 `residual_price_diagnostic_contract_20261106.md`；本地逐日结果 `tmp/residual_price_diagnostic_20261106.json` 与来源哈希 `tmp/residual_price_diagnostic_sources_20261106.json`。本次使用既有冻结名单，没有看结果后调整排名或筛选日期。生产、账户、原金融任务未改变。
 
 XEL单事件复用适配器独立保留；它可减少后续重复整备，但不会使这个代理获得经济准入。
+
+后续代码审查发现本旧价格诊断在十只满配时先分配全部权益、再扣换手费，会产生少量负现金，故还含未明确建模的融资偏差。上述数字保留为原运行记录，不重新包装成无杠杆账户结果；该实现不得用于正式准入或与后续修复预算的诊断作严格公平比较。新现金流诊断将先预留成本并验证现金非负。原残差分支仍停止扩展，没有因该缺陷宣称策略有效或正式证伪。
