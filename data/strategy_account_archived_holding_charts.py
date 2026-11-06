@@ -7,7 +7,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 from core.strategy_account_ledger import replay, require
-from data.strategy_account_runtime_archive import configuration_for_target, require_archived_configuration
+from data.strategy_account_runtime_archive import configuration_for_target, require_archived_configuration, _document
 from data.strategy_account_holding_charts import StrategyAccountHoldingCharts
 from data.strategy_monthly_target_charts import StrategyMonthlyTargetCharts
 
@@ -36,15 +36,24 @@ class ArchivedHoldingCharts:
                      if event['payload'].get('identity_evidence',{}).get('security_id') == security_id}
             require(len(names) == 1, 'CHART_RECORDED_IDENTITY_REQUIRED')
             ticker = next(iter(names))
+            archive = _document(self.reader._read(self.archive_path, self.archive_sha256))
+            schema = archive.get('schema') if type(archive) is dict else None
+            require(schema in {'REAL_STRATEGY_RUNTIME_ARCHIVE_V1', 'PROFILED_STRATEGY_RUNTIME_ARCHIVE_V1'},
+                    'INVALID_RUNTIME_ARCHIVE')
+            target_configuration, bootstrap_configuration = configuration_for_target, require_archived_configuration
+            if schema == 'PROFILED_STRATEGY_RUNTIME_ARCHIVE_V1':
+                from data.strategy_profiled_runtime_archive import configuration_for_target as profiled_target
+                from data.strategy_profiled_runtime_archive import require_archived_configuration as profiled_bootstrap
+                target_configuration, bootstrap_configuration = profiled_target, profiled_bootstrap
             history = self.targets.history()
             def configurations():
                 # Only absent SIDs permit fallback; invalid sources never do.
                 for target in reversed(history):
                     require(target['payload']['account_id'] == self.account_id, 'TARGET_ACCOUNT_MISMATCH')
-                    yield target['target_id'], configuration_for_target(root=self.root,
+                    yield target['target_id'], target_configuration(root=self.root,
                         archive_path=self.archive_path,archive_sha256=self.archive_sha256,target=target)
                 if self.bootstrap is not None:
-                    yield None, require_archived_configuration(root=self.root,
+                    yield None, bootstrap_configuration(root=self.root,
                         archive_path=self.archive_path,archive_sha256=self.archive_sha256,
                         configuration=self.bootstrap)
             for source_target_id, configuration in configurations():
