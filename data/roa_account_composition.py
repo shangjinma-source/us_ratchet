@@ -20,6 +20,22 @@ from data.roa_close_recovery import TrustedCloseRecovery,holdings_at
 from data.roa_limit_policy import cent_last_price_limit
 
 
+def verified_roa_identities(*, securities, holdings, resolver):
+    """Reuse this read's verified roster; resolve only holdings outside that roster."""
+    result={row['security_id']:row for row in securities}
+    require(len(result)==len(securities),'ROA_ROSTER_IDENTITY_CONFLICT')
+    for row in holdings:
+        sid=row['security_id']
+        if sid in result:
+            require(result[sid]['ticker']==row['ticker'],'ROA_HELD_IDENTITY_CHANGED')
+            continue
+        identity=resolver(row['ticker'])
+        require(identity['security_id']==sid and identity['ticker']==row['ticker'],
+                'ROA_HELD_IDENTITY_CHANGED')
+        result[sid]=identity
+    return result
+
+
 def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
     root=Path(root).resolve();clock=clock or (lambda:datetime.now(timezone.utc))
     routes=[r for r in prepared['router'].routes if isinstance(r,APIRoute) and r.path=='/api/strategy-account' and r.methods=={'GET'}]
@@ -36,18 +52,16 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
     lifecycle=RoaExecutionLifecycle(path=local(configuration['lifecycle_path']),account_id=account.account_id,
         strategy_epoch=configuration['strategy_epoch'],contract_sha256=configuration['contract_sha256'])
     def identities():
-        result={r['security_id']:r for r in signal.frozen_roster()}
-        for row in account.project(account.store.read())['account']['holdings']:
-            identity=account.resolver(row['ticker'])
-            require(identity['security_id']==row['security_id'],'ROA_HELD_IDENTITY_CHANGED')
-            result[row['security_id']]=identity
-        return result
+        return verified_roa_identities(securities=signal.frozen_roster(),
+            holdings=account.project(account.store.read())['account']['holdings'],
+            resolver=account.resolver)
     # A missing execution admission may display plans but cannot fetch/execute orders.
     def limits(price,phase):
         require(configuration.get('execution_admission') is not None,'EXECUTION_ADMISSION_REQUIRED')
         require(configuration['execution_admission']['limit_policy']=='CENT_LAST_PRICE_LIMIT','LIMIT_POLICY_NOT_APPROVED')
         return cent_last_price_limit(price,phase)
-    quotes=RoaQuoteProvider(identity_map={},session_reader=calendar,limit_builder=limits,clock=clock)
+    quotes=RoaQuoteProvider(identity_map={},session_reader=calendar,limit_builder=limits,clock=clock,
+        opening_limit_session=(configuration.get('execution_admission') or {}).get('opening_limit_session'))
     def quote_provider(state,sids,session,phase,now):
         validate_sources();quotes.identities=identities()
         return quotes(state,sids,session,phase,now)

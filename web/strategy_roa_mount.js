@@ -38,8 +38,8 @@ function mount(container,dependencies){
   if(!state.busy&&account?.revision&&flowRevision!==account.revision){flowRevision=account.revision;doc.defaultView?.dispatchEvent(new Event("strategy-account-updated"));}
   const balance=cashText(account?.available_cash);
   if(!edited&&account?.cash_confirmation_valid&&balance!==null)input.value=balance;
-  status.textContent=state.busy?'正在读取最新建议…':state.error?(reasons[state.error]||'建议未更新，请刷新核对。'):(reasons[advice?.status]||'等待策略数据');
-  if(advice?.late_execution===true&&!state.busy&&!state.error)status.textContent='延迟执行 · 开盘价计算目标，当前报价计算限价；不代表按开盘回测成交。'+status.textContent;
+  status.textContent=state.busy?'正在读取最新建议…':state.error?(reasons[state.error]||'建议未更新，请刷新核对。'):(reasons[advice?.status]??'等待策略数据');
+  if(advice?.late_execution===true&&!state.busy&&!state.error)status.textContent=(advice.limit_reference==='SESSION_OPEN'?'延迟执行 · 目标及限价参考今日开盘价，不保证成交。':'延迟执行 · 开盘价计算目标，当前报价计算限价；不代表按开盘回测成交。')+status.textContent;
   if(state.error&&state.cashSaved===true)status.textContent='现金已保存；'+status.textContent;
   const table=element('table',undefined,'daily-actions-table'),head=element('tr');
   for(const text of ['股票','持仓 → 目标','今日建议','原因'])head.appendChild(element('th',text));table.appendChild(head);

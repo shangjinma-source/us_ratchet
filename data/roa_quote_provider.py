@@ -26,13 +26,14 @@ class RoaQuoteProvider:
     an opening price is an observed reference, not a promised opening fill.
     """
     def __init__(self, *, identity_map, session_reader, limit_builder,
-                 fetch=fetch_intraday_chart, clock=lambda: datetime.now(timezone.utc), wait=sleep):
+                 fetch=fetch_intraday_chart, clock=lambda: datetime.now(timezone.utc), wait=sleep, opening_limit_session=None):
         self.identities = dict(identity_map)
         self.session_reader = session_reader
         self.limit_builder = limit_builder
         self.fetch = fetch
         self.clock = clock
         self.wait = wait
+        self.opening_limit_session = opening_limit_session
         self.cache = {}
         self.lock = Lock()
 
@@ -111,14 +112,18 @@ class RoaQuoteProvider:
                     if not valid:
                         raise ValueError('OPENING_PRICES_UNAVAILABLE')
                     prices[sid] = str(price)
-                    policy = self.limit_builder(ref['last_price'], phase)
+                    use_open = phase == 'OPEN' and session == self.opening_limit_session
+                    limit_reference = 'SESSION_OPEN' if use_open else 'LATEST_QUOTE'
+                    policy = self.limit_builder(str(price) if use_open else ref['last_price'], phase)
                     for side in ('buy', 'sell'):
                         number = Decimal(str(policy[side]))
                         if not number.is_finite() or number <= 0:
                             raise ValueError('INVALID_LIMIT_POLICY')
                     common = dict(security_id=sid, price_basis='current', observed_at=ref['last_at'])
                     marks[sid] = dict(common, price=ref['last_price'], currency='USD')
-                    limits[sid] = dict(common, buy=str(policy['buy']), sell=str(policy['sell']))
+                    limits[sid] = dict(common, buy=str(policy['buy']), sell=str(policy['sell']),
+                        reference_kind=limit_reference, reference_price=str(price) if use_open else ref['last_price'],
+                        reference_at=opening.isoformat() if use_open else ref['last_at'])
                     deadlines.append(stamp(ref['refresh_by']))
                     evidence[sid] = dict(ticker=self.identities[sid]['ticker'],
                         source=ref['source'], raw_sha256=sha256(raw if isinstance(raw, bytes) else raw.encode()).hexdigest(),
@@ -131,6 +136,7 @@ class RoaQuoteProvider:
             return dict(marks=marks, limits=limits, opening_prices=prices,
                 opening_session=session, quote_valid_until=min(deadlines).isoformat(),
                 quote_evidence=evidence, captured_at=delivered.isoformat(),
-                opening_price_scope='OBSERVED_OPEN_REFERENCE_NOT_GUARANTEED_FILL')
+                opening_price_scope='OBSERVED_OPEN_REFERENCE_NOT_GUARANTEED_FILL',
+                limit_reference='SESSION_OPEN' if phase == 'OPEN' and session == self.opening_limit_session else 'LATEST_QUOTE')
         finally:
             self.lock.release()

@@ -107,6 +107,8 @@ class RoaStrategyService(CashAdviceCoordinator):
                     needed=set(signal['weights'])|{s for s,q in state['shares'].items() if q}
                     needed|={o['security_id'] for o in state['orders'].values() if o['status']=='OPEN'}
                     quotes=self.quote_provider(deepcopy(state),needed,session,event['phase'],now)
+                    # Fetching can advance time: validate new marks against the real post-fetch clock.
+                    now=self.clock()
                     for sid in needed:
                         mark=quotes['marks'][sid]
                         require(mark['security_id']==sid and mark['currency']=='USD' and mark['price_basis']=='current','QUOTE_IDENTITY_MISMATCH')
@@ -129,7 +131,8 @@ class RoaStrategyService(CashAdviceCoordinator):
                         targets=targets,phase=event['phase'],valid_from=event['valid_from'],valid_until=event['valid_until'])
                     target_id=digest(binding);proposal_id=digest(dict(target_id=target_id,difference=advice['difference'],quote_valid_until=deadline.isoformat()))
                     result.update(status='CANCEL_THEN_RECALCULATE' if advice['difference']['status']=='CANCEL_THEN_RECALCULATE' else 'READY',executable=advice['difference']['status']!='CANCEL_THEN_RECALCULATE',target_id=target_id,proposal_id=proposal_id,
-                        target_quantities=targets,quote_valid_until=deadline.isoformat(),difference=advice['difference'])
+                        target_quantities=targets,quote_valid_until=deadline.isoformat(),difference=advice['difference'],
+                        limit_reference=quotes.get('limit_reference','LATEST_QUOTE'))
                 except (ValueError,KeyError,TypeError,OSError):
                     result.update(status='WAIT_FRESH_QUOTE',executable=False,quote_valid_until=None)
             orders={r['security_id']:r for r in result.get('difference',{}).get('new_orders',[])}
