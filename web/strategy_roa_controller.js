@@ -79,7 +79,19 @@ function createController({request,readAccount,eventId,pendingStore,expectedEpoc
   })
  };
 }
-const api={createController};
+function browserPendingStore(storage,key){
+ function validate(value){
+  if(!value||Object.keys(value).sort().join()!=='event,expected_revision'||! /^[a-f0-9]{64}$/.test(value.expected_revision))throw Error('CASH_PENDING_RECORD_INVALID');
+  const event=value.event;
+  if(!event||Object.keys(event).sort().join()!=='amount,cash_basis,event_id,kind'||event.kind!=='CASH_CONFIRM'||event.cash_basis!=='AVAILABLE_AFTER_RESERVATIONS'||
+     typeof event.event_id!=='string'||!/^[A-Za-z0-9_.:-]{1,128}$/.test(event.event_id)||typeof event.amount!=='string'||!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(event.amount))throw Error('CASH_PENDING_RECORD_INVALID');
+  return value;
+ }
+ return {read(){const raw=storage.getItem(key);if(raw===null)return null;if(raw.length>2048)throw Error('CASH_PENDING_RECORD_INVALID');return validate(JSON.parse(raw));},
+  write(value){const raw=JSON.stringify(validate(value));if(raw.length>2048)throw Error('CASH_PENDING_RECORD_INVALID');storage.setItem(key,raw);},
+  clear(){storage.removeItem(key);}};
+}
+const api={createController,browserPendingStore};
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 root.StrategyRoaController=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -22,6 +22,7 @@ function mount(container,dependencies){
  for(const n of [title,cashPanel,status,summary])section.appendChild(n);container.replaceChildren(section);
  let controller,disposed=false,edited=false,locked=false,timer=null,lastAmount=null,lastRevision=null;
  const reasons={PENDING_OPEN:'等待开盘后确认目标股数',PENDING_CLOSE:'等待收盘执行时段',MISSED:'已错过本次执行时段，等待策略下一次判断',WAIT_SIGNAL:'等待有效策略信号',WAIT_FRESH_QUOTE:'等待最新有效报价',READY:'',CASH_RECONCILIATION_REQUIRED:'现金保存结果待核对，请刷新核对，勿重复提交',CASH_NOT_YET_OBSERVED:'尚未确认现金保存结果，请刷新核对，勿重复提交',ADVICE_QUOTE_EXPIRED:'报价已过期，请刷新建议',ADVICE_REFRESH_REQUIRED:'建议暂未更新，请重试',ACCOUNT_CHANGED_REFRESH_REQUIRED:'账户已变化，请刷新建议'};
+ Object.assign(reasons,{WAIT_EXECUTION_ADMISSION:'执行方式尚待确认，当前仅展示计划',CANCEL_THEN_RECALCULATE:'现有挂单与新目标冲突，请先核对挂单',WAIT_CASH:'可用现金不足，等待资金到账后更新',WAIT_CASH_NO_SELL_PROCEEDS_ASSUMED:'可用现金不足；卖出款实际到账后再更新',PENDING_RECONCILIATION_REQUIRED:'已有未完成挂单，请先核对成交或撤单状态',HOLD:'当前持仓已符合目标，无需买卖'});
  function draw(state){
   if(disposed)return;
   if(timer!==null){clearTimer(timer);timer=null;}
@@ -41,7 +42,9 @@ function mount(container,dependencies){
    const action=element('td');
    action.appendChild(element('strong',actionable?(row.side==='BUY'?'买入 ':'卖出 ')+row.quantity+' 股':row.side==='HOLD'&&advice?.executable===true?'无需操作':'等待'));
    if(actionable)action.appendChild(element('small','限价 '+legacyUi.dollars(row.limit_price),'daily-secondary'));
-   tr.appendChild(action);tr.appendChild(element('td',row.reason||reasons[advice?.status]||'等待有效策略判断'));table.appendChild(tr);
+   const reason=reasons[row.reason]||(actionable?(advice.phase==='CLOSE'?'按已触发的退出计划处理':'按本次固定目标调整'):
+     row.side==='HOLD'?reasons.HOLD:reasons[advice?.status]||'等待有效策略判断');
+   tr.appendChild(action);tr.appendChild(element('td',reason));table.appendChild(tr);
   }
   summary.replaceChildren(table);
   if(account&&account.revision!==lastRevision){lastRevision=account.revision;onAccountChanged(structuredClone(account));}

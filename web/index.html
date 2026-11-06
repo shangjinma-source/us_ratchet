@@ -698,6 +698,8 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 <script src="/static/current_quantity_v2_paper.js?v=20261016-buy-sell-retained-v5"></script>
 <script src="/static/strategy_account.js?v=20261024-account-inflight-v5"></script>
 <script src="/static/strategy_daily_controller.js?v=20261029-expiry-reason-r39"></script>
+<script src="/static/strategy_roa_controller.js?v=20261106-roa-1"></script>
+<script src="/static/strategy_roa_mount.js?v=20261106-roa-1"></script>
 <script src="/static/news_investment_review.js?v=20261029-cash-retrigger-r41"></script>
 <script src="/static/news_scheduled_earnings.js?v=20261104-v29"></script>
 <script src="/static/strategy_daily_mount.js?v=20261104-v29"></script>
@@ -5003,7 +5005,7 @@ async function refreshAll(initialLoad = false) {
     const initialDailyState = window.RealStrategyDaily.getState();
     const reuseInitialPreview = initialLoad && window.RealStrategyDaily.initialPreview === true &&
       !initialDailyState.busy && initialDailyState.account?.revision === window.RealStrategyAccount.getState().account?.revision &&
-      (initialDailyState.daily || initialDailyState.error === 'FRONTIER_TARGET_MONTH');
+      (initialDailyState.daily || initialDailyState.advice || initialDailyState.error === 'FRONTIER_TARGET_MONTH');
     try { if (!reuseInitialPreview) await window.RealStrategyDaily.refresh(); }
     catch (error) {
       if (!window.StrategyDailyController?.waitingExplanation?.(error.message)) throw error;
@@ -5050,6 +5052,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     onRender: (_, state) => renderRealStrategyAccountState(state)
   });
   await window.RealStrategyAccount.ready;
+  const roaRequest=window.StrategyDailyController.fetchTransport(window.fetch.bind(window));
+  let roaConfiguration=null;
+  try { roaConfiguration=await roaRequest('/api/strategy-roa/config'); }
+  catch(error) { if(error.responseStatus!==404)throw error; }
+  if(roaConfiguration!==null){
+    if(roaConfiguration.active!==true||roaConfiguration.strategy_kind!=='ROA_DEFENSIVE_V1'||
+       !roaConfiguration.strategy_epoch||!roaConfiguration.account_id)throw Error('ROA_CONFIGURATION_INVALID');
+    window.RealStrategyDaily=window.StrategyRoaMount.mount($('strategyMonthlyTarget'),{
+      request:roaRequest,readAccount:async()=> (await roaRequest('/api/strategy-account')).account,
+      expectedEpoch:roaConfiguration.strategy_epoch,eventId:()=>window.crypto.randomUUID(),
+      pendingStore:window.StrategyRoaController.browserPendingStore(window.localStorage,
+        'us-ratchet-roa-cash.'+roaConfiguration.account_id+'.'+roaConfiguration.strategy_epoch),
+      onAccountChanged:account=>{
+        window.RealStrategyMonthlyCharts?.setAccount?.(account);
+        window.RealStrategyMonthlyCharts?.setFills?.(account?.fills||[]);
+        if(!realStrategyInitializing)void window.RealStrategyAccount.load();
+      }
+    });
+    window.RealStrategyDaily.initialPreview=true;
+  }else{
   if (!window.StrategyDailyController || !window.StrategyDailyMount?.mount)
     throw new Error('DAILY_COMPONENT_UNAVAILABLE');
   window.RealStrategyDaily = window.StrategyDailyMount.mount($('strategyMonthlyTarget'), {
@@ -5109,6 +5131,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     capitalContainer.hidden = false;
     capitalContainer.textContent = '资金状态未能核对，已暂停现金更新。请刷新重试，不要重复录入。';
   });
+  }
   } catch (_) {
     invalidateRealStrategyAdvice();
     $('realStrategyAccount').textContent = '真实账户组件读取失败，请刷新页面重试；已暂停现金建仓建议。';
