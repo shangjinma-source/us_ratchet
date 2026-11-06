@@ -23,11 +23,11 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 
 真实首个新月执行窗口、用户成交、部分成交或撤单按真实事件验收。隔离测试及只读状态检查均不替代这些证据。
 
-## 已测试但尚未部署的收尾候选
+## 收尾工具与已部署的运行版本接口
 
 `finish_roa_monthly_adoption`及Windows CLI `finish_roa_monthly_windows`保留重启意图、前后账本和运行态证据，未知重启结果只核对，不重复启动。Windows适配器绑定旧/新进程的PID、创建时间和完整命令行，并核对HTTP读取前后的监听进程一致。
 
-它依赖启动时固定的`/api/strategy-roa/runtime-binding`接口。当前生产未挂载该接口，所以不可宣称已能自动采用月包。候选挂载源码保存在`docs/candidates/strategy_server_mount_v9_runtime_binding.py`，需经过正式来源绑定、发布校验及受控上线后才能启用。隔离测试不替代真实未来月份验收。
+它依赖启动时固定的`/api/strategy-roa/runtime-binding`接口。2026-11-07已正式挂载并通过实际HTTP核验，启动配置SHA及月份注册表与发布包一致。收尾工具尚未用于真实未来月包采用；接口上线不等于自动月度换仓已验收。隔离测试不替代真实未来月份验收。
 
 ## 下一轮草案与失败恢复入口
 
@@ -37,3 +37,5 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 以上新增工具尚未接入常驻自动采用流程；当前线上任务仍仅准备月包。所有实际注册、启动和首个新月执行验收均须保留独立证据。
 
 2026-11-07补充：runtime-binding候选已执行真实候选mount、完整V34构建及来源校验，约232秒通过；配置引用、active SHA和月份注册表与候选加载值逐项相符。当前注册表为空，不能由此声称未来月份已准备好。该验证未启动服务lifespan、未替换生产源码。候选V34静态来源集合显式新增runtime-binding模块，回滚必须同时还原mount、V34及active。正式发布包使用本地`research_contracts/roa_runtime_binding_20261107_v2`；v1已被路由冲突修复取代。
+
+2026-11-07 01:05正式部署：runtime-binding v2运行验证通过，29层配置引用核对通过；完整账户、账本、绩效基准及sidecar部署前后不变。页面确认STX 7股、ODFL未成交22股，因STX成交后缺最新购买力而显示WAIT_CASH_CONFIRMATION，未宣称可执行建议通过。月度准备任务Action重绑runtime_v6（683来源），其他12项金融任务不变；当前expected_month=2026-12，状态CONFIGURATION_VALID_NO_COMPLETION。只读页面取证屏蔽非GET及图表请求，不代替现金保存、图表或真实未来月份验收。

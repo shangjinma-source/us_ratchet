@@ -7,6 +7,7 @@ from core.strategy_account_ledger import require
 from data.roa_account_composition import attach_roa
 from data.roa_cash_flow.composition import attach_flow
 SOURCES={
+ 'api/roa_runtime_binding.py',
  'data/strategy_unified_server_preparation_v34.py','api/strategy_server_mount_v9.py',
  'data/roa_account_composition.py','data/roa_execution_lifecycle.py','data/roa_strategy_service.py',
  'data/roa_cash_advice_coordinator.py','data/roa_target_account_bridge.py','data/roa_session_reader.py',
