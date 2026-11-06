@@ -27,3 +27,14 @@
 3. 月包复读通过后调用注册prepare；以预期active SHA、完整启动gate和真实账户前后不变完成受控发布。已有月包幂等识别，失败保留receipt且不重复采集/覆盖。
 4. 用隔离历史已完成月末演练采集闭包→包→注册→运行时采用；加停机补跑、资料不齐、源变化和并发发布反例。随后单独安装ROA调度；旧金融任务保留，是否替换另做逐项迁移。
 5. 真正11月底数据及12月实际换仓仍需届时验收，但上述协调器/调度/日期覆盖是现在能完成的开发项，不能归类为只等待时间。
+
+## 后续离线协调器（尚未安装/激活）
+
+`scripts/research/coordinate_roa_monthly_offline.py::coordinate(root,request,now)` 已串接现有package和registration。request为服务器持有JSON：`active={path,sha256}`、`decision_date`、`package={manifest,session_calendar,training_calendar,expected_month,output_directory}`（各输入为path+sha256）、`output_directory`。内部包输出自动置于唯一attempt下，避免覆盖既有产物。
+
+- 月末前WAIT；输入缺失列出missing，明确acquisition_implemented=false。
+- 同输出目录独占running.lock；异常退出遗留锁需明确核对，不凭时间偷锁。
+- 每次失败保留独立attempt及failure；成功complete保存产物SHA闭包，重复请求复验当前active/code、bundle和loader后返回同提案，不重复生成。
+- request变更或产物篡改拒绝；active并发变化不发布complete；输出仅PREPARED_REGISTRATION_NOT_ACTIVATED，不写账户、不改任务、不切生产。
+- `tests/test_roa_monthly_offline_coordinator.py` 7项通过：完整包/loader/注册链、WAIT/缺输入、锁、重入并发、失败保留重试、active变化（包括耗时产物hash期间变化）。复用已有临时历史月末fixture，仅选股返回值替身；没有为演练复制真实350MB输入，也不把fixture声称真实选股验收。
+- root已另核新版训练日期至12/31及真实10/30包dryrun通过。本协调器仍需外部真实资料采集manifest，调度和受控激活是下一层，不因本实现宣称自动换月已全通。
