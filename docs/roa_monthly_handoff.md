@@ -61,3 +61,5 @@ D:/python/python.exe -B -m scripts.inspect_roa_monthly_preparation --descriptor-
 `finish_roa_next_month`只在advance持有尝试锁时调用。已保存draft复用前核对来源及launcher预检；任务更新成功回执必须与当前任务XML SHA一致。存在更新证据目录但无成功回执时拒绝自动重复更新；成功后出现新的任务配置同样拒绝覆盖。完整状态MONTH_RUNTIME_AND_NEXT_TASK_VERIFIED只说明运行配置与下一月任务绑定，不代表页面、真实成交或未来执行窗口已验收。
 
 本轮12项隔离编排测试通过：advance 7项、后继任务5项，其中覆盖更新后丢失确认、未知更新、后续任务变化及实际采用回执引用传递。外部采用/进程/调度适配器使用替身；此前真实生成器和当前任务只读预检独立通过。尚未将此统一入口接入无人值守采用调度，未对真实未来月份执行；当前真实账户/服务/任务不变。
+
+2026-11-07组合验收补充：`test_roa_monthly_integrated_adoption.py`两项测试使用真实注册、发布、active原子采用、finish协调器及SQLite账本；重复进入只调用一次模拟重启，实际回执与active SHA一致，回滚字节完整。模拟并发现金更新时保留新账本并拒绝success，重试不重复重启。月度输入为合成fixture，V34完整服务构建与进程适配器使用替身；不包含真实未来月份或后继任务安装。不得将它扩大称为全生产端到端通过。
