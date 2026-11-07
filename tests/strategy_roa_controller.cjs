@@ -50,6 +50,11 @@ const response=()=>({cash_saved:true,advice_ready:true,account_revision:'b'.repe
  clock=Date.parse('2026-11-06T14:32:00Z');
  assert.equal(first.controller.getState().advice,null);
  assert.equal(first.controller.getState().error,'ADVICE_QUOTE_EXPIRED');
+ assert.equal(first.controller.getState().lastAdvice.target_id,'c'.repeat(64));
+ assert.equal(first.controller.getState().lastAdviceAt,Date.parse('2026-11-06T14:31:00Z'));
+ first.controller.accountInvalidated();
+ assert.equal(first.controller.getState().advice,null);
+ assert.equal(first.controller.getState().lastAdvice.target_id,'c'.repeat(64));
  const planned=fixture(async()=>({...response(),status:'PENDING_OPEN',executable:false,target_id:null,proposal_id:null,quote_valid_until:null}));
  await planned.controller.load();
  assert.equal(planned.controller.getState().advice.status,'PENDING_OPEN');

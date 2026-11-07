@@ -56,7 +56,7 @@ class RoaStrategyService(CashAdviceCoordinator):
                 # Calendar display envelope only: never authorizes execution.
                 open_until=closing;close_from=closing
             standard_open_until=open_until
-            late_authorized=admitted and self.admission.get('late_open_session')==session
+            late_authorized=admitted and (self.admission.get('intraday_open_refresh') is True or self.admission.get('late_open_session')==session)
             if late_authorized:
                 require(opening < close_from, 'LATE_OPEN_SESSION_BOUNDS')
                 # Never replace an already frozen allocation from a different window.

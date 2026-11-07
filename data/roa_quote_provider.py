@@ -26,7 +26,7 @@ class RoaQuoteProvider:
     an opening price is an observed reference, not a promised opening fill.
     """
     def __init__(self, *, identity_map, session_reader, limit_builder,
-                 fetch=fetch_intraday_chart, clock=lambda: datetime.now(timezone.utc), wait=sleep, opening_limit_session=None):
+                 fetch=fetch_intraday_chart, clock=lambda: datetime.now(timezone.utc), wait=sleep, opening_limit_session=None, opening_limit_all_sessions=False):
         self.identities = dict(identity_map)
         self.session_reader = session_reader
         self.limit_builder = limit_builder
@@ -34,6 +34,7 @@ class RoaQuoteProvider:
         self.clock = clock
         self.wait = wait
         self.opening_limit_session = opening_limit_session
+        self.opening_limit_all_sessions = opening_limit_all_sessions is True
         self.cache = {}
         self.lock = Lock()
 
@@ -112,7 +113,7 @@ class RoaQuoteProvider:
                     if not valid:
                         raise ValueError('OPENING_PRICES_UNAVAILABLE')
                     prices[sid] = str(price)
-                    use_open = phase == 'OPEN' and session == self.opening_limit_session
+                    use_open = phase == 'OPEN' and (self.opening_limit_all_sessions or session == self.opening_limit_session)
                     limit_reference = 'SESSION_OPEN' if use_open else 'LATEST_QUOTE'
                     policy = self.limit_builder(str(price) if use_open else ref['last_price'], phase)
                     for side in ('buy', 'sell'):
@@ -137,6 +138,6 @@ class RoaQuoteProvider:
                 opening_session=session, quote_valid_until=min(deadlines).isoformat(),
                 quote_evidence=evidence, captured_at=delivered.isoformat(),
                 opening_price_scope='OBSERVED_OPEN_REFERENCE_NOT_GUARANTEED_FILL',
-                limit_reference='SESSION_OPEN' if phase == 'OPEN' and session == self.opening_limit_session else 'LATEST_QUOTE')
+                limit_reference='SESSION_OPEN' if phase == 'OPEN' and (self.opening_limit_all_sessions or session == self.opening_limit_session) else 'LATEST_QUOTE')
         finally:
             self.lock.release()

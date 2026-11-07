@@ -133,7 +133,14 @@ class LatestDisplayChartsV1:
             require(all(abs(a-b) <= max(abs(b)*0.000001, 0.000001)
                         for day, values in overlap for a, b in zip(values[:4], old[day][:4])),
                     "DISPLAY_PRICE_UNITS_CHANGED")
-            require(not document.get("events", {}).get("splits"), "DISPLAY_SPLIT_REVIEW_REQUIRED")
+            for split in document.get("events", {}).get("splits", {}).values():
+                split_day = datetime.fromtimestamp(split['date'], NY).date().isoformat()
+                # ROA may admit an old split only after exact nominal overlap
+                # validation above, and only when all recorded fills postdate it.
+                require(context.get('reviewed_split_through') is not None
+                        and split_day <= context['reviewed_split_through']
+                        and split_day < context.get('first_fill_session', ''),
+                        "DISPLAY_SPLIT_REVIEW_REQUIRED")
             today = received.astimezone(NY).date().isoformat()
             regular = meta.get("currentTradingPeriod", {}).get("regular", {})
             opening = datetime.fromtimestamp(regular["start"], timezone.utc)

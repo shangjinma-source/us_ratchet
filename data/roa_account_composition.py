@@ -61,7 +61,8 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
         require(configuration['execution_admission']['limit_policy']=='CENT_LAST_PRICE_LIMIT','LIMIT_POLICY_NOT_APPROVED')
         return cent_last_price_limit(price,phase)
     quotes=RoaQuoteProvider(identity_map={},session_reader=calendar,limit_builder=limits,clock=clock,
-        opening_limit_session=(configuration.get('execution_admission') or {}).get('opening_limit_session'))
+        opening_limit_session=(configuration.get('execution_admission') or {}).get('opening_limit_session'),
+        opening_limit_all_sessions=(configuration.get('execution_admission') or {}).get('intraday_open_refresh') is True)
     def quote_provider(state,sids,session,phase,now):
         validate_sources();quotes.identities=identities()
         return quotes(state,sids,session,phase,now)
@@ -148,6 +149,16 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
         except Exception as error:
             maintenance_status.update(status='WAIT',session=day,reason=str(error))
             logging.getLogger(__name__).warning('ROA close maintenance deferred: %s',error)
+    if configuration.get('display_history') is not None:
+        from data.roa_display import build_display
+        from api.strategy_latest_display_charts_v1 import create_router as display_router
+        display = build_display(root=root, account=account, signal=signal,
+            specification=configuration['display_history'], validate_sources=validate_sources, clock=clock)
+        router = prepared['router']
+        found = [r for r in router.routes if getattr(r, 'path', None) == '/api/strategy-display/latest-bars']
+        require(len(found) == 1, 'ROA_DISPLAY_ROUTE_REQUIRED')
+        router.routes.remove(found[0])
+        router.include_router(display_router(service=display))
     original=prepared['router']
     @asynccontextmanager
     async def lifespan(app):

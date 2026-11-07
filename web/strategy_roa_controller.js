@@ -1,10 +1,16 @@
 (function(root){
 'use strict';
 // Explicit ROA API; never interprets a legacy V27 target as this strategy.
-function createController({request,readAccount,eventId,pendingStore,expectedEpoch,now=()=>Date.now(),onChange=()=>{}}){
+function createController({request,readAccount,eventId,pendingStore,expectedEpoch,historyStore=null,now=()=>Date.now(),onChange=()=>{}}){
  if(typeof expectedEpoch!=='string'||!expectedEpoch)throw Error('STRATEGY_EPOCH_REQUIRED');
  let pending=pendingStore.read(),generation=0;
- const state={busy:false,account:null,advice:null,cashSaved:pending?null:false,error:null};
+ const state={busy:false,account:null,advice:null,lastAdvice:null,lastAdviceAt:null,cashSaved:pending?null:false,error:null};
+ try{
+  const saved=historyStore?.read();
+  if(saved&&Number.isFinite(saved.receivedAt)&&saved.receivedAt<=now()&&saved.advice?.strategy_epoch===expectedEpoch&&saved.advice?.strategy_kind==='ROA_DEFENSIVE_V1'&&Array.isArray(saved.advice.rows)&&saved.advice.rows.length<=32){
+   state.lastAdvice=structuredClone(saved.advice);state.lastAdviceAt=saved.receivedAt;
+  }
+ }catch(_){} // Display history is optional and never authorizes an operation.
  const snapshot=()=>{
   const result=structuredClone({...state,pending});
   if(result.advice?.executable===true&&!(now()>=Date.parse(result.advice.valid_from)&&now()<Math.min(Date.parse(result.advice.valid_until),Date.parse(result.advice.quote_valid_until)))){
@@ -45,6 +51,7 @@ function createController({request,readAccount,eventId,pendingStore,expectedEpoc
    }
   }
   state.account=structuredClone(a);state.advice=structuredClone(d);state.error=null;
+  if(d.executable){state.lastAdvice=structuredClone(d);state.lastAdviceAt=now();try{historyStore?.write({advice:state.lastAdvice,receivedAt:state.lastAdviceAt});}catch(_){}}
  }
  async function run(operation){
   if(state.busy)return snapshot();

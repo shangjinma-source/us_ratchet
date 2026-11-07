@@ -41,17 +41,31 @@ function mount(container,dependencies){
   status.textContent=state.busy?'正在读取最新建议…':state.error?(reasons[state.error]||'建议未更新，请刷新核对。'):(reasons[advice?.status]??'等待策略数据');
   if(advice?.late_execution===true&&!state.busy&&!state.error)status.textContent=(advice.limit_reference==='SESSION_OPEN'?'延迟执行 · 目标及限价参考今日开盘价，不保证成交。':'延迟执行 · 开盘价计算目标，当前报价计算限价；不代表按开盘回测成交。')+status.textContent;
   if(state.error&&state.cashSaved===true)status.textContent='现金已保存；'+status.textContent;
+  const previous=state.lastAdvice;
+  const previousDeadline=previous?Math.min(Date.parse(previous.valid_until),Date.parse(previous.quote_valid_until)):NaN;
+  const oldReference=previous&&(!advice?.executable||state.busy||state.error);
+  if(previous&&Number.isFinite(state.lastAdviceAt)){
+   status.textContent+=' · 最近有效结果 '+new Date(state.lastAdviceAt).toLocaleTimeString('zh-CN',{hour12:false});
+   if(Number.isFinite(previousDeadline))status.textContent+=now()>=previousDeadline?' · 已过期 '+Math.floor((now()-previousDeadline)/1000)+' 秒':' · 有效至 '+new Date(previousDeadline).toLocaleTimeString('zh-CN',{hour12:false});
+   if(oldReference)status.textContent+=' · 上次结果仅供参考，需刷新确认';
+  }
   const table=element('table',undefined,'daily-actions-table'),head=element('tr');
   for(const text of ['股票','持仓 → 目标','今日建议','原因'])head.appendChild(element('th',text));table.appendChild(head);
-  const rows=advice?.rows||account?.holdings?.map(h=>({security_id:h.security_id,ticker:h.ticker,held:h.quantity}))||[];
+  const rows=advice?.rows||previous?.rows||account?.holdings?.map(h=>({security_id:h.security_id,ticker:h.ticker,held:h.quantity}))||[];
   for(const row of rows){
    const tr=element('tr'),actionable=advice?.executable===true&&!state.busy&&!state.error&&['BUY','SELL'].includes(row.side)&&Number.isSafeInteger(row.quantity)&&row.quantity>0;
    tr.appendChild(element('td',row.ticker||row.security_id));
-   tr.appendChild(element('td',String(row.held??0)+' → '+(Number.isSafeInteger(row.target_quantity)?row.target_quantity:'待确认')));
+   const currentHolding=account?.holdings?.find(item=>item.security_id===row.security_id);
+   const held=Array.isArray(account?.holdings)?currentHolding?.quantity??0:row.held??0;
+   tr.appendChild(element('td',String(held)+' → '+(Number.isSafeInteger(row.target_quantity)?row.target_quantity:'待确认')));
    const action=element('td');
    const noAction=!state.busy&&!state.error&&((row.side==='HOLD'&&advice?.executable===true)||(advice?.status==='HOLD'&&row.reason==='HOLD'));
    action.appendChild(element('strong',actionable?(row.side==='BUY'?'买入 ':'卖出 ')+row.quantity+' 股':noAction?'无需操作':'等待'));
    if(actionable)action.appendChild(element('small','限价 '+legacyUi.dollars(row.limit_price),'daily-secondary'));
+   const prior=oldReference&&previous.rows.find(item=>item.security_id===row.security_id);
+   if(!actionable&&prior&&['BUY','SELL'].includes(prior.side)&&prior.quantity>0&&prior.limit_price){
+    action.appendChild(element('small','上次结果（仅供参考）：'+(prior.side==='BUY'?'买入':'卖出')+' '+prior.quantity+' 股 · 限价 '+legacyUi.dollars(prior.limit_price),'daily-secondary'));
+   }
    const reason=reasons[row.reason]||(actionable?(advice.phase==='CLOSE'?'按已触发的退出计划处理':'按本次固定目标调整'):
      row.side==='HOLD'?reasons.HOLD:reasons[advice?.status]||'等待有效策略判断');
    tr.appendChild(action);tr.appendChild(element('td',reason));table.appendChild(tr);
@@ -60,8 +74,15 @@ function mount(container,dependencies){
   if(account&&account.revision!==lastRevision){lastRevision=account.revision;onAccountChanged(structuredClone(account));}
   onChange(structuredClone(state));flushAccountReload();
   if(advice?.executable===true){const expires=Math.min(Date.parse(advice.valid_until),Date.parse(advice.quote_valid_until));if(Number.isFinite(expires)&&expires>now())timer=setTimer(()=>draw(controller.getState()),Math.min(expires-now(),2147483647));}
+  else if(oldReference&&Number.isFinite(previousDeadline))timer=setTimer(()=>draw(controller.getState()),1000);
  }
- controller=controllerApi.createController({...options,now,onChange:draw});
+ let historyStore=null;
+ if(activeStrategy?.account_id&&activeStrategy.strategy_epoch===options.expectedEpoch){
+  const key='roa-advice-history:'+activeStrategy.account_id+':'+options.expectedEpoch;
+  historyStore={read(){const raw=doc.defaultView?.sessionStorage?.getItem(key);return raw&&raw.length<=262144?JSON.parse(raw):null;},
+   write(value){const raw=JSON.stringify(value);if(raw.length<=262144)doc.defaultView?.sessionStorage?.setItem(key,raw);}};
+ }
+ controller=controllerApi.createController({...options,historyStore,now,onChange:draw});
  const edit=()=>{edited=true;};input.addEventListener('input',edit);
  let lastWork=Promise.resolve();
  const submit=event=>{

@@ -11,6 +11,7 @@ class Node{
 }
 const doc=new Node('document',null);doc.createElement=tag=>new Node(tag,doc);doc.defaultView=new Node('window',doc);doc.visibilityState='visible';
 const text=n=>[n.textContent||'',...n.children.map(text)].join(' ');
+const actions=n=>[n.tag==='strong'?(n.textContent||''):'',...n.children.map(actions)].join(' ');
 (async()=>{
  let time=Date.parse('2026-11-06T14:31:00Z'),mode='PENDING_OPEN',pending=null,writeCount=0,timer;
  const account={revision:'a'.repeat(64),cash_confirmation_valid:true,available_cash:'100001/100',holdings:[]};
@@ -26,18 +27,20 @@ const text=n=>[n.textContent||'',...n.children.map(text)].join(' ');
   pendingStore:{read:()=>pending,write:x=>pending=x,clear:()=>pending=null},setTimer:fn=>{timer=fn;return 1;},clearTimer:()=>{timer=null;}});
  await app.ready;
  assert.equal(app.elements.input.value,'1000.01');
- assert.ok(text(container).includes('等待开盘'));assert.ok(!text(container).includes('买入 5 股'));assert.equal(writeCount,0);
+ assert.ok(text(container).includes('等待开盘'));assert.ok(!actions(container).includes('买入 5 股'));assert.equal(writeCount,0);
  mode='READY';app.elements.input.value='1000';app.elements.form.dispatch('submit');await app.whenIdle();
  assert.equal(writeCount,1);assert.ok(!text(container).includes('等待策略数据'));assert.ok(text(container).includes('目标及限价参考今日开盘价'));assert.ok(text(container).includes('买入 5 股'));assert.ok(text(container).includes('$100.00'));
  time=Date.parse('2026-11-06T14:32:00Z');timer();
- assert.ok(!text(container).includes('买入 5 股'));assert.ok(text(container).includes('报价已过期'));
+ assert.ok(!actions(container).includes('买入 5 股'));assert.ok(text(container).includes('报价已过期'));
+ assert.ok(text(container).includes('上次结果（仅供参考）：买入 5 股 · 限价 $100.00'));
+ assert.ok(text(container).includes('已过期 0 秒'));
  mode='HOLD';await app.refresh();
- assert.ok(text(container).includes('无需操作'));assert.ok(!text(container).includes('买入 5 股'));
+ assert.ok(text(container).includes('无需操作'));assert.ok(!actions(container).includes('买入 5 股'));
  mode='WAIT_CASH_CONFIRMATION';await app.refresh();
  assert.ok(text(container).includes('成交后请填写券商最新可用现金'));
- assert.ok(!text(container).includes('买入 5 股'));
+ assert.ok(!actions(container).includes('买入 5 股'));
  mode='WAIT_ACCOUNT_RESERVATIONS';await app.refresh();
  assert.ok(text(container).includes('挂单占用与现金不一致'));
- assert.ok(!text(container).includes('买入 5 股'));
+ assert.ok(!actions(container).includes('买入 5 股'));
  app.dispose();console.log('PASS: pre-open plan, one cash button, actionable row, expiry redraw');
 })().catch(e=>{console.error(e);process.exitCode=1;});
