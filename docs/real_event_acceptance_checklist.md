@@ -4,7 +4,7 @@
 
 - 北京时间05:03完成首次真实收盘及跨日核验：美东11月6日完整收盘行情、10只持仓与生命周期一致，账户未变，页面和API进入下一交易日等待。证据：本地tmp/roa_close_acceptance_20261107/summary.json；不再将首次收盘列为未验收。
 - 盘中刷新、过期建议参考保留与ROA图表修复已加载至8010；正式只读页面显示10条真实BUY记录，无脚本错误。账户在部署前后完全一致。证据：本地tmp/roa_intraday_refresh_20261107/page-production.json及account-after-deploy.json。
-- 两项既有月度任务已更新版本引用，非Action字段不变。新准备入口实跑返回WAIT_COMPLETED_MONTH_END/exit0；衔接入口实跑返回WAIT_PREPARED_MONTH。调度器历史12:10的结果2不能代表更新后的入口；仍需核对下一次调度结果。
+- 两项既有月度任务已更新版本引用，非Action字段不变。新准备入口实跑返回WAIT_COMPLETED_MONTH_END/exit0；衔接入口实跑返回WAIT_PREPARED_MONTH。Windows调度器后续实际运行已核验：准备任务12:14、衔接任务12:15均结果0；历史12:10结果2已被新版成功运行覆盖。证据：本地tmp/roa_intraday_refresh_20261107/scheduler-after.json。
 - 未完成：本次新版在真实盘中有效报价下的建议验收；用户真实部分成交/撤单（如发生）；真实月底准备、新月采用及旧新仓衔接。当前PENDING_OPEN不等于有效买卖建议通过。
 - 不制造成交、不改时钟；参考历史建议不能恢复成可执行建议。延迟执行不是原开盘回测成交。
 
