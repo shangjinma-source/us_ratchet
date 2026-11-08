@@ -72,6 +72,24 @@ class CorrectionTests(unittest.TestCase):
             event.update(event_id='stale',price='345.77')
             self.assertEqual(client.post('/api/strategy-account/events',json=dict(expected_revision=self.store.read()['revision'],event=event)).status_code,409)
 
+    def test_following_fill_cash_confirmation_and_restart_preserve_correction(self):
+        self.correct()
+        self.service.resolver=lambda ticker:dict(ticker=ticker,security_id='AAPL',source_references=['test'],source_hashes={'test':'a'*64})
+        sell=dict(kind='DIRECT_FILL',event_id='subsequent-sale',ticker='AAPL',side='SELL',quantity=5,price='350',fees='0',executed_at='2026-11-06T17:00:00+00:00')
+        response=self.service.append(dict(expected_revision=self.store.read()['revision'],event=sell))
+        self.assertFalse(response['account']['cash_confirmation_valid'])
+        self.assertEqual(Fraction(response['account']['holding_costs'][0]['total_cost']),6*Fraction('344.77'))
+        baseline=self.service.store.read()
+        expected_cash=10000-11*Fraction('344.77')+5*350
+        self.service.append(dict(expected_revision=baseline['revision'],event=dict(kind='CASH_CONFIRM',event_id='subsequent-cash',amount=str(expected_cash),cash_basis='TOTAL_UNINVESTED')))
+        reopened=StrategyAccountService(database_path=self.store.path,account_id='test',resolver=None)
+        account=reopened.read()['account']
+        self.assertTrue(account['cash_confirmation_valid'])
+        self.assertEqual(Fraction(account['cash']),expected_cash)
+        self.assertEqual(Fraction(account['fills'][0]['price']),Fraction('344.77'))
+        self.assertEqual(len(account['fills']),2)
+        self.assertEqual(audit_cash_changes(baseline=baseline,current=reopened.audit_state())['confirmations'][0]['unexplained_net_change'],'0')
+
     def test_partial_sale_and_unconfirmed_cash(self):
         self.add('DIRECT_FILL',security_id='AAPL',side='SELL',quantity=5,price='350',fees='0',executed_at='2026-11-06T17:00:00+00:00')
         result=self.correct()['account']
