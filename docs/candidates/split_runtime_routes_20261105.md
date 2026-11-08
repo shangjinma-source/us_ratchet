@@ -1,9 +1,0 @@
-# 同一拆股账户代次的全新路由组装
-
-工厂接收显式monthly/view和daily实例，构造新的账户router、observed daily、NewsInvestmentService/EventNewsPipeline，再接V30快照和V32 current接口。没有旧prepared/router输入，不通过替换字典保留旧新闻闭包。
-
-发现并修复候选路由组合的生命周期重复：直接include新闻router会同时转移hooks与合并默认lifespan。新组装只承接新闻lifespan一次、转移routes；实际TestClient生命周期确认worker仅启动/关闭一次。此改动尚未应用生产，不能据此宣称原生产存在同样故障。
-
-根独立命令`D:/python/python.exe -m unittest discover -s tests -p test_split_runtime_routes_20261105.py -q`，session80990退出0，1项综合测试9.087秒通过：HTTP保存可用现金15000，有未结买单预留20时不重复扣减、正确WAIT；HTTP撤单并重确认后current给出拆后卖16股建议；账户/建议/news context同revision与真实持久化proposal；旧revision查询409。
-
-这条测试没有POST卖出成交，卖16是建议不是成交。新闻使用真实服务/context但未调用模型，worker运输启动被stub；报价与来源为合成。当前daily为基本三时点composition；生产保护admission已有独立测试，二者整体HTTP连接及成交后刷新另行推进。monthly仍为固定目标夹具，跨月selection/release和部署激活未完成。
