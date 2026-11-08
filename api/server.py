@@ -2938,7 +2938,7 @@ def _advice_snapshot_from_state(payload: dict) -> dict:
 
 @app.get("/")
 def index():
-    return FileResponse(WEB)
+    return FileResponse(WEB, headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/api/refresh")

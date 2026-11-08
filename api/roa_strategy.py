@@ -13,11 +13,11 @@ def create_router(*, coordinator):
 
     @router.get('/static/strategy_roa_controller.js')
     async def controller_asset():
-        return FileResponse(Path(__file__).resolve().parents[1]/'web/strategy_roa_controller.js',media_type='application/javascript')
+        return FileResponse(Path(__file__).resolve().parents[1]/'web/strategy_roa_controller.js',media_type='application/javascript',headers={'Cache-Control':'no-cache'})
 
     @router.get('/static/strategy_roa_mount.js')
     async def mount_asset():
-        return FileResponse(Path(__file__).resolve().parents[1]/'web/strategy_roa_mount.js',media_type='application/javascript')
+        return FileResponse(Path(__file__).resolve().parents[1]/'web/strategy_roa_mount.js',media_type='application/javascript',headers={'Cache-Control':'no-cache'})
 
     async def invoke(request, retry, status=False):
         dispatched=False

@@ -1,4 +1,5 @@
 import unittest,tempfile
+from hashlib import sha256
 from datetime import datetime,timedelta
 from pathlib import Path
 from fastapi import FastAPI
@@ -26,9 +27,14 @@ class HttpTests(unittest.TestCase):
     resolver=lambda ticker:dict(ticker=ticker,security_id='A',source_references=['synthetic'],source_hashes={'synthetic':'b'*64})))
    with TestClient(app) as client:
     for asset in ('strategy_roa_controller.js','strategy_roa_mount.js'):
-     script=client.get('/static/'+asset)
+     web=Path(__file__).resolve().parents[1]/'web'
+     page=(web/'index.html').read_text(encoding='utf-8')
+     version=sha256((web/asset).read_bytes()).hexdigest()[:12]
+     self.assertIn('/static/'+asset+'?v='+version,page)
+     script=client.get('/static/'+asset+'?v='+version)
      self.assertEqual(script.status_code,200)
      self.assertIn('application/javascript',script.headers['content-type'])
+     self.assertEqual(script.headers['cache-control'],'no-cache')
      self.assertEqual(script.content,(Path(__file__).resolve().parents[1]/'web'/asset).read_bytes())
     config=client.get('/api/strategy-roa/config').json();self.assertEqual(config['strategy_epoch'],'e')
     plan=client.get('/api/strategy-roa/snapshot').json();self.assertEqual(plan['status'],'PENDING_OPEN');self.assertTrue(plan['advice_ready']);self.assertFalse(plan['executable']);self.assertIsNone(plan['rows'][0]['quantity']);self.assertEqual(calls,[])
