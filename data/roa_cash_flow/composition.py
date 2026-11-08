@@ -22,7 +22,7 @@ class FlowAddon:
         self.roa=roa_service;self.account=roa_service.account_service;self.root=Path(root).resolve();self.config=configuration;self.clock=clock
         self.profit_lock=Lock()
         self.store=ClassificationService(path=self.local(configuration['sidecar_path']),account_id=self.account.account_id,
-            read_accounts=lambda:(self.baseline()[1],self.account.store.read()),account_operation=self.operation,
+            read_accounts=lambda:(self.baseline()[1],self.account.audit_state()),account_operation=self.operation,
             receipt_resolver=self.receipt,performance_baseline_at=datetime.fromisoformat(self.baseline()[0]['effective_at']),clock=clock)
     def local(self,name):
         if type(name)is not str or not name.startswith('data/strategy_account/') or '\\' in name or ':' in name or any(part in ('','.','..') for part in name.split('/')):raise ValueError('FLOW_PATH_INVALID')
@@ -68,7 +68,7 @@ class FlowAddon:
         return result
     def current(self, *, include_profit=False):
         with self.operation():
-            baseline,old=self.baseline();current=self.account.store.read();documents=self.records()
+            baseline,old=self.baseline();current=self.account.audit_state();documents=self.records()
             audit=audit_cash_changes(baseline=old,current=current);state=old;revisions={}
             for record in current['events'][len(old['events']):]:
                 before=state['revision'];state,_=apply_event(state,record['payload'],expected_revision=before);revisions[record['payload']['event_id']]=(before,state['revision'])
@@ -98,7 +98,7 @@ class FlowAddon:
             except ValueError as error:reason=str(error)
         elif unresolved:reason='UNCLASSIFIED_CASH_CHANGE'
         with self.operation():
-            if self.account.store.read()!=current or self.records()!=documents or self.baseline()!=[baseline,old]:raise ValueError('STALE_PERFORMANCE_SNAPSHOT')
+            if self.account.audit_state()!=current or self.records()!=documents or self.baseline()!=[baseline,old]:raise ValueError('STALE_PERFORMANCE_SNAPSHOT')
         return dict(classifications_sha256=sha256(json.dumps(documents,sort_keys=True,separators=(',',':')).encode()).hexdigest(),profit_valid_until=valid_until,account_id=current['account_id'],revision=current['revision'],unresolved=unresolved,classified=classified,profit=profit,performance_reason=reason,return_fraction=None,maximum_drawdown_fraction=None,account_mutated=False)
     def profit_current(self):
         if not self.profit_lock.acquire(blocking=False):raise ValueError('VALUATION_ALREADY_RUNNING')

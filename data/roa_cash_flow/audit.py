@@ -4,11 +4,23 @@ from core.strategy_account_ledger import replay, apply_event
 
 
 def audit_cash_changes(*, baseline, current):
+    amendments=current.get('_fill_price_corrections',[])
+    current={k:v for k,v in current.items() if k!='_fill_price_corrections'}
     for state in (baseline,current):
         if replay(state['account_id'],[r['payload'] for r in state['events']])!=state:
             raise ValueError('ACCOUNT_REPLAY_MISMATCH')
     if baseline['account_id']!=current['account_id'] or current['events'][:len(baseline['events'])]!=baseline['events']:
         raise ValueError('ACCOUNT_HISTORY_FORK')
+    # Recompute historical reconciliation from the latest corrected trade facts.
+    # Journal payloads/revisions remain untouched; a previously classified cash
+    # difference must be revalidated if its amount changes after a correction.
+    prices = {r['event']['fill_id']: r['event']['price'] for r in amendments}
+    def trade_delta(record):
+        event=record['payload']
+        if event['event_id'] not in prices:return F(record['effect']['cash_delta'])
+        order=current['orders'][event['order_id']] if event['kind']=='FILL' else event
+        value=event['quantity']*F(prices[event['event_id']])
+        return (value if order['side']=='SELL' else -value)-F(event['fees'])
     # A fill invalidates manual cash. Reconstruct the theoretical balance since
     # the last authoritative confirmation, including fills already in baseline.
     expected=F(0)
@@ -17,7 +29,7 @@ def audit_cash_changes(*, baseline, current):
             # Prefix replay also restores the exact reservation snapshot.
             prefix=baseline['events'][:baseline['events'].index(row)+1]
             expected=F(replay(baseline['account_id'],[r['payload'] for r in prefix])['total_uninvested_cash'])
-        else:expected+=F(row['effect']['cash_delta'])
+        else:expected+=trade_delta(row)
     state=baseline;rows=[];trade_since_confirmation=F(0)
     for record in current['events'][len(baseline['events']):]:
         event=record['payload'];before=state
@@ -36,7 +48,7 @@ def audit_cash_changes(*, baseline, current):
                 classification=None))
             expected=actual;trade_since_confirmation=F(0)
         else:
-            delta=F(effect['cash_delta']);expected+=delta;trade_since_confirmation+=delta
+            delta=trade_delta(record);expected+=delta;trade_since_confirmation+=delta
     return dict(status='CASH_DIFFERENCE_AUDIT_ONLY',account_id=current['account_id'],
                 baseline_revision=baseline['revision'],current_revision=current['revision'],
                 confirmations=rows,account_mutated=False,returns_computed=False,

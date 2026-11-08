@@ -12,6 +12,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from core.strategy_account_store import StrategyAccountStore
+from core.strategy_fill_correction_store import FillCorrectionStore
+from hashlib import sha256
+from core.strategy_account_ledger import canonical
 
 
 def require(ok, reason):
@@ -29,6 +32,7 @@ class WriteOutcomeUncertain(RuntimeError):
 class StrategyAccountService:
     def __init__(self, *, database_path, account_id, resolver, clock=None, valuation_provider=None):
         self.store=StrategyAccountStore(database_path,clock=clock)
+        self.corrections=FillCorrectionStore(self.store)
         self.account_id=account_id
         self.resolver=resolver
         self.clock=clock or (lambda:datetime.now(timezone.utc))
@@ -76,6 +80,12 @@ class StrategyAccountService:
             filled_quantity=o['filled_quantity'],remaining_quantity=o['remaining_quantity'],
             limit_price=o['limit_price'],reserved_cash=o['reserved_cash'])
             for o in state['orders'].values() if o['status']=='OPEN']
+        corrections = {}
+        amendments=self.corrections.read(state)
+        account['fill_correction_revision']=sha256(canonical(amendments)).hexdigest()
+        for record in amendments:
+            event=record['event']
+            corrections.setdefault(event['fill_id'], []).append(deepcopy(event))
         fills=[]; costs={}; quantities={}; cash_delta=Fraction(0); last_cash=None
         for row in state['events']:
             event=row['payload'];kind=event['kind']
@@ -85,8 +95,9 @@ class StrategyAccountService:
             if kind not in {'FILL','DIRECT_FILL'}:continue
             order=state['orders'][event['order_id']] if kind=='FILL' else event
             sid=order['security_id'];side=order['side'];quantity=event['quantity']
-            price=Fraction(event['price']);fees=Fraction(event['fees'])
-            delta=Fraction(row['effect']['cash_delta']);cash_delta+=delta
+            history = corrections.get(event['event_id'], [])
+            price=Fraction(history[-1]['price'] if history else event['price']);fees=Fraction(event['fees'])
+            delta=(quantity*price if side=='SELL' else -quantity*price)-fees;cash_delta+=delta
             held=quantities.get(sid,0);cost=costs.get(sid,Fraction(0))
             if side=='BUY':
                 costs[sid]=cost+quantity*price+fees;quantities[sid]=held+quantity
@@ -95,6 +106,8 @@ class StrategyAccountService:
             fills.append(dict(fill_id=event['event_id'],security_id=sid,ticker=names.get(sid),
                 side=side,quantity=quantity,price=str(price),fees=str(fees),
                 executed_at=event['executed_at'],cash_delta=str(delta)))
+            if history:
+                fills[-1].update(original_price=event['price'], price_corrections=history)
         account['fills']=fills
         account['holding_costs']=[dict(security_id=sid,ticker=names.get(sid),quantity=q,
             total_cost=str(costs[sid]),average_cost=str(costs[sid]/q))
@@ -108,6 +121,13 @@ class StrategyAccountService:
         return dict(status='READY',account=account,ticker_scope='RECORDED_IDENTITY',orders_submitted=False)
 
     def read(self):return self.project(self.store.read())
+
+    def audit_state(self):
+        state=self.store.read()
+        if state is not None:
+            amendments=self.corrections.read(state)
+            if amendments:state=dict(state,_fill_price_corrections=amendments)
+        return state
 
     def committed_projection(self,state):
         try:return self.project(state)
@@ -129,11 +149,15 @@ class StrategyAccountService:
                 'ORDER_OPEN':{'order_id','ticker','side','quantity','limit_price','fee_per_share'},
                 'DIRECT_FILL':{'ticker','side','quantity','price','fees','executed_at'},
                 'FILL':{'order_id','quantity','price','fees','executed_at'},
-                'CANCEL':{'order_id'}}
+                'CANCEL':{'order_id'},
+                'FILL_PRICE_CORRECTION':{'fill_id','price','previous_price','reason'}}
         kind=event.get('kind')
         require(kind in fields and set(event)==fields[kind]|{'kind','event_id'},'EVENT_FIELDS')
         state=self.store.read();require(state is not None,'ACCOUNT_NOT_INITIALIZED')
         require(state['account_id']==self.account_id,'ACCOUNT_SCOPE_MISMATCH')
+        if kind=='FILL_PRICE_CORRECTION':
+            effect=self.corrections.append(event,expected_revision=body['expected_revision'])
+            return dict(self.read(),effect=effect)
         if kind in {'DIRECT_FILL','ORDER_OPEN'}:
             ticker=event.pop('ticker')
             require(isinstance(ticker,str) and re.fullmatch('[A-Z0-9][A-Z0-9.-]{0,15}',ticker),'TICKER_REQUIRED')
@@ -179,7 +203,7 @@ def create_router(*,database_path,account_id,resolver,clock=None,valuation_provi
                     write_may_have_occurred=True,reconcile_before_retry=True),
                     status_code=503,headers={'Cache-Control':'no-store'})
             reason=str(error) if isinstance(error,ValueError) and re.fullmatch('[A-Z][A-Z0-9_]{0,79}',str(error)) else 'REQUEST_REJECTED'
-            code=409 if reason in {'STALE_REVISION','EVENT_ID_CONFLICT','INITIALIZATION_CONFLICT','IDENTITY_MAPPING_CHANGED'} else 422
+            code=409 if reason in {'STALE_REVISION','STALE_FILL_PRICE','EVENT_ID_CONFLICT','INITIALIZATION_CONFLICT','IDENTITY_MAPPING_CHANGED'} else 422
             return JSONResponse(dict(status='BLOCKED',reason=reason),status_code=code,headers={'Cache-Control':'no-store'})
     @router.get('/api/strategy-account')
     async def read(request:Request):return await invoke(request,service.read)
