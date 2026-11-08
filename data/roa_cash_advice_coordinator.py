@@ -56,8 +56,12 @@ class CashAdviceCoordinator:
         require(state is not None, 'ACCOUNT_NOT_INITIALIZED')
         matches = [row['payload'] for row in state['events'] if row['payload']['event_id'] == event.get('event_id')]
         require(not matches or matches == [event], 'CASH_EVENT_CONFLICT')
-        return dict(cash_saved=True if matches else None,advice_ready=False,
-                    reason='CASH_RECORDED' if matches else 'CASH_NOT_YET_OBSERVED',
+        # With no matching event, an advanced revision proves that this exact
+        # optimistic write can no longer commit, including a delayed request.
+        # Absence at the same revision is still an unknown in-flight outcome.
+        superseded = not matches and state['revision'] != body['expected_revision']
+        return dict(cash_saved=True if matches else False if superseded else None,advice_ready=False,
+                    reason='CASH_RECORDED' if matches else 'CASH_NOT_SAVED_ACCOUNT_CHANGED' if superseded else 'CASH_NOT_YET_OBSERVED',
                     account_revision=state['revision'],orders_created=False)
 
     def _advice(self, *, cash_saved):

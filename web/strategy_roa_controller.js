@@ -80,6 +80,11 @@ function createController({request,readAccount,eventId,pendingStore,expectedEpoc
   refresh:()=>run(async token=>{
    if(pending){
     const result=await call('cash-status',pending);
+    // Only the server's exact revision-conflict proof can release this intent.
+    if(result.cash_saved===false&&result.reason==='CASH_NOT_SAVED_ACCOUNT_CHANGED'){
+     clear();state.cashSaved=false;
+     throw Error('CASH_NOT_SAVED_ACCOUNT_CHANGED');
+    }
     // Not observed can still be an in-flight write. Never resend it here.
     if(result.cash_saved!==true)throw Error(result.reason||'CASH_RECONCILIATION_REQUIRED');
     clear();state.cashSaved=true;
