@@ -104,35 +104,46 @@ class RoaStrategyService(CashAdviceCoordinator):
                     action_required='RECONCILE_REAL_ORDERS_AND_CASH')
             elif view['status']=='WINDOW_OPEN' and admitted:
                 try:
-                    needed=set(signal['weights'])|{s for s,q in state['shares'].items() if q}
+                    # A defensive OPEN has no selected-stock buy targets. Quotes for
+                    # an unheld roster member must not block exits of real holdings.
+                    defensive_open=event['phase']=='OPEN' and event['risk_on'] is False
+                    selected=set() if defensive_open else set(signal['weights'])
+                    needed=selected|{s for s,q in state['shares'].items() if q}
                     needed|={o['security_id'] for o in state['orders'].values() if o['status']=='OPEN'}
-                    quotes=self.quote_provider(deepcopy(state),needed,session,event['phase'],now)
-                    # Fetching can advance time: validate new marks against the real post-fetch clock.
-                    now=self.clock()
-                    for sid in needed:
-                        mark=quotes['marks'][sid]
-                        require(mark['security_id']==sid and mark['currency']=='USD' and mark['price_basis']=='current','QUOTE_IDENTITY_MISMATCH')
-                        require(type(mark['price']) in (str,int) and F(mark['price'])>0,'POSITIVE_QUOTE_REQUIRED')
-                    if event['phase']=='OPEN':
-                        require(quotes['opening_session']==session,'OPENING_SESSION_MISMATCH')
+                    if defensive_open and not needed:
+                        # Already cash-only: no quote exists or is needed, and no order is authorized.
                         event=self.lifecycle.materialize_open(event_id=event['event_id'],account=state,
-                            opening_prices=quotes['opening_prices'],now=now.isoformat())
+                            opening_prices={},now=now.isoformat())
                         targets=event['targets']
+                        result.update(status='HOLD',target_quantities=targets,executable=False)
                     else:
-                        targets={s:q for s,q in state['shares'].items() if q and s not in event['pending']}
-                    weights={s:'0' for s in set(targets)|set(signal['weights'])}
-                    advice=preview_target_weights(account=state,expected_revision=state['revision'],weights=weights,
-                        marks=quotes['marks'],limits=quotes['limits'],signal_at=self.session_provider(signal['signal_date'])['close_at'],
-                        valid_from=event['valid_from'],valid_until=event['valid_until'],now=now.isoformat(),
-                        contract_hash=self.lifecycle.contract,frozen_quantities=targets)
-                    deadline=min(timestamp(quotes['quote_valid_until']),timestamp(event['valid_until']))
-                    require(self.clock()<deadline,'QUOTE_EXPIRED')
-                    binding=dict(strategy_epoch=self.lifecycle.epoch,account_revision=state['revision'],event_id=event['event_id'],
-                        targets=targets,phase=event['phase'],valid_from=event['valid_from'],valid_until=event['valid_until'])
-                    target_id=digest(binding);proposal_id=digest(dict(target_id=target_id,difference=advice['difference'],quote_valid_until=deadline.isoformat()))
-                    result.update(status='CANCEL_THEN_RECALCULATE' if advice['difference']['status']=='CANCEL_THEN_RECALCULATE' else 'READY',executable=advice['difference']['status']!='CANCEL_THEN_RECALCULATE',target_id=target_id,proposal_id=proposal_id,
-                        target_quantities=targets,quote_valid_until=deadline.isoformat(),difference=advice['difference'],
-                        limit_reference=quotes.get('limit_reference','LATEST_QUOTE'))
+                        quotes=self.quote_provider(deepcopy(state),needed,session,event['phase'],now)
+                        # Fetching can advance time: validate new marks against the real post-fetch clock.
+                        now=self.clock()
+                        for sid in needed:
+                            mark=quotes['marks'][sid]
+                            require(mark['security_id']==sid and mark['currency']=='USD' and mark['price_basis']=='current','QUOTE_IDENTITY_MISMATCH')
+                            require(type(mark['price']) in (str,int) and F(mark['price'])>0,'POSITIVE_QUOTE_REQUIRED')
+                        if event['phase']=='OPEN':
+                            require(quotes['opening_session']==session,'OPENING_SESSION_MISMATCH')
+                            event=self.lifecycle.materialize_open(event_id=event['event_id'],account=state,
+                                opening_prices=quotes['opening_prices'],now=now.isoformat())
+                            targets=event['targets']
+                        else:
+                            targets={s:q for s,q in state['shares'].items() if q and s not in event['pending']}
+                        weights={s:'0' for s in set(targets)|selected}
+                        advice=preview_target_weights(account=state,expected_revision=state['revision'],weights=weights,
+                            marks=quotes['marks'],limits=quotes['limits'],signal_at=self.session_provider(signal['signal_date'])['close_at'],
+                            valid_from=event['valid_from'],valid_until=event['valid_until'],now=now.isoformat(),
+                            contract_hash=self.lifecycle.contract,frozen_quantities=targets)
+                        deadline=min(timestamp(quotes['quote_valid_until']),timestamp(event['valid_until']))
+                        require(self.clock()<deadline,'QUOTE_EXPIRED')
+                        binding=dict(strategy_epoch=self.lifecycle.epoch,account_revision=state['revision'],event_id=event['event_id'],
+                            targets=targets,phase=event['phase'],valid_from=event['valid_from'],valid_until=event['valid_until'])
+                        target_id=digest(binding);proposal_id=digest(dict(target_id=target_id,difference=advice['difference'],quote_valid_until=deadline.isoformat()))
+                        result.update(status='CANCEL_THEN_RECALCULATE' if advice['difference']['status']=='CANCEL_THEN_RECALCULATE' else 'READY',executable=advice['difference']['status']!='CANCEL_THEN_RECALCULATE',target_id=target_id,proposal_id=proposal_id,
+                            target_quantities=targets,quote_valid_until=deadline.isoformat(),difference=advice['difference'],
+                            limit_reference=quotes.get('limit_reference','LATEST_QUOTE'))
                 except (ValueError,KeyError,TypeError,OSError):
                     result.update(status='WAIT_FRESH_QUOTE',executable=False,quote_valid_until=None)
             orders={r['security_id']:r for r in result.get('difference',{}).get('new_orders',[])}
