@@ -22,6 +22,30 @@ class IntradayTests(unittest.TestCase):
    self.assertEqual(service.snapshot()['target_id'],ready['target_id']);self.assertEqual(sum(bool(e['materialized_revision']) for e in life.read()['events']),1)
    now[0]=datetime.fromisoformat('2026-11-06T20:30:00+00:00')
    later=service.snapshot();self.assertTrue(later['executable']);self.assertEqual(later['target_id'],ready['target_id']);self.assertEqual(later['target_quantities'],ready['target_quantities'])
+   # The real cash HTTP route must update affordability in both directions,
+   # while preserving the already materialized strategy targets.
+   from fastapi import FastAPI
+   from fastapi.testclient import TestClient
+   from api.roa_strategy import create_router
+   from fractions import Fraction
+   app=FastAPI();app.include_router(create_router(coordinator=service))
+   with TestClient(app) as client:
+    for event_id,amount in [('cash-decrease','30'),('cash-increase','2000')]:
+     body=dict(expected_revision=account.store.read()['revision'],event=dict(event_id=event_id,kind='CASH_CONFIRM',amount=amount,cash_basis='AVAILABLE_AFTER_RESERVATIONS'))
+     response=client.post('/api/strategy-roa/cash-save-and-preview',json=body)
+     self.assertEqual(response.status_code,200,response.text)
+     value=response.json();self.assertTrue(value['cash_saved']);self.assertEqual(value['status'],'READY')
+     self.assertEqual(value['target_quantities'],ready['target_quantities'])
+     self.assertEqual(value['account_revision'],account.store.read()['revision'])
+     self.assertNotEqual(value['proposal_id'],later['proposal_id'])
+     buys=[row for row in value['difference']['new_orders'] if row['side']=='BUY']
+     self.assertLessEqual(sum(row['quantity']*Fraction(row['limit_price']) for row in buys),Fraction(amount))
+     if amount=='2000':self.assertEqual(sum(row['quantity'] for row in buys),9)
+     else:self.assertTrue(value['difference']['waiting_cash'])
+     recorded=account.store.read()
+     self.assertEqual(client.post('/api/strategy-roa/cash-save-and-preview',json=body).status_code,200)
+     self.assertEqual(account.store.read(),recorded)
+   before=account.store.read()
    now[0]=datetime.fromisoformat('2026-11-06T20:55:00+00:00');self.assertFalse(service.snapshot()['executable'])
    self.assertEqual(account.store.read(),before)
 if __name__=='__main__':unittest.main()
