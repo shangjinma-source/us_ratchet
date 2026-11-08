@@ -91,6 +91,9 @@ class RoaStrategyService(CashAdviceCoordinator):
                 target_id=None,proposal_id=None,target_quantities=targets,quote_valid_until=None,
                 valid_from=event['valid_from'] if event else None,valid_until=event['valid_until'] if event else None,
                 rows=[],orders_created=False,execution_assumption='MANUAL_EXECUTION_NOT_GUARANTEED_HISTORICAL_OPEN_CLOSE')
+            # This is the signal's intended allocation, not a claim that trades filled.
+            result['market_signal']=dict(risk_on=signal['risk_on'],signal_date=signal['signal_date'],
+                execution_session=session,event_reason=event['reason'] if event else None)
             result['late_execution']=bool(late_authorized and event and event['phase']=='OPEN' and now>=standard_open_until)
             result['standard_open_valid_until']=standard_open_until.isoformat()
             if result['late_execution']:

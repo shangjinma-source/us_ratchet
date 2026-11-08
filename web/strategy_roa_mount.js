@@ -39,6 +39,12 @@ function mount(container,dependencies){
   const balance=cashText(account?.available_cash);
   if(!edited&&account?.cash_confirmation_valid&&balance!==null)input.value=balance;
   status.textContent=state.busy?'正在读取最新建议…':state.error?(reasons[state.error]||'建议未更新，请刷新核对。'):(reasons[advice?.status]??'等待策略数据');
+  const market=advice?.market_signal;
+  if(!state.busy&&!state.error&&typeof market?.risk_on==='boolean'&&
+     /^\d{4}-\d{2}-\d{2}$/.test(market.signal_date)&&/^\d{4}-\d{2}-\d{2}$/.test(market.execution_session)){
+   status.textContent=market.signal_date+' 收盘信号：'+(market.risk_on?'配置股票':'防御持币')+
+    ' · '+market.execution_session+' 执行计划（不代表已成交） · '+status.textContent;
+  }
   if(advice?.late_execution===true&&!state.busy&&!state.error)status.textContent=(advice.limit_reference==='SESSION_OPEN'?'延迟执行 · 目标及限价参考今日开盘价，不保证成交。':'延迟执行 · 开盘价计算目标，当前报价计算限价；不代表按开盘回测成交。')+status.textContent;
   if(state.error&&state.cashSaved===true)status.textContent='现金已保存；'+status.textContent;
   const previous=state.lastAdvice;
