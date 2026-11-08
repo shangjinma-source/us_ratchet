@@ -37,3 +37,13 @@ D:/python/python.exe -B scripts/verify_roa_portable.py
 源码精简时验证通过：283项ROA便携测试、9项月度决策测试、10组前端测试及后端导入。便携入口排除三组依赖私有训练证据的测试；保留的部分旧辅助测试仍有接口断言问题，不能宣称全目录discover全部通过。文档改动不重新证明实盘或经济结果。
 
 当前部署与待验收事项只看[验收清单](real_event_acceptance_checklist.md)及[TODO](../TODO.md)，旧研究合同的阶段描述不作当前状态依据。
+
+## 成交更正与账户备份
+
+成交价更正是独立追加日志，不能只备份主账户SQLite。使用以下命令生成新的本地账户备份目录（已有目录拒绝覆盖）：
+
+```powershell
+D:/python/python.exe -B -m scripts.backup_strategy_account --database E:/Git/us_ratchet/data/strategy_account/real_strategy.sqlite3 --output E:/Git/us_ratchet/tmp/account-backup-唯一时间戳
+```
+
+备份在短暂账户写锁下同时保存主账本及存在的`.fill_corrections.sqlite3`，校验SQLite完整性和重读投影一致后生成manifest。目录含私人账本，不上传GitHub。该入口不执行恢复，也不是整站备份：资金原因分类、绩效基线、生命周期、活动配置和任务引用仍需另行保存。恢复时不可遗漏更正文件，不能将账户备份误当作完整部署回滚。
