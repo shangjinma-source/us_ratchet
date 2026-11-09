@@ -47,3 +47,9 @@ D:/python/python.exe -B -m scripts.backup_strategy_account --database E:/Git/us_
 ```
 
 备份在短暂账户写锁下同时保存主账本及存在的`.fill_corrections.sqlite3`，校验SQLite完整性和重读投影一致后生成manifest。目录含私人账本，不上传GitHub。该入口不执行恢复，也不是整站备份：资金原因分类、绩效基线、生命周期、活动配置和任务引用仍需另行保存。恢复时不可遗漏更正文件，不能将账户备份误当作完整部署回滚。
+
+## ROA 收盘维护状态
+
+只读入口 `/api/strategy-roa/maintenance-status` 返回后台任务存活状态、最近开始/结束时间、维护会话和等待原因；读取不触发恢复或账户写入。`worker_alive=true` 仅代表任务未结束，仍须检查开始/结束时间是否推进；`COMPLETE` 仅针对返回的 `session`，不能当作尚未收盘会话已完成。轮次结束后等待60秒再启动下一轮。
+
+2026-11-10 已部署，22项针对性测试、完整候选启动及真实接口和页面核验通过；账户前后完全一致。实际11月9日收盘及未来月包采用仍待真实时点验收。
