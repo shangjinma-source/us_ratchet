@@ -39,8 +39,11 @@ const actions=n=>[n.tag==='strong'?(n.textContent||''):'',...n.children.map(acti
  assert.ok(text(container).includes('已过期 0 秒'));
  mode='HOLD';await app.refresh();
  assert.ok(text(container).includes('无需操作'));assert.ok(!actions(container).includes('买入 5 股'));
+ assert.ok(!text(container).includes('已过期'));assert.ok(!text(container).includes('需刷新确认'));
+ assert.ok(!text(container).includes('上次结果'));assert.equal(timer,null);
  mode='WAIT_CASH_CONFIRMATION';await app.refresh();
  assert.ok(text(container).includes('成交后请填写券商最新可用现金'));
+ assert.ok(text(container).includes('上次结果（仅供参考）'));assert.ok(text(container).includes('已过期'));
  assert.ok(!actions(container).includes('买入 5 股'));
  mode='WAIT_ACCOUNT_RESERVATIONS';await app.refresh();
  assert.ok(text(container).includes('挂单占用与现金不一致'));

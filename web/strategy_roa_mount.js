@@ -34,6 +34,7 @@ function mount(container,dependencies){
   if(timer!==null){clearTimer(timer);timer=null;}
   save.disabled=input.disabled=state.busy||locked;save.textContent=state.busy?'正在更新建议…':'更新现金并查看建议';
   const account=state.account,advice=state.advice;
+  const currentHold=!state.busy&&!state.error&&advice?.advice_ready===true&&advice?.status==='HOLD';
   if(!state.busy){const tickers=!state.error&&advice?.advice_ready===true?[...new Set(advice.rows.map(r=>String(r.ticker||'').trim().toUpperCase()).filter(t=>/^[A-Z0-9][A-Z0-9.-]{0,14}$/.test(t)))].sort():[];const key=JSON.stringify(tickers);if(key!==lastRecommended){lastRecommended=key;onRecommendedTickers(tickers);}}
   if(!state.busy&&account?.revision&&flowRevision!==account.revision){flowRevision=account.revision;doc.defaultView?.dispatchEvent(new Event("strategy-account-updated"));}
   const balance=cashText(account?.available_cash);
@@ -45,12 +46,12 @@ function mount(container,dependencies){
    status.textContent=market.signal_date+' 收盘信号：'+(market.risk_on?'配置股票':'防御持币')+
     ' · '+market.execution_session+' 执行计划（不代表已成交） · '+status.textContent;
   }
-  if(advice?.late_execution===true&&!state.busy&&!state.error)status.textContent=(advice.limit_reference==='SESSION_OPEN'?'延迟执行 · 目标及限价参考今日开盘价，不保证成交。':'延迟执行 · 开盘价计算目标，当前报价计算限价；不代表按开盘回测成交。')+status.textContent;
+  if(advice?.late_execution===true&&!state.busy&&!state.error&&!currentHold)status.textContent=(advice.limit_reference==='SESSION_OPEN'?'延迟执行 · 目标及限价参考今日开盘价，不保证成交。':'延迟执行 · 开盘价计算目标，当前报价计算限价；不代表按开盘回测成交。')+status.textContent;
   if(state.error&&state.cashSaved===true)status.textContent='现金已保存；'+status.textContent;
   const previous=state.lastAdvice;
   const previousDeadline=previous?Math.min(Date.parse(previous.valid_until),Date.parse(previous.quote_valid_until)):NaN;
-  const oldReference=previous&&(!advice?.executable||state.busy||state.error);
-  if(previous&&Number.isFinite(state.lastAdviceAt)){
+  const oldReference=previous&&!currentHold&&(!advice?.executable||state.busy||state.error);
+  if(previous&&!currentHold&&Number.isFinite(state.lastAdviceAt)){
    status.textContent+=' · 最近有效结果 '+new Date(state.lastAdviceAt).toLocaleTimeString('zh-CN',{hour12:false});
    if(Number.isFinite(previousDeadline))status.textContent+=now()>=previousDeadline?' · 已过期 '+Math.floor((now()-previousDeadline)/1000)+' 秒':' · 有效至 '+new Date(previousDeadline).toLocaleTimeString('zh-CN',{hour12:false});
    if(oldReference)status.textContent+=' · 上次结果仅供参考，需刷新确认';
