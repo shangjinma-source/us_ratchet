@@ -1,5 +1,5 @@
 """Real composition and recovery; only market/calendar transport replaced."""
-import importlib.util,os,unittest
+import asyncio,json,importlib.util,os,unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from datetime import datetime
@@ -48,6 +48,22 @@ class CatchupTests(unittest.TestCase):
      self.assertEqual(life.read()['last_close'],'2026-11-09' if mode=='multi' else '2026-11-06');self.assertEqual(fetched,['2026-11-06','2026-11-09'] if mode=='multi' else ['2026-11-06']);self.assertEqual(prepared['roa_signal_provider'].refreshes,1)
      prepared['roa_maintain_completed_session']();self.assertEqual(len(fetched),2 if mode=='multi' else 1)
     self.assertEqual(a.store.read(),before)
+    endpoint=next(r.endpoint for r in prepared['router'].routes if r.path=='/api/strategy-roa/maintenance-status')
+    recovery_before=life.read();fetches_before=list(fetched)
+    response=asyncio.run(endpoint());health=json.loads(response.body)
+    self.assertFalse(health['running']);self.assertFalse(health['worker_alive'])
+    self.assertEqual(health['last_finished_at'],now[0].isoformat())
+    self.assertEqual(health['status'],'WAIT' if mode=='missing' else 'COMPLETE')
+    self.assertEqual(response.headers['cache-control'],'no-store')
+    self.assertEqual(a.store.read(),before);self.assertEqual(life.read(),recovery_before);self.assertEqual(fetched,fetches_before)
+    if mode=='no_plan':
+     async def check_worker():
+      async with prepared['router'].lifespan_context(None):
+       health=json.loads((await endpoint()).body)
+       self.assertTrue(health['worker_alive'])
+      self.assertFalse(json.loads((await endpoint()).body)['worker_alive'])
+     asyncio.run(check_worker())
+     self.assertEqual(a.store.read(),before)
  def test_restart_preopen_recovers_friday(self):self.fixture('single')
  def test_multiple_missed_closes_are_contiguous(self):self.fixture('multi')
  def test_market_updates_without_lifecycle_plan(self):self.fixture('no_plan')

@@ -114,9 +114,11 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
         validate_sources()
         return result
     maintenance_status={}
+    maintenance_task=None
     def maintain_completed_session():
         """Catch up completed exchange sessions with journal-time holdings, not today's shares."""
         now=clock();day=now.astimezone(ZoneInfo('America/New_York')).date().isoformat()
+        maintenance_status.update(running=True,last_started_at=now.isoformat())
         try:
             validate_sources()
             sessions=calendar.sessions()
@@ -149,6 +151,8 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
         except Exception as error:
             maintenance_status.update(status='WAIT',session=day,reason=str(error))
             logging.getLogger(__name__).warning('ROA close maintenance deferred: %s',error)
+        finally:
+            maintenance_status.update(running=False,last_finished_at=clock().isoformat())
     if configuration.get('display_history') is not None:
         from data.roa_display import build_display
         from api.strategy_latest_display_charts_v1 import create_router as display_router
@@ -162,12 +166,14 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
     original=prepared['router']
     @asynccontextmanager
     async def lifespan(app):
+        nonlocal maintenance_task
         async with original.lifespan_context(app):
             async def loop():
                 while True:
                     await run_in_threadpool(maintain_completed_session)
                     await asyncio.sleep(60)
             task=asyncio.create_task(loop())
+            maintenance_task=task
             try:yield
             finally:
                 task.cancel()
@@ -175,6 +181,19 @@ def attach_roa(*, prepared, root, configuration, validate_sources, clock=None):
                 except asyncio.CancelledError:pass
     wrapper=APIRouter(lifespan=lifespan)
     wrapper.routes.extend(original.routes)
+    @wrapper.get('/api/strategy-roa/maintenance-status')
+    async def read_maintenance_status():
+        # Reading health never runs recovery, loads prices, or writes the account.
+        from fastapi.responses import JSONResponse
+        import re
+        observed=dict(maintenance_status)
+        result={key:observed[key] for key in ('status','session','running','last_started_at','last_finished_at') if key in observed}
+        reason=observed.get('reason')
+        if reason:
+            result['reason']=reason if re.fullmatch('[A-Z][A-Z0-9_]{0,99}',reason) else 'MAINTENANCE_ERROR'
+        result.update(worker_alive=maintenance_task is not None and not maintenance_task.done(),
+                      checked_at=clock().isoformat(),poll_interval_seconds=60)
+        return JSONResponse(result,headers={'Cache-Control':'no-store'})
     prepared=dict(prepared,router=wrapper)
     return dict(prepared,roa_maintain_completed_session=maintain_completed_session,roa_maintenance_status=maintenance_status,roa_service=service,roa_signal_provider=signal,
         roa_observe_completed_session=observe_completed_session,roa_enabled=True)
