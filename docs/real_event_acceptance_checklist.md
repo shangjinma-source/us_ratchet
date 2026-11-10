@@ -15,7 +15,7 @@
 
 11月9日22:33私有证据：`tmp/roa_live_advice_20261109_2233/summary.json`及同目录前后账户、配置和建议响应；四个GET均200、账户前后相同、120秒报价时效及整数股/限价/资金约束通过。页面时间22:33:19；不是成交执行或策略收益证明。
 
-11月10日私有证据：`tmp/sales_reconciliation_20261110/cash_button_receipt.json`记录正式页面同余额确认；同目录保存实际成交前后回读。`tmp/roa_maintenance_status_20261110/deployment_acceptance.json`证明维护状态补丁上线、账户一致和页面正常；两次维护完成时间推进，只证明后台运行及最近完整11月6日会话，11月9日收盘仍待真实时点。
+11月10日私有证据：`tmp/sales_reconciliation_20261110/cash_button_receipt.json`记录正式页面同余额确认；同目录保存实际成交前后回读。`tmp/roa_maintenance_status_20261110/deployment_acceptance.json`证明维护状态补丁上线、账户一致和页面正常；两次维护完成时间推进，只证明后台运行及最近完整11月6日会话，11月9日收盘已在11月10日22:03补验：原始QQQ日线哈希、证券身份、日期与信号价格一致，记录采集时间05:00:22；收盘持仓为空，pending/missed_exits为空，API读取前后账户相同，页面信号11/9、执行11/10、防御持币。证据`tmp/roa_close_acceptance_20261110_evening/`；非05:00现场准时验收，不替代可执行买卖验收。
 
 ## 验收方法
 
