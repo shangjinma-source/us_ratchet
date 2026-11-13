@@ -21,7 +21,7 @@ class Node{
   return advice;
  }});
  await app.ready;
- const {fundingForm,fundingResult,fundingInputs,quota,ownership}=app.elements;
+ const {fundingForm,fundingResult,fundingInputs,quota,ownership,ownershipInputs}=app.elements;
  await fundingForm.fire('submit');assert.match(fundingResult.textContent,/优先使用/);assert.equal(calls.length,1);
  fundingInputs.hsbc.value='1000';quota.checked=true;await fundingForm.fire('submit');
  assert.match(fundingResult.textContent,/226.88/);assert.match(fundingResult.textContent,/未成交卖款/);const table=fundingResult.children.at(-1);assert.deepEqual(table.children.at(-1).children.map(cell=>cell.textContent),['WDC','卖出','汇丰','12']);assert.equal(calls.at(-1).body.hsbc_cash,'1000.00');
@@ -40,12 +40,18 @@ class Node{
  fundingInputs.usmart.value='1001';await fundingForm.fire('submit');assert.match(fundingResult.textContent,/不能超过/);
  fundingInputs.usmart.value='0';await fundingForm.fire('submit');
  account.holdings=[{security_id:'security:a',quantity:12}];
+ account.revision='e'.repeat(64);advice.account_revision=account.revision;
  await app.load();
  const priorCalls=calls.length;await fundingForm.fire('submit');
  assert.match(fundingResult.textContent,/确认现有持仓/);assert.equal(calls.length,priorCalls);
  ownership.checked=true;await fundingForm.fire('submit');
  assert.deepEqual(calls.at(-1).body.broker_holdings,{account_revision:account.revision,positions:[{broker:'HSBC',security_id:'security:a',quantity:12}]});
+ ownership.checked=false;ownershipInputs.get('security:a').value='5';await fundingForm.fire('submit');
+ assert.deepEqual(calls.at(-1).body.broker_holdings.positions,[{broker:'HSBC',security_id:'security:a',quantity:7},{broker:'USMART',security_id:'security:a',quantity:5}]);
+ const beforeInvalid=calls.length;ownershipInputs.get('security:a').value='13';await fundingForm.fire('submit');
+ assert.equal(calls.length,beforeInvalid);assert.match(fundingResult.textContent,/不能超过/);
  account.revision='d'.repeat(64);advice.account_revision=account.revision;await app.load();assert.equal(ownership.checked,false);
+ assert.equal(ownershipInputs.get('security:a').value,'');
  ownership.checked=true;await fundingForm.fire('submit');
  time=Date.parse('2026-11-13T16:02:00Z');timers.at(-1)();assert.match(fundingResult.textContent,/已过期/);
  app.dispose();console.log('PASS funding form: quota, pooled cash, no cash write, changed input, expiry');

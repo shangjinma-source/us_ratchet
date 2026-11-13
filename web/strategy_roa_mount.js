@@ -34,7 +34,8 @@ function mount(container,dependencies){
  for(const [key,text,value] of [['remainingQuota','汇丰剩余免佣交易额度 HKD（用尽可勾选上方）',''],['quotaReserve','为其他交易预留额度 HKD','0']]){
   const field=element('label',text),control=element('input');control.value=value;control.inputMode='decimal';field.appendChild(control);fundingForm.appendChild(field);fundingInputs[key]=control;
  }
- const ownershipLabel=element('label','现有持仓全部在汇丰（首次转入盈立前确认）'),ownership=element('input');ownership.type='checkbox';ownership.checked=false;ownershipLabel.appendChild(ownership);fundingForm.appendChild(ownershipLabel);
+ const ownershipLabel=element('label','确认现有持仓全部在汇丰'),ownership=element('input');ownership.type='checkbox';ownership.checked=false;ownershipLabel.appendChild(ownership);fundingForm.appendChild(ownershipLabel);
+ const ownershipFields=element('div');fundingForm.appendChild(ownershipFields);const ownershipInputs=new Map();
  let ownershipRevision=null;
  const fundingButton=element('button','确认余额并计算预算');fundingButton.type='submit';fundingForm.appendChild(fundingButton);
  funding.appendChild(fundingForm);funding.appendChild(fundingResult);section.appendChild(funding);
@@ -51,7 +52,15 @@ function mount(container,dependencies){
     if(budgetAmount(fundingInputs.remainingQuota.value)>25000000)throw Error('剩余免佣额度不能超过 250,000 港币');
     budgetAmount(fundingInputs.quotaReserve.value);
    }
-   if(current.account.holdings?.length&&!ownership.checked)throw Error('请确认现有持仓全部在汇丰；已有盈立持仓时暂不支持此预览');
+   const brokerPositions=[];
+   for(const held of current.account.holdings||[]){
+    const text=ownership.checked?'0':ownershipInputs.get(held.security_id)?.value;
+    if(typeof text!=='string'||!/^(?:0|[1-9]\d*)$/.test(text))throw Error('请确认现有持仓归属：勾选全部在汇丰，或逐只填写盈立股数');
+    const remote=Number(text);
+    if(!Number.isSafeInteger(remote)||remote>held.quantity)throw Error('盈立股数不能超过该股票总持股数');
+    if(held.quantity-remote)brokerPositions.push({broker:'HSBC',security_id:held.security_id,quantity:held.quantity-remote});
+    if(remote)brokerPositions.push({broker:'USMART',security_id:held.security_id,quantity:remote});
+   }
    const total=budgetAmount(cashText(current.account.available_cash)),usmart=budgetAmount(fundingInputs.usmart.value),hsbc=budgetAmount(fundingInputs.hsbc.value);
    if(usmart>total)throw Error('盈立余额不能超过总可用现金');
    if(hsbc+usmart!==total)throw Error('两家余额合计与当前总现金不一致，请先在上方更新总现金');
@@ -66,7 +75,7 @@ function mount(container,dependencies){
    await options.request('/api/strategy-account/broker-cash',{event_id:options.eventId?options.eventId():crypto.randomUUID(),document});
    const body={hsbc_cash:(hsbc/100).toFixed(2),usmart_cash:fundingInputs.usmart.value,other_fee_reserve:fundingInputs.other.value,transfer_fee_reserve:fundingInputs.transfer.value,hsbc_waiver_exhausted:!!quota.checked,quota_month:new Date(now()+8*3600000).toISOString().slice(0,7)};
    if(!quota.checked)body.hsbc_quota={account_revision:binding.account_revision,month:body.quota_month,observed_at:observed,remaining_hkd:fundingInputs.remainingQuota.value,hkd_per_usd_budget:'8',turnover_reserve_hkd:fundingInputs.quotaReserve.value};
-   if(current.account.holdings?.length)body.broker_holdings={account_revision:current.account.revision,positions:current.account.holdings.map(row=>({broker:'HSBC',security_id:row.security_id,quantity:row.quantity}))};
+   if(current.account.holdings?.length)body.broker_holdings={account_revision:current.account.revision,positions:brokerPositions};
    const result=await options.request('/api/strategy-roa/funding-preview',body);
    const latest=controller.getState();
    if(disposed||token!==fundingGeneration)return;
@@ -106,7 +115,15 @@ function mount(container,dependencies){
  Object.assign(reasons,{PENDING_ORDER:'已有未完成挂单，请先核对成交或撤单状态',WAIT_CLOSE_HISTORY_RECONCILIATION:'收盘持仓状态待核对，暂不生成新挂单',SNAPSHOT_UNAVAILABLE:'建议暂未读取成功，请刷新重试'});
  function draw(state){
   if(disposed)return;
-  if(state.account?.revision!==ownershipRevision){ownership.checked=false;ownershipRevision=state.account?.revision;}
+  if(state.account?.revision!==ownershipRevision){
+   ownership.checked=false;ownershipRevision=state.account?.revision;ownershipFields.replaceChildren();ownershipInputs.clear();
+   if(state.account?.holdings?.length)ownershipFields.appendChild(element('p','若分散在两家，请逐只填写盈立持股数；其余计入汇丰。仅用于本次预算，成交后需重新确认。'));
+   for(const held of state.account?.holdings||[]){
+    const ticker=held.ticker||state.advice?.rows?.find(row=>row.security_id===held.security_id)?.ticker||held.security_id;
+    const field=element('label',ticker+' · 总持股 '+held.quantity+' · 盈立股数'),control=element('input');
+    control.inputMode='numeric';control.value='';field.appendChild(control);ownershipFields.appendChild(field);ownershipInputs.set(held.security_id,control);
+   }
+  }
   ownershipLabel.hidden=!state.account?.holdings?.length;
   if(fundingPlan&&(state.busy||state.error||state.account?.revision!==fundingPlan.account_revision||state.advice?.proposal_id!==fundingPlan.proposal_id)){
    fundingPlan=null;fundingGeneration++;if(fundingTimer!==null){clearTimer(fundingTimer);fundingTimer=null;}fundingResult.textContent='账户或建议已更新，请重新计算转账预算。';
@@ -185,7 +202,7 @@ function mount(container,dependencies){
  draw(controller.getState());
  return {...controller,ready:controller.load(),whenIdle:()=>lastWork,
   requestAccountReload(revision){if(disposed||!revision||revision===lastReloadKey)return;lastReloadKey=revision;queuedReload=revision;flushAccountReload();},
-  elements:{form,input,save,cashPanel,summary,fundingForm,fundingResult,fundingInputs,quota,ownership},setCapitalBusy(value){locked=!!value;draw(controller.getState());},
+  elements:{form,input,save,cashPanel,summary,fundingForm,fundingResult,fundingInputs,quota,ownership,ownershipInputs},setCapitalBusy(value){locked=!!value;draw(controller.getState());},
   dispose(){disposed=true;fundingGeneration++;if(fundingTimer!==null)clearTimer(fundingTimer);fundingForm.removeEventListener('submit',fundingSubmit);fundingForm.removeEventListener('input',fundingEdited);if(lastRecommended!=='[]'){lastRecommended='[]';onRecommendedTickers([]);}if(timer!==null)clearTimer(timer);form.removeEventListener('submit',submit);input.removeEventListener('input',edit);doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);controller.accountInvalidated();}};
 }
 const api={mount};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.StrategyRoaMount=api;
