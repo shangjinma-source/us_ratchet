@@ -7,6 +7,8 @@ from core.strategy_account_ledger import require
 from data.roa_account_composition import attach_roa
 from data.roa_cash_flow.composition import attach_flow
 SOURCES={
+ 'core/usmart_standard_fees.py','core/broker_transfer_plan.py',
+ 'scripts/preview_broker_transfer.py','scripts/verify_roa_live_advice.py',
  'core/strategy_fill_correction_store.py',
  'data/roa_display.py', 'api/strategy_latest_display_charts_v1.py', 'data/strategy_latest_display_charts_v1.py',
  'api/roa_runtime_binding.py',
