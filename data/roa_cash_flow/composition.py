@@ -128,10 +128,23 @@ def attach_flow(*, prepared, root, configuration, clock, validate_sources):
         return await invoke(addon.profit_current)
     @router.post('/api/strategy-account/cash-classification')
     async def save(request:Request):
-        raw=await request.body()
-        if len(raw)>16384:return JSONResponse({'reason':'BODY_TOO_LARGE'},status_code=422)
-        try:body=json.loads(raw)
-        except ValueError:return JSONResponse({'reason':'INVALID_JSON'},status_code=422)
+        if request.query_params:return JSONResponse({'reason':'UNSUPPORTED_PARAMETERS'},status_code=422)
+        raw=bytearray()
+        async for part in request.stream():
+            raw.extend(part)
+            if len(raw)>16384:return JSONResponse({'reason':'BODY_TOO_LARGE'},status_code=422)
+        def unique_fields(items):
+            result={}
+            for key,value in items:
+                if key in result:raise ValueError('DUPLICATE_JSON_FIELD')
+                result[key]=value
+            return result
+        def invalid_constant(value):raise ValueError('INVALID_JSON_CONSTANT')
+        try:
+            body=json.loads(raw,object_pairs_hook=unique_fields,parse_constant=invalid_constant)
+            if type(body)is not dict:raise ValueError('BODY_OBJECT_REQUIRED')
+        except (ValueError,UnicodeError,RecursionError):
+            return JSONResponse({'reason':'INVALID_JSON'},status_code=422)
         return await invoke(lambda:addon.save(body))
     @router.get('/static/strategy_cash_classification.js')
     async def asset():

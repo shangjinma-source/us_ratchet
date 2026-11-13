@@ -38,6 +38,15 @@ class ActualRoaTests(unittest.TestCase):
                 self.assertTrue(response.json()['cash_saved']);self.assertFalse(response.json()['advice_ready'])
                 saved=account.store.read();result=client.get('/api/strategy-account/cash-classification').json();row=result['unresolved'][0]
                 doc=dict(schema='CASH_CHANGE_CLASSIFICATION_V1',account_id='test',cash_event_id='new',before_revision=row['before_revision'],after_revision=row['after_revision'],net_change='60',items=[dict(item_id='d',kind='DEPOSIT',amount='50',effective_at='2026-11-06T10:01:00Z'),dict(item_id='i',kind='INCOME',amount='10',effective_at='2026-11-06T10:01:00Z')])
+                before_records=addon.records()
+                payload=json.dumps(dict(expected_revision=saved['revision'],document=doc))
+                duplicated=payload.replace('"net_change": "60"','"net_change": "999", "net_change": "60"')
+                for malformed in [duplicated,'[]','null','{"document": NaN}', ' '*16385]:
+                    rejected=client.post('/api/strategy-account/cash-classification',content=malformed)
+                    self.assertEqual(rejected.status_code,422,rejected.text)
+                    self.assertEqual(addon.records(),before_records)
+                    self.assertEqual(account.store.read(),saved)
+                self.assertEqual(client.post('/api/strategy-account/cash-classification?unexpected=1',content=payload).status_code,422)
                 for _ in range(2):self.assertEqual(client.post('/api/strategy-account/cash-classification',json=dict(expected_revision=saved['revision'],document=doc)).status_code,200)
                 self.assertEqual(client.get('/api/strategy-account/cash-classification/profit').json()['profit']['profit_amount'],'10');self.assertEqual(account.store.read(),saved)
                 # GET must not use write transaction/save validation.
