@@ -2,10 +2,9 @@
 'use strict';
 function mount({container,fetchImpl=root.fetch.bind(root),createCharts=root.SelectedStockCharts.createSelectedStockCharts,latestDisplayEnabled=false}){
  let charts=null,targetId=null,generation=0,fills=[],account=null,holdingRevision=null,savedTarget=null,selectionKey=null,roaActive=false;
- function priceLabel(value){const parts=String(value??'').split('/'),number=Number(parts[0])/(parts.length===2?Number(parts[1]):1);return parts.length<=2&&Number.isFinite(number)&&number>0?number.toLocaleString('en-US',{maximumFractionDigits:8}):'待核验';}
  function unconfigured(){
   if(targetId||holdingRevision)return;
-  container.textContent=(roaActive?'暂无已录持仓行情。':'账户目标尚未配置，目标生成后展示对应 K 线。')+(fills.length?' 已录真实成交：'+fills.map(fill=>`${fill.ticker} ${fill.side==='BUY'?'买入':fill.side==='SELL'?'卖出':'方向待核验'} ${fill.quantity} 股 @ $${priceLabel(fill.price)} · ${fill.executed_at}`).join('；'):'');
+  container.textContent=roaActive?'当前无持仓。':'账户目标尚未配置，目标生成后展示对应 K 线。';
  }
  function clear(){generation++;charts?.destroy();charts=null;targetId=null;holdingRevision=null;selectionKey=null;container.replaceChildren();}
  function showHoldings(){
