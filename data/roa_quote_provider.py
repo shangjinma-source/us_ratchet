@@ -7,7 +7,23 @@ import json
 from threading import Lock
 from time import sleep
 
-from data.current_research_intraday_execution import fetch_intraday_chart, decode_intraday_reference
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+from data.current_research_intraday_execution import decode_intraday_reference
+
+
+def fetch_intraday_chart(ticker):
+    """Use the five-day 1m feed: the one-day feed can omit opening volume.
+
+    Return the complete vendor response; downstream checks still require the
+    current session, valid opening OHLCV and fresh completed-minute quotes.
+    """
+    url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + quote(ticker, safe='') + '?interval=1m&range=5d'
+    with urlopen(Request(url, headers={'User-Agent': 'Mozilla/5.0'}), timeout=10) as response:
+        raw = response.read(4 * 1024 * 1024 + 1)
+    if len(raw) > 4 * 1024 * 1024:
+        raise ValueError('QUOTE_RESPONSE_TOO_LARGE')
+    return raw
 
 
 def stamp(value):
