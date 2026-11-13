@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from threading import RLock
 from types import SimpleNamespace
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import test_broker_transfer_profit as fixtures
@@ -47,8 +47,26 @@ class ReconciliationHttpTests(unittest.TestCase):
         result=self.client.get(path+'/profit')
         self.assertEqual(result.status_code,200,result.text)
         self.assertEqual(result.json()['profit']['profit_amount'],'-5')
+        self.assertEqual(result.json()['account_id'],'fixture')
+        self.assertEqual(result.json()['reconciliation']['rows'][0]['residual_cash_change'],'0')
+        self.assertGreater(datetime.fromisoformat(result.json()['profit_valid_until']),self.f.now)
         self.assertEqual(len(self.service.store.read()['events']),1)
         self.assertEqual(self.f.account.audit_state(),before)
+
+    def test_profit_expiring_during_final_evidence_check_is_rejected(self):
+        path='/api/strategy-account/transfer-reconciliation'
+        self.assertEqual(self.client.post(path,json=self.body).status_code,200)
+        original=self.service.evidence
+        calls=0
+        def delayed(*args):
+            nonlocal calls
+            value=original(*args);calls+=1
+            if calls==2:self.f.now+=timedelta(seconds=121)
+            return value
+        self.service.evidence=delayed
+        result=self.client.get(path+'/profit')
+        self.assertEqual(result.status_code,409,result.text)
+        self.assertEqual(result.json()['status'],'VALUATION_TIME_INVALID')
 
     def test_changed_transfer_during_valuation_rejects_result(self):
         path='/api/strategy-account/transfer-reconciliation'
