@@ -39,3 +39,11 @@ class QuotaTests(unittest.TestCase):
         self.assertEqual(result['account_revision'],'r')
         self.assertFalse(result['executable'])
         self.assertEqual(Fraction(result['quota_budget_usd']),990)
+        snapshot['account']['holdings']=[dict(security_id='a',quantity=1)]
+        snapshot['difference']['new_orders'].append(dict(side='SELL',security_id='a',quantity=1,limit_price='100'))
+        result=build_preview(verification={'api_advice_passed':True},snapshot=snapshot,
+            hsbc_cash='5000',usmart_cash='0',other_fee_reserve='5',transfer_fee_reserve='0',
+            hsbc_waiver_exhausted=False,hsbc_quota=self.document,now=self.now,
+            broker_holdings=dict(account_revision='r',positions=[dict(broker='HSBC',security_id='a',quantity=1)]))
+        self.assertEqual(result['status'],'QUOTA_RECONFIRM_AFTER_HSBC_SELLS')
+        self.assertNotIn('planned_hsbc_buys',result)

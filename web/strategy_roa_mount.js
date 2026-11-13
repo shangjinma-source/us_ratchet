@@ -25,12 +25,15 @@ function mount(container,dependencies){
  for(const n of [title,cashPanel,status,summary])section.appendChild(n);container.replaceChildren(section);
  const funding=element('details'),fundingTitle=element('summary','券商资金规划'),fundingForm=element('form'),fundingResult=element('p');
  funding.appendChild(fundingTitle);
- funding.appendChild(element('p','汇丰预留至少 1,300 美元（1 万港币等值预算）。填写两家实际余额并确认分配，仅计算转账预算，不转账、不下单。'));
+ funding.appendChild(element('p','转出后汇丰保留至少 1,300 美元，仍可用于汇丰内投资。确认当前余额和免佣额度后计算预算；不转账、不下单。'));
  const fundingInputs={};
  for(const [key,text,value] of [['hsbc','汇丰当前可用现金 USD',''],['usmart','盈立当前可用现金 USD','0'],['other','其他费用预算 USD','25'],['transfer','转账费用预算 USD','0']]){
   const field=element('label',text),control=element('input');control.value=value;control.inputMode='decimal';control.required=true;field.appendChild(control);fundingForm.appendChild(field);fundingInputs[key]=control;
  }
  const quotaLabel=element('label','已核实汇丰本月免费额度用尽'),quota=element('input');quota.type='checkbox';quotaLabel.appendChild(quota);fundingForm.appendChild(quotaLabel);
+ for(const [key,text,value] of [['remainingQuota','汇丰剩余免佣交易额度 HKD（用尽可勾选上方）',''],['quotaReserve','为其他交易预留额度 HKD','0']]){
+  const field=element('label',text),control=element('input');control.value=value;control.inputMode='decimal';field.appendChild(control);fundingForm.appendChild(field);fundingInputs[key]=control;
+ }
  const ownershipLabel=element('label','现有持仓全部在汇丰（首次转入盈立前确认）'),ownership=element('input');ownership.type='checkbox';ownership.checked=false;ownershipLabel.appendChild(ownership);fundingForm.appendChild(ownershipLabel);
  let ownershipRevision=null;
  const fundingButton=element('button','确认余额并计算预算');fundingButton.type='submit';fundingForm.appendChild(fundingButton);
@@ -43,7 +46,11 @@ function mount(container,dependencies){
   fundingPlan=null;
   try{
    if(current.busy||current.error||!current.advice?.executable)throw Error('请先刷新有效建议');
-   if(!quota.checked)throw Error('汇丰仍有免费额度时应优先使用；该分配功能正在接入');
+   if(!quota.checked){
+    if(!fundingInputs.remainingQuota.value)throw Error('请核实并填写汇丰剩余免佣额度，将优先使用汇丰');
+    if(budgetAmount(fundingInputs.remainingQuota.value)>25000000)throw Error('剩余免佣额度不能超过 250,000 港币');
+    budgetAmount(fundingInputs.quotaReserve.value);
+   }
    if(current.account.holdings?.length&&!ownership.checked)throw Error('请确认现有持仓全部在汇丰；已有盈立持仓时暂不支持此预览');
    const total=budgetAmount(cashText(current.account.available_cash)),usmart=budgetAmount(fundingInputs.usmart.value),hsbc=budgetAmount(fundingInputs.hsbc.value);
    if(usmart>total)throw Error('盈立余额不能超过总可用现金');
@@ -57,22 +64,26 @@ function mount(container,dependencies){
    const document={account_id:binding.account_id,account_revision:binding.account_revision,transfer_revision:binding.transfer_revision,
     balances:{HSBC:{available_cash:fundingInputs.hsbc.value,reserved_cash:'0',observed_at:observed},USMART:{available_cash:fundingInputs.usmart.value,reserved_cash:'0',observed_at:observed}}};
    await options.request('/api/strategy-account/broker-cash',{event_id:options.eventId?options.eventId():crypto.randomUUID(),document});
-   const body={hsbc_cash:(hsbc/100).toFixed(2),usmart_cash:fundingInputs.usmart.value,other_fee_reserve:fundingInputs.other.value,transfer_fee_reserve:fundingInputs.transfer.value,hsbc_waiver_exhausted:true,quota_month:new Date(now()+8*3600000).toISOString().slice(0,7)};
+   const body={hsbc_cash:(hsbc/100).toFixed(2),usmart_cash:fundingInputs.usmart.value,other_fee_reserve:fundingInputs.other.value,transfer_fee_reserve:fundingInputs.transfer.value,hsbc_waiver_exhausted:!!quota.checked,quota_month:new Date(now()+8*3600000).toISOString().slice(0,7)};
+   if(!quota.checked)body.hsbc_quota={account_revision:binding.account_revision,month:body.quota_month,observed_at:observed,remaining_hkd:fundingInputs.remainingQuota.value,hkd_per_usd_budget:'8',turnover_reserve_hkd:fundingInputs.quotaReserve.value};
    if(current.account.holdings?.length)body.broker_holdings={account_revision:current.account.revision,positions:current.account.holdings.map(row=>({broker:'HSBC',security_id:row.security_id,quantity:row.quantity}))};
    const result=await options.request('/api/strategy-roa/funding-preview',body);
    const latest=controller.getState();
    if(disposed||token!==fundingGeneration)return;
+   if(result.status==='QUOTA_RECONFIRM_AFTER_HSBC_SELLS')throw Error('本次有汇丰卖出，请成交后核实剩余免佣额度，再计算买入分配');
    if(latest.busy||latest.error||latest.account?.revision!==result.account_revision||!latest.advice?.executable||latest.advice?.proposal_id!==result.proposal_id)throw Error('账户或建议已变化，请刷新后重新计算');
    if(result.status!=='FUNDING_PLAN_ONLY')throw Error(result.status==='INSUFFICIENT_TOTAL_CASH'?'保留汇丰最低余额后，现金不足以覆盖全部目标；需重新分配买入预算':'当前条件不支持转账预览，请核对账户与建议');
    if(!(Date.parse(result.quote_valid_until)>now()))throw Error('报价已过期，请重新计算');
    fundingPlan=result;
-   fundingResult.textContent='本次预算：盈立买入 '+result.planned_usmart_buys.length+' 只，汇丰买入 0 只；转账到账金额 '+legacyUi.dollars(result.proposed_transfer_credit_usd)+'，汇丰预计剩余 '+legacyUi.dollars(result.hsbc_remaining_if_funded_usd)+'。费用预算不代表实际费用，到账后重新核价。';
-   if(result.budget_reduced)fundingResult.textContent+=' 已扣除汇丰留存资金，部分目标股数暂不覆盖。';
+   fundingResult.textContent='本次预算：汇丰买入 '+(result.planned_hsbc_buys||[]).length+' 只，盈立买入 '+result.planned_usmart_buys.length+' 只；转账到账金额 '+legacyUi.dollars(result.proposed_transfer_credit_usd)+'，汇丰买入后预计剩余 '+legacyUi.dollars(result.hsbc_remaining_if_funded_usd)+'。费用预算不代表实际费用，到账后重新核价。';
+   if(!quota.checked)fundingResult.textContent+=' 免佣额度按 8 港币/美元保守换算，仅为预算。';
+   if(result.budget_reduced)fundingResult.textContent+=' 受资金及费用预算限制，部分目标股数暂不覆盖。';
    const allocation=element('table',undefined,'daily-actions-table'),allocationHead=element('tr');
    for(const text of ['股票','方向','券商','计划 → 预算股数'])allocationHead.appendChild(element('th',text));allocation.appendChild(allocationHead);
    for(const original of result.original_strategy_buys||result.planned_usmart_buys){
-    const row=element('tr'),planned=result.planned_usmart_buys.find(item=>item.symbol===original.symbol);
-    for(const text of [original.symbol,'买入','盈立',String(original.quantity)+' → '+String(planned?.quantity||0)])row.appendChild(element('td',text));allocation.appendChild(row);
+    const local=(result.planned_hsbc_buys||[]).find(item=>item.symbol===original.symbol),remote=result.planned_usmart_buys.find(item=>item.symbol===original.symbol);
+    const row=element('tr');
+    for(const text of [original.symbol,'买入','汇丰 '+String(local?.quantity||0)+' / 盈立 '+String(remote?.quantity||0),String(original.quantity)+' → '+String((local?.quantity||0)+(remote?.quantity||0))])row.appendChild(element('td',text));allocation.appendChild(row);
    }
    for(const sale of result.planned_broker_sells||[]){
     const row=element('tr');for(const text of [sale.symbol,'卖出',sale.broker==='HSBC'?'汇丰':'盈立',String(sale.quantity)])row.appendChild(element('td',text));allocation.appendChild(row);

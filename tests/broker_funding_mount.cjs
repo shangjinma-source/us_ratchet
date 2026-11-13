@@ -17,7 +17,7 @@ class Node{
  const app=mount(new Node('div',doc),{eventId:()=>String(calls.length),expectedEpoch:'e',now:()=>time,setTimer:fn=>{timers.push(fn);return timers.length;},clearTimer:()=>{},pendingStore:{read:()=>null},request:async(path,body)=>{
   calls.push({path,body});
   if(path.endsWith('broker-cash'))return body?{saved:true}:{account_id:'test',account_revision:account.revision,transfer_revision:'t'};
-  if(path.endsWith('funding-preview'))return {status:'FUNDING_PLAN_ONLY',executable:false,account_revision:account.revision,proposal_id:advice.proposal_id,quote_valid_until:advice.quote_valid_until,planned_usmart_buys:[{}],planned_broker_sells:[{symbol:'WDC',broker:'HSBC',quantity:12}],proposed_transfer_credit_usd:'22688/100',hsbc_remaining_if_funded_usd:'77312/100'};
+  if(path.endsWith('funding-preview'))return {status:'FUNDING_PLAN_ONLY',executable:false,account_revision:account.revision,proposal_id:advice.proposal_id,quote_valid_until:advice.quote_valid_until,original_strategy_buys:[{symbol:'TEST',quantity:3}],planned_hsbc_buys:body.hsbc_waiver_exhausted?[]:[{symbol:'TEST',quantity:1}],planned_usmart_buys:[{symbol:'TEST',quantity:body.hsbc_waiver_exhausted?3:2}],planned_broker_sells:[{symbol:'WDC',broker:'HSBC',quantity:12}],proposed_transfer_credit_usd:'22688/100',hsbc_remaining_if_funded_usd:'77312/100'};
   return advice;
  }});
  await app.ready;
@@ -26,6 +26,16 @@ class Node{
  fundingInputs.hsbc.value='1000';quota.checked=true;await fundingForm.fire('submit');
  assert.match(fundingResult.textContent,/226.88/);assert.match(fundingResult.textContent,/未成交卖款/);const table=fundingResult.children.at(-1);assert.deepEqual(table.children.at(-1).children.map(cell=>cell.textContent),['WDC','卖出','汇丰','12']);assert.equal(calls.at(-1).body.hsbc_cash,'1000.00');
  assert.equal(calls.at(-1).body.usmart_cash,'0');assert.ok(!calls.some(c=>c.path.includes('cash-save')));
+ quota.checked=false;fundingInputs.remainingQuota.value='800';fundingInputs.quotaReserve.value='0';
+ await fundingForm.fire('submit');
+ assert.equal(calls.at(-1).body.hsbc_waiver_exhausted,false);
+ assert.equal(calls.at(-1).body.hsbc_quota.remaining_hkd,'800');
+ assert.equal(calls.at(-1).body.hsbc_quota.account_revision,account.revision);
+ assert.match(fundingResult.textContent,/汇丰买入 1 只/);
+ assert.deepEqual(fundingResult.children.at(-1).children[1].children.map(cell=>cell.textContent),['TEST','买入','汇丰 1 / 盈立 2','3 → 3']);
+ const count=calls.length;fundingInputs.remainingQuota.value='250001';await fundingForm.fire('submit');
+ assert.equal(calls.length,count);assert.match(fundingResult.textContent,/不能超过/);
+ quota.checked=true;
  await fundingForm.fire('input');assert.match(fundingResult.textContent,/条件已变化/);
  fundingInputs.usmart.value='1001';await fundingForm.fire('submit');assert.match(fundingResult.textContent,/不能超过/);
  fundingInputs.usmart.value='0';await fundingForm.fire('submit');
