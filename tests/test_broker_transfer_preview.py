@@ -10,7 +10,7 @@ class PreviewTests(unittest.TestCase):
                         quote_valid_until='expiry', execution_session='session')
         args = dict(verification=dict(api_advice_passed=True), snapshot=snapshot,
                     hsbc_cash='1000', usmart_cash='0', other_fee_reserve='25',
-                    transfer_fee_reserve='0', hsbc_waiver_exhausted=True)
+                    transfer_fee_reserve='0', hsbc_waiver_exhausted=True, hsbc_minimum_cash='0')
         args.update(changes)
         return args
 

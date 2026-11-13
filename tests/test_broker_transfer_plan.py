@@ -38,3 +38,10 @@ class FundingPlanTests(unittest.TestCase):
 
     def test_empty_plan_no_reserves(self):
         self.assertEqual(self.plan(buys=[])['hsbc_debit_budget_usd'], '0')
+
+    def test_minimum_hsbc_cash_cannot_fund_buys(self):
+        result = self.plan(hsbc_cash='38064.83', hsbc_minimum_cash='1300',
+                           buys=[dict(symbol='ABC',quantity=1,limit_price='37000')])
+        self.assertEqual(result['status'], 'INSUFFICIENT_TOTAL_CASH')
+        self.assertEqual(F(result['maximum_transfer_credit_usd']), F('36759.83'))
+        self.assertIsNone(result['hsbc_remaining_if_funded_usd'])

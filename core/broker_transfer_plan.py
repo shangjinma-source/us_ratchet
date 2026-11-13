@@ -10,11 +10,12 @@ from core.usmart_standard_fees import _amount, estimate_base_fee
 
 def plan_usmart_funding(*, hsbc_cash, usmart_cash, buys,
                        other_fee_reserve, transfer_fee_reserve,
-                       hsbc_waiver_exhausted):
+                       hsbc_waiver_exhausted, hsbc_minimum_cash='0'):
     if hsbc_waiver_exhausted is not True:
         raise ValueError('HSBC_WAIVER_PRIORITY_REQUIRES_SEPARATE_ALLOCATION')
     hsbc, usmart = _amount(hsbc_cash), _amount(usmart_cash)
     other, transfer_fee = _amount(other_fee_reserve), _amount(transfer_fee_reserve)
+    minimum = _amount(hsbc_minimum_cash)
     gross = platform = Fraction(0)
     seen = set()
     for order in buys:
@@ -33,7 +34,8 @@ def plan_usmart_funding(*, hsbc_cash, usmart_cash, buys,
     shortfall = max(Fraction(0), required - usmart)
     transfer = Fraction(-(-shortfall.numerator * 100 // shortfall.denominator), 100)
     debit = transfer + (transfer_fee if transfer else 0)
-    shortage = max(Fraction(0), debit - hsbc)
+    transferable = max(Fraction(0), hsbc - minimum)
+    shortage = max(Fraction(0), debit - transferable)
     return {
         'status': 'INSUFFICIENT_TOTAL_CASH' if shortage else 'FUNDING_PLAN_ONLY',
         'gross_buy_usd': str(gross), 'platform_fee_reserve_usd': str(platform),
@@ -42,6 +44,8 @@ def plan_usmart_funding(*, hsbc_cash, usmart_cash, buys,
         'hsbc_debit_budget_usd': str(debit),
         'hsbc_remaining_if_funded_usd': str(hsbc-debit) if not shortage else None,
         'funding_shortage_usd': str(shortage),
+        'hsbc_minimum_cash_usd': str(minimum),
+        'maximum_transfer_credit_usd': str(max(Fraction(0), transferable-transfer_fee)),
         'confirmed_usmart_cash_usd': str(usmart),
         'total_confirmed_cash_usd': str(hsbc+usmart),
         'executable': False, 'total_cost_known': False,

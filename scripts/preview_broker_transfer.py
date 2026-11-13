@@ -11,7 +11,7 @@ from scripts.verify_roa_live_advice import capture
 
 def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
                   other_fee_reserve, transfer_fee_reserve,
-                  hsbc_waiver_exhausted):
+                  hsbc_waiver_exhausted, hsbc_minimum_cash='1300'):
     pending = dict(status='WAIT_VERIFIED_ADVICE', executable=False)
     if verification.get('api_advice_passed') is not True:
         return pending
@@ -31,7 +31,8 @@ def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
         hsbc_cash=hsbc_cash, usmart_cash=usmart_cash, buys=buys,
         other_fee_reserve=other_fee_reserve,
         transfer_fee_reserve=transfer_fee_reserve,
-        hsbc_waiver_exhausted=hsbc_waiver_exhausted)
+        hsbc_waiver_exhausted=hsbc_waiver_exhausted,
+        hsbc_minimum_cash=hsbc_minimum_cash)
     result.update(account_revision=account['revision'],
                   proposal_id=snapshot['proposal_id'], target_id=snapshot['target_id'],
                   quote_valid_until=snapshot['quote_valid_until'],

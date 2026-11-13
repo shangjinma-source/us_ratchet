@@ -25,7 +25,7 @@ function mount(container,dependencies){
  for(const n of [title,cashPanel,status,summary])section.appendChild(n);container.replaceChildren(section);
  const funding=element('details'),fundingTitle=element('summary','券商资金规划'),fundingForm=element('form'),fundingResult=element('p');
  funding.appendChild(fundingTitle);
- funding.appendChild(element('p','统一规划总资金。此处只估算转账，不保存现金、不下单；到账后重新刷新建议。'));
+ funding.appendChild(element('p','汇丰预留至少 1,300 美元（1 万港币等值预算）。此处只估算转账；到账后重新刷新建议。'));
  const fundingInputs={};
  for(const [key,text,value] of [['usmart','盈立当前可用现金 USD','0'],['other','其他费用预算 USD','25'],['transfer','转账费用预算 USD','0']]){
   const field=element('label',text),control=element('input');control.value=value;control.inputMode='decimal';control.required=true;field.appendChild(control);fundingForm.appendChild(field);fundingInputs[key]=control;
@@ -51,7 +51,7 @@ function mount(container,dependencies){
    const latest=controller.getState();
    if(disposed||token!==fundingGeneration)return;
    if(latest.busy||latest.error||latest.account?.revision!==result.account_revision||!latest.advice?.executable||latest.advice?.proposal_id!==result.proposal_id)throw Error('账户或建议已变化，请刷新后重新计算');
-   if(result.status!=='FUNDING_PLAN_ONLY')throw Error(result.status==='INSUFFICIENT_TOTAL_CASH'?'总现金不足以覆盖全部目标和费用':'当前条件不支持转账预览，请核对账户与建议');
+   if(result.status!=='FUNDING_PLAN_ONLY')throw Error(result.status==='INSUFFICIENT_TOTAL_CASH'?'保留汇丰最低余额后，现金不足以覆盖全部目标；需重新分配买入预算':'当前条件不支持转账预览，请核对账户与建议');
    if(!(Date.parse(result.quote_valid_until)>now()))throw Error('报价已过期，请重新计算');
    fundingPlan=result;
    fundingResult.textContent='本次预算：盈立买入 '+result.planned_usmart_buys.length+' 只，汇丰买入 0 只；转账到账金额 '+legacyUi.dollars(result.proposed_transfer_credit_usd)+'，汇丰预计剩余 '+legacyUi.dollars(result.hsbc_remaining_if_funded_usd)+'。费用预算不代表实际费用，到账后重新核价。';
