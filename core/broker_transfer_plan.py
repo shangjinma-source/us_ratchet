@@ -8,6 +8,37 @@ from fractions import Fraction
 from core.usmart_standard_fees import _amount, estimate_base_fee
 
 
+def fit_integer_buys(*, buys, available_cash, other_fee_reserve):
+    """Scale an unfunded BUY basket, then allocate at most one rounding share.
+
+    Does not change the strategy target. Result is a budget preview only.
+    Fees are recomputed for every nonempty order; quantities never exceed input.
+    """
+    budget, other = _amount(available_cash), _amount(other_fee_reserve)
+    def cost(rows):
+        active = [row for row in rows if row['quantity']]
+        return sum((_amount(row['limit_price']) * row['quantity'] +
+                    Fraction(estimate_base_fee(quantity=row['quantity'],
+                        price_usd=row['limit_price'])['platform_fee_reserve_usd'])
+                    for row in active), Fraction(0)) + (other if active else 0)
+    if cost(buys) <= budget:
+        return [dict(row) for row in buys]
+    gross = sum((_amount(row['limit_price'])*row['quantity'] for row in buys), Fraction(0))
+    fees = cost(buys)-gross-(other if buys else 0)
+    ratio = min(Fraction(1), max(Fraction(0), budget-other-fees)/gross) if gross else Fraction(0)
+    result = [dict(row, quantity=int(row['quantity']*ratio)) for row in buys]
+    # Stable largest-remainder allocation; a single bounded pass, no optimization sweep.
+    ranking = sorted(range(len(buys)), key=lambda i: (-(buys[i]['quantity']*ratio-result[i]['quantity']), buys[i]['symbol']))
+    for index in ranking:
+        if result[index]['quantity'] >= buys[index]['quantity']:
+            continue
+        result[index]['quantity'] += 1
+        if cost(result) > budget:
+            result[index]['quantity'] -= 1
+    assert cost(result) <= budget
+    return [row for row in result if row['quantity']]
+
+
 def plan_usmart_funding(*, hsbc_cash, usmart_cash, buys,
                        other_fee_reserve, transfer_fee_reserve,
                        hsbc_waiver_exhausted, hsbc_minimum_cash='0'):

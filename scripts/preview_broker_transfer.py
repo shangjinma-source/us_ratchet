@@ -5,7 +5,7 @@ from fractions import Fraction
 import json
 from pathlib import Path
 
-from core.broker_transfer_plan import plan_usmart_funding
+from core.broker_transfer_plan import plan_usmart_funding, fit_integer_buys
 from scripts.verify_roa_live_advice import capture
 
 
@@ -33,11 +33,24 @@ def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
         transfer_fee_reserve=transfer_fee_reserve,
         hsbc_waiver_exhausted=hsbc_waiver_exhausted,
         hsbc_minimum_cash=hsbc_minimum_cash)
+    original_buys = buys
+    if Fraction(hsbc_cash) < Fraction(hsbc_minimum_cash):
+        return dict(status='HSBC_MINIMUM_RESERVE_NOT_MET', executable=False)
+    if result['status'] == 'INSUFFICIENT_TOTAL_CASH':
+        buys = fit_integer_buys(buys=buys,
+            available_cash=Fraction(usmart_cash)+Fraction(result['maximum_transfer_credit_usd']),
+            other_fee_reserve=other_fee_reserve)
+        result = plan_usmart_funding(hsbc_cash=hsbc_cash, usmart_cash=usmart_cash,
+            buys=buys, other_fee_reserve=other_fee_reserve,
+            transfer_fee_reserve=transfer_fee_reserve,
+            hsbc_waiver_exhausted=hsbc_waiver_exhausted, hsbc_minimum_cash=hsbc_minimum_cash)
     result.update(account_revision=account['revision'],
                   proposal_id=snapshot['proposal_id'], target_id=snapshot['target_id'],
                   quote_valid_until=snapshot['quote_valid_until'],
                   execution_session=snapshot['execution_session'],
                   planned_usmart_buys=buys, planned_hsbc_buys=[],
+                  original_strategy_buys=original_buys,
+                  budget_reduced=buys != original_buys,
                   requires_reprice_after_transfer=True,
                   scope='INITIAL_FUNDING_PREVIEW_NOT_BROKER_ORDER_ROUTING')
     return result

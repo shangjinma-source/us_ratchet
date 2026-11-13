@@ -55,6 +55,14 @@ function mount(container,dependencies){
    if(!(Date.parse(result.quote_valid_until)>now()))throw Error('报价已过期，请重新计算');
    fundingPlan=result;
    fundingResult.textContent='本次预算：盈立买入 '+result.planned_usmart_buys.length+' 只，汇丰买入 0 只；转账到账金额 '+legacyUi.dollars(result.proposed_transfer_credit_usd)+'，汇丰预计剩余 '+legacyUi.dollars(result.hsbc_remaining_if_funded_usd)+'。费用预算不代表实际费用，到账后重新核价。';
+   if(result.budget_reduced)fundingResult.textContent+=' 已扣除汇丰留存资金，部分目标股数暂不覆盖。';
+   const allocation=element('table',undefined,'daily-actions-table'),allocationHead=element('tr');
+   for(const text of ['股票','原计划股数','盈立预算股数'])allocationHead.appendChild(element('th',text));allocation.appendChild(allocationHead);
+   for(const original of result.original_strategy_buys||result.planned_usmart_buys){
+    const row=element('tr'),planned=result.planned_usmart_buys.find(item=>item.symbol===original.symbol);
+    for(const text of [original.symbol,String(original.quantity),String(planned?.quantity||0)])row.appendChild(element('td',text));allocation.appendChild(row);
+   }
+   fundingResult.appendChild(allocation);
    if(fundingTimer!==null)clearTimer(fundingTimer);
    fundingTimer=setTimer(()=>{fundingPlan=null;fundingResult.textContent+=' 该预算已过期，仅供参考。';},Math.max(1,Date.parse(result.quote_valid_until)-now()));
   }catch(error){fundingResult.textContent=error.responseBody?.status?'当前无法生成资金预算，请核对条件后重试。':error.message;}

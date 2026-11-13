@@ -34,3 +34,16 @@ class PreviewTests(unittest.TestCase):
         args = self.make()
         args['snapshot']['account']['holdings'] = [dict(quantity=1)]
         self.assertEqual(build_preview(**args)['status'], 'BROKER_HOLDINGS_MAPPING_REQUIRED')
+
+    def test_minimum_cash_reduces_plan_without_changing_strategy(self):
+        args = self.make(hsbc_cash='1000', hsbc_minimum_cash='850')
+        result = build_preview(**args)
+        self.assertTrue(result['budget_reduced'])
+        self.assertEqual(result['original_strategy_buys'][0]['quantity'], 2)
+        self.assertEqual(result['planned_usmart_buys'][0]['quantity'], 1)
+        self.assertGreaterEqual(float(__import__('fractions').Fraction(result['hsbc_remaining_if_funded_usd'])),850)
+        self.assertEqual(args['snapshot']['difference']['new_orders'][0]['quantity'],2)
+
+    def test_minimum_already_unmet(self):
+        result = build_preview(**self.make(hsbc_minimum_cash='1300'))
+        self.assertEqual(result['status'],'HSBC_MINIMUM_RESERVE_NOT_MET')
