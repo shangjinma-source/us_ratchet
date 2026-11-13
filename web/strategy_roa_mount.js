@@ -31,6 +31,8 @@ function mount(container,dependencies){
   const field=element('label',text),control=element('input');control.value=value;control.inputMode='decimal';control.required=true;field.appendChild(control);fundingForm.appendChild(field);fundingInputs[key]=control;
  }
  const quotaLabel=element('label','已核实汇丰本月免费额度用尽'),quota=element('input');quota.type='checkbox';quotaLabel.appendChild(quota);fundingForm.appendChild(quotaLabel);
+ const ownershipLabel=element('label','现有持仓全部在汇丰（首次转入盈立前确认）'),ownership=element('input');ownership.type='checkbox';ownership.checked=false;ownershipLabel.appendChild(ownership);fundingForm.appendChild(ownershipLabel);
+ let ownershipRevision=null;
  const fundingButton=element('button','计算转账预算');fundingButton.type='submit';fundingForm.appendChild(fundingButton);
  funding.appendChild(fundingForm);funding.appendChild(fundingResult);section.appendChild(funding);
  let fundingGeneration=0,fundingBusy=false,fundingPlan=null,fundingTimer=null;
@@ -42,11 +44,13 @@ function mount(container,dependencies){
   try{
    if(current.busy||current.error||!current.advice?.executable)throw Error('请先刷新有效建议');
    if(!quota.checked)throw Error('汇丰仍有免费额度时应优先使用；该分配功能正在接入');
+   if(current.account.holdings?.length&&!ownership.checked)throw Error('请确认现有持仓全部在汇丰；已有盈立持仓时暂不支持此预览');
    const total=budgetAmount(cashText(current.account.available_cash)),usmart=budgetAmount(fundingInputs.usmart.value);
    if(usmart>total)throw Error('盈立余额不能超过总可用现金');
    budgetAmount(fundingInputs.other.value);budgetAmount(fundingInputs.transfer.value);
    fundingBusy=true;fundingButton.disabled=true;fundingResult.textContent='正在核对当前账户和建议…';
    const body={hsbc_cash:((total-usmart)/100).toFixed(2),usmart_cash:fundingInputs.usmart.value,other_fee_reserve:fundingInputs.other.value,transfer_fee_reserve:fundingInputs.transfer.value,hsbc_waiver_exhausted:true,quota_month:new Date(now()+8*3600000).toISOString().slice(0,7)};
+   if(current.account.holdings?.length)body.broker_holdings={account_revision:current.account.revision,positions:current.account.holdings.map(row=>({broker:'HSBC',security_id:row.security_id,quantity:row.quantity}))};
    const result=await options.request('/api/strategy-roa/funding-preview',body);
    const latest=controller.getState();
    if(disposed||token!==fundingGeneration)return;
@@ -79,6 +83,8 @@ function mount(container,dependencies){
  Object.assign(reasons,{PENDING_ORDER:'已有未完成挂单，请先核对成交或撤单状态',WAIT_CLOSE_HISTORY_RECONCILIATION:'收盘持仓状态待核对，暂不生成新挂单',SNAPSHOT_UNAVAILABLE:'建议暂未读取成功，请刷新重试'});
  function draw(state){
   if(disposed)return;
+  if(state.account?.revision!==ownershipRevision){ownership.checked=false;ownershipRevision=state.account?.revision;}
+  ownershipLabel.hidden=!state.account?.holdings?.length;
   if(fundingPlan&&(state.busy||state.error||state.account?.revision!==fundingPlan.account_revision||state.advice?.proposal_id!==fundingPlan.proposal_id)){
    fundingPlan=null;fundingGeneration++;if(fundingTimer!==null){clearTimer(fundingTimer);fundingTimer=null;}fundingResult.textContent='账户或建议已更新，请重新计算转账预算。';
   }
@@ -156,7 +162,7 @@ function mount(container,dependencies){
  draw(controller.getState());
  return {...controller,ready:controller.load(),whenIdle:()=>lastWork,
   requestAccountReload(revision){if(disposed||!revision||revision===lastReloadKey)return;lastReloadKey=revision;queuedReload=revision;flushAccountReload();},
-  elements:{form,input,save,cashPanel,summary,fundingForm,fundingResult,fundingInputs,quota},setCapitalBusy(value){locked=!!value;draw(controller.getState());},
+  elements:{form,input,save,cashPanel,summary,fundingForm,fundingResult,fundingInputs,quota,ownership},setCapitalBusy(value){locked=!!value;draw(controller.getState());},
   dispose(){disposed=true;fundingGeneration++;if(fundingTimer!==null)clearTimer(fundingTimer);fundingForm.removeEventListener('submit',fundingSubmit);fundingForm.removeEventListener('input',fundingEdited);if(lastRecommended!=='[]'){lastRecommended='[]';onRecommendedTickers([]);}if(timer!==null)clearTimer(timer);form.removeEventListener('submit',submit);input.removeEventListener('input',edit);doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);controller.accountInvalidated();}};
 }
 const api={mount};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.StrategyRoaMount=api;
