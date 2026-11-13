@@ -57,6 +57,7 @@ function render(model){
  html+='</tbody></table></div>'+(a.holdings.length?'':'<p>尚无新策略持仓。</p>');
  
 
+ if(a.fills?.length)html+='<h4>成交与盈亏</h4><div data-trade-charts></div>';
  const choices=[...new Set([...(model.recommendedTickers||[]),...a.holdings.map(h=>h.ticker)])];
  const defaultTicker=choices[0]||'';
  html+='<section class="account-trades"><h4>成交记录</h4>';
@@ -209,7 +210,47 @@ function createController({fetchImpl=root.fetch,onRender=()=>{},onInvalidate=()=
   dispose:()=>{generation++;valuationGeneration++;model.loaded=false;model.account=null;model.valuationLoading=false;model.performance=null;model.valuation=null;}
  };
 }
+function tradeProfitText(row,valuation){
+ const number=v=>{const p=String(v).split('/');return Number(p[0])/(p.length===2?Number(p[1]):1);};
+ const signed=v=>(v>0?'+':v<0?'-':'')+'$'+display(Math.abs(v));
+ const buy=row.buy_quantity?number(row.buy_amount)/row.buy_quantity:null;
+ const sell=row.sell_quantity?number(row.sell_amount)/row.sell_quantity:null;
+ const quote=valuation?.holdings?.find(h=>h.security_id===row.security_id);
+ const unrealized=row.quantity===0?0:quote?number(quote.price)*row.quantity-number(row.gross_cost):null;
+ return '买入均价 '+(buy===null?'—':'$'+display(buy))+' · 卖出均价 '+(sell===null?'—':'$'+display(sell))+
+  ' · 已实现 '+signed(number(row.realized_gross))+' · 持仓浮盈亏 '+(unrealized===null?'待更新市值':signed(unrealized));
+}
+function mountTradeCharts(host,fetchImpl){
+ let charts=[],key=null,metrics=[];
+ return {update(state){
+  const a=state.account;if(!a)return;
+  const fresh=state.valuation?.account_revision===a.revision&&Number.isFinite(Date.parse(state.valuation.valued_at))&&Date.now()-Date.parse(state.valuation.valued_at)>=0&&Date.now()-Date.parse(state.valuation.valued_at)<=120000?state.valuation:null;
+  const nextKey=JSON.stringify([a.revision,a.fill_correction_revision]);
+  if(key!==nextKey){
+   charts.forEach(c=>c.destroy());charts=[];metrics=[];host.replaceChildren();key=nextKey;
+   const note=document.createElement('p');note.className='muted';note.textContent='按已录成交计算价差盈亏，未扣费用；不等于账户净收益。';host.append(note);
+   const rows=[...(a.trade_results||[])].reverse();
+   for(const row of rows){
+    const section=document.createElement('section');section.style.cssText='margin:20px 0';
+    const metric=document.createElement('p');metric.style.cssText='font-size:15px;line-height:1.8;font-weight:600';section.append(metric);metrics.push({metric,row});
+    const card=document.createElement('div');section.append(card);host.append(section);
+    const revision=a.revision,renderKey=nextKey;
+    const chart=root.SelectedStockCharts.createSelectedStockCharts(card,async(ticker,interval,signal)=>{
+     const query=new URLSearchParams({security_id:row.security_id,interval,bars:'260'});
+     const response=await fetchImpl('/api/strategy-display/latest-bars?'+query,{signal,cache:'no-store'});
+     if(!response.ok)throw Error('成交历史行情暂不可用');const data=await response.json();
+     if(key!==renderKey||data.account_revision!==revision||data.security_id!==row.security_id||data.ticker!==ticker)throw Error('账户已变化，请刷新成交图表');
+     if(data.status!=='DISPLAY_ONLY'||data.executable!==false||!Array.isArray(data.bars)||!data.bars.length||data.bars.length>260)throw Error('成交历史行情校验失败');
+     return {...data,status:'AVAILABLE',display_only:true,daily_as_of:data.as_of,latest_quote:{price:Number(data.price),as_of:Number.isFinite(data.price_time)?new Date(data.price_time*1000).toISOString():null,session:data.price_session==='REGULAR'?'REGULAR_LAST':'DAILY_BAR'}};
+    });
+    chart.setFills(a.fills||[]);chart.setSelection({trade_history:true,label:'真实成交 · 展示行情',stocks:[{security_id:row.security_id,ticker:row.ticker,quantity:row.quantity}]});charts.push(chart);
+   }
+  }
+  metrics.forEach(({metric,row})=>{metric.textContent=row.ticker+' · '+tradeProfitText(row,fresh);});
+ }};
+}
 function mount({container,initialValuation=true,...options}){
+ const tradeHost=document.createElement('div');const tradeCharts=root.SelectedStockCharts?mountTradeCharts(tradeHost,options.fetchImpl||root.fetch.bind(root)):null;
  let lastClearedSuccess=null;const retainedDrafts=new Map(),retainedDisclosures=new Map();
  const controller=createController({...options,onRender:(html,state)=>{
   for(const form of container.querySelectorAll('form[data-form]'))retainedDrafts.set(form.dataset.form,Object.fromEntries(new FormData(form)));
@@ -226,6 +267,7 @@ function mount({container,initialValuation=true,...options}){
   {
    for(const draft of drafts){if(draft.kind===clearedForm)continue;const form=container.querySelector(`form[data-form="${draft.kind}"]`);if(form)for(const [name,value] of Object.entries(draft.fields)){const input=form.elements.namedItem(name);if(input&&!(draft.kind==='fill'&&name==='ticker'&&!value))input.value=value;}}
   }
+  if(tradeCharts){const slot=container.querySelector('[data-trade-charts]');if(slot){slot.append(tradeHost);tradeCharts.update(state);}}
   options.onRender?.(html,state);
  }});
  const show=e=>{const status=container.querySelector('[role="status"]');if(status)status.textContent=errors[e.code]||e.message;else{const p=document.createElement('p');p.setAttribute('role','status');p.textContent=errors[e.code]||e.message;container.prepend(p);}};
@@ -233,6 +275,6 @@ function mount({container,initialValuation=true,...options}){
  container.addEventListener('click',async e=>{const button=e.target.closest('button[data-action]');if(!button)return;try{if(button.dataset.action==='refresh')await controller.load();else if(button.dataset.action==='recover-fill')await controller.recoverFill();else if(button.dataset.action==='valuation')await controller.valuation();else if(button.dataset.action==='enable')await controller.initialize();else if(button.dataset.action==='cancel')await controller.cancel(button.dataset.order);}catch(error){show(error);}});
  controller.ready=initialValuation?controller.refresh():controller.load();return controller;
 }
-root.StrategyAccountUI={createController,browserPendingFillStore,render,beijingTime,displayTime,mount};
+root.StrategyAccountUI={createController,browserPendingFillStore,render,beijingTime,displayTime,tradeProfitText,mountTradeCharts,mount};
 if(typeof module!=='undefined')module.exports=root.StrategyAccountUI;
 })(typeof window!=='undefined'?window:globalThis);

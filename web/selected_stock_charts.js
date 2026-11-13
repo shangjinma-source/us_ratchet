@@ -119,6 +119,7 @@
         if (publication.monthly_target === true) advice.textContent = stock.quantity === null ? '本月目标待核验' : `本月目标 ${stock.quantity} 股 · 不等于待买股数`;
         if (stock.recorded_holding === true) advice.textContent = `仍持有 ${stock.quantity} 股 · 已不在本月目标中`;
         if (publication.recorded_holding === true) advice.textContent = `已录真实持仓 ${stock.quantity} 股 · 历史图不代表策略目标或今日报价`;
+        if (publication.trade_history === true) advice.textContent = `真实成交回看 · ${stock.quantity>0?'持仓 '+stock.quantity+' 股':'已清仓'} · B 买入 / S 卖出`;
         const header = document.createElement('div');
         header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap';
         const periods = document.createElement('div'); periods.setAttribute('role', 'group');

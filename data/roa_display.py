@@ -13,10 +13,12 @@ def build_display(*, root, account, signal, specification, validate_sources, clo
     def context(security_id):
         validate_sources()
         state = account.store.read()
-        require(state is not None and state['shares'].get(security_id, 0) > 0, 'DISPLAY_NOT_HELD')
-        holdings = account.project(state)['account']['holdings']
-        matches = [h for h in holdings if h['security_id'] == security_id]
-        require(len(matches) == 1, 'DISPLAY_IDENTITY_MISMATCH')
+        require(state is not None, 'DISPLAY_NOT_HELD')
+        projected = account.project(state)['account']
+        matches = [f for f in projected['fills'] if f['security_id'] == security_id]
+        require(bool(matches), 'DISPLAY_NO_RECORDED_TRADES')
+        tickers = {f['ticker'] for f in matches}
+        require(len(tickers) == 1, 'DISPLAY_IDENTITY_MISMATCH')
         ticker = matches[0]['ticker']
         roster = {r['security_id']:r for r in signal.frozen_roster()}
         identity = roster.get(security_id) or account.resolver(ticker)

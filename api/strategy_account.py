@@ -108,6 +108,24 @@ class StrategyAccountService:
                 executed_at=event['executed_at'],cash_delta=str(delta)))
             if history:
                 fills[-1].update(original_price=event['price'], price_corrections=history)
+        trade_results={}
+        for fill in fills:
+            sid=fill['security_id'];q=fill['quantity'];price=Fraction(fill['price'])
+            row=trade_results.setdefault(sid,dict(security_id=sid,ticker=fill['ticker'],quantity=0,
+                gross_cost=Fraction(0),realized_gross=Fraction(0),buy_amount=Fraction(0),
+                sell_amount=Fraction(0),buy_quantity=0,sell_quantity=0,recorded_fees=Fraction(0)))
+            row['recorded_fees']+=Fraction(fill['fees'])
+            if fill['side']=='BUY':
+                row['quantity']+=q;row['gross_cost']+=q*price
+                row['buy_amount']+=q*price;row['buy_quantity']+=q
+            else:
+                require(0<q<=row['quantity'],'TRADE_PERFORMANCE_QUANTITY')
+                basis=row['gross_cost']*q/row['quantity']
+                row['realized_gross']+=q*price-basis;row['gross_cost']-=basis;row['quantity']-=q
+                row['sell_amount']+=q*price;row['sell_quantity']+=q
+        account['trade_results']=[{k:(str(v) if isinstance(v,Fraction) else v) for k,v in row.items()}
+                                  for row in trade_results.values()]
+        account['trade_results_scope']='RECORDED_TRADES_GROSS_NOT_ACCOUNT_RETURN'
         account['fills']=fills
         account['holding_costs']=[dict(security_id=sid,ticker=names.get(sid),quantity=q,
             total_cost=str(costs[sid]),average_cost=str(costs[sid]/q))
