@@ -8,6 +8,8 @@ from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 from api.broker_internal_transfers import create_router
 from core.broker_transfer_store import TransferStore
+from data.broker_reconciliation_service import TransferReconciliationService
+from api.broker_reconciliation import create_router as reconciliation_router
 
 
 def attach_transfers(*, prepared, root, validate_sources, clock=None):
@@ -43,6 +45,17 @@ def attach_transfers(*, prepared, root, validate_sources, clock=None):
         clock=clock or (lambda: datetime.now(timezone.utc)), validate_sources=validate_sources)
     prepared['roa_service'].broker_cash_service = cash_service
     router.include_router(cash_router(service=cash_service))
+    if prepared.get('cash_classification') is not None:
+        reconciliation_path=account_path.with_name(account_path.name+'.transfer-reconciliation.sqlite3')
+        if any(p.is_symlink() for p in (reconciliation_path,*reconciliation_path.parents)):
+            raise ValueError('RECONCILIATION_STORE_PATH_INVALID')
+        reconciliation=TransferReconciliationService(flow=prepared['cash_classification'],
+            broker_cash=cash_service,path=reconciliation_path,clock=clock or (lambda:datetime.now(timezone.utc)))
+        # Deployment explicitly initializes the sidecar. Mounting never creates
+        # account facts or silently repairs a missing/corrupt journal.
+        reconciliation.store.read()
+        prepared['cash_classification'].transfer_reconciliation=reconciliation
+        router.include_router(reconciliation_router(service=reconciliation))
 
     @router.get('/static/broker_internal_transfers.js')
     async def asset():

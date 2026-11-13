@@ -66,7 +66,9 @@ class FlowAddon:
         if any(t>received for t in times):raise ValueError('FLOW_AFTER_CASH_CONFIRMATION')
         if any(t<datetime.fromisoformat(baseline['effective_at']) for t in times):raise ValueError('PRE_BASELINE_FACT_RECONCILIATION_REQUIRED')
         return result
-    def current(self, *, include_profit=False):
+    def current(self, *, include_profit=False, _transfer_checked=False):
+        if not _transfer_checked and getattr(self,'transfer_reconciliation',None) is not None:
+            return self.transfer_reconciliation.cash_view(include_profit=include_profit)
         with self.operation():
             baseline,old=self.baseline();current=self.account.audit_state();documents=self.records()
             audit=audit_cash_changes(baseline=old,current=current);state=old;revisions={}
@@ -105,6 +107,9 @@ class FlowAddon:
         try:return self.current(include_profit=True)
         finally:self.profit_lock.release()
     def save(self,body):
+        reconciliation=getattr(self,'transfer_reconciliation',None)
+        if reconciliation is not None and reconciliation.read()['transfer_events']:
+            raise ValueError('USE_TRANSFER_RECONCILIATION')
         if set(body) not in ({'expected_revision','document'},{'expected_revision','document','expected_document_sha256'}):raise ValueError('BODY_FIELDS')
         result=self.store.save(**body)
         return dict(result,account_revision=body['expected_revision'])

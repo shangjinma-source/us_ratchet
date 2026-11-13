@@ -8,6 +8,8 @@ from data.roa_account_composition import attach_roa
 from data.roa_cash_flow.composition import attach_flow
 from data.broker_transfer_composition import attach_transfers
 SOURCES={
+ 'core/broker_reconciliation_store.py','core/broker_transfer_cash_reconciliation.py',
+ 'data/broker_reconciliation_service.py','api/broker_reconciliation.py',
  'core/broker_cash_allocation.py','data/broker_cash_service.py','api/broker_cash.py',
  'data/broker_transfer_composition.py','core/broker_internal_transfers.py','core/broker_transfer_store.py','api/broker_internal_transfers.py','web/broker_internal_transfers.js',
  'core/usmart_standard_fees.py','core/broker_transfer_plan.py','core/broker_quota.py',

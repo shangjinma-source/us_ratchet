@@ -11,7 +11,7 @@ from api.strategy_account import StrategyAccountService
 from core.strategy_account_store import StrategyAccountStore
 
 
-def backup_account(database_path, output_directory):
+def backup_account(database_path, output_directory, *, classification_path=None):
     source = Path(database_path).resolve(strict=True)
     output = Path(output_directory).absolute()
     store = StrategyAccountStore(source)
@@ -21,7 +21,16 @@ def backup_account(database_path, output_directory):
         guard.execute('BEGIN IMMEDIATE')
         try:
             sidecars = [source.with_name(source.name + suffix) for suffix in
-                        ('.internal-transfers.sqlite3', '.broker-cash.sqlite3')]
+                        ('.internal-transfers.sqlite3', '.broker-cash.sqlite3', '.transfer-reconciliation.sqlite3')]
+            if classification_path is not None:
+                classification=Path(classification_path).absolute()
+                if any(p.is_symlink() for p in (classification,*classification.parents)) or not classification.resolve().is_relative_to(source.parent) or not classification.is_file():
+                    raise ValueError('BACKUP_CLASSIFICATION_PATH_INVALID')
+                if classification.resolve()==source or classification in sidecars:
+                    raise ValueError('BACKUP_CLASSIFICATION_PATH_INVALID')
+                sidecars.append(classification)
+            if len({p.name for p in [source,*sidecars]})!=len(sidecars)+1:
+                raise ValueError('BACKUP_FILENAME_COLLISION')
             missing = [path for path in sidecars if not path.exists()]
             snapshots = {}
             for path in sidecars:
@@ -55,7 +64,7 @@ def backup_account(database_path, output_directory):
                             raise ValueError('BACKUP_INTEGRITY_FAILED')
                         if path in snapshots and '\n'.join(writer.iterdump()) != snapshots[path]:
                             raise ValueError('BACKUP_SIDECAR_CONTENT_MISMATCH')
-                files.append(dict(name=target.name, sha256=sha256(target.read_bytes()).hexdigest()))
+                files.append(dict(name=target.name, source_relative_path=path.relative_to(source.parent).as_posix(),sha256=sha256(target.read_bytes()).hexdigest()))
             if scope_bytes is not None:
                 target = output/scope_path.name
                 target.write_bytes(scope_bytes)
@@ -71,7 +80,8 @@ def backup_account(database_path, output_directory):
                             account_revision=state['revision'], files=files,
                             correction_revision=expected['account']['fill_correction_revision'],
                             absent_broker_journals=[path.name for path in missing],
-                            scope='Account journal, price amendments, trade display scope, internal transfers and broker cash allocations; not lifecycle, flow classifications or deployment configuration.')
+                            flow_classification_included=classification_path is not None,
+                            scope='Account journal, price amendments, trade display scope, internal transfers, broker cash allocations and transfer reconciliation; flow classifications only when explicitly supplied; not lifecycle or deployment configuration.')
             (output/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
             return manifest
         finally:
@@ -82,5 +92,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--classification', help='Explicit existing cash classification sidecar beside the account database')
     arguments = parser.parse_args()
-    print(json.dumps(backup_account(arguments.database, arguments.output), indent=2))
+    print(json.dumps(backup_account(arguments.database, arguments.output,classification_path=arguments.classification), indent=2))
