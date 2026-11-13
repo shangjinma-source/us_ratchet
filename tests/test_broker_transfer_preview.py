@@ -75,4 +75,26 @@ class PreviewTests(unittest.TestCase):
             dict(broker='HSBC', security_id='a', quantity=1)]))
         args['snapshot']['account']['holdings'] = [dict(security_id='a', quantity=1)]
         args['snapshot']['difference']['new_orders'][0]['side'] = 'SELL'
-        self.assertEqual(build_preview(**args)['status'], 'BROKER_HOLDINGS_MAPPING_REQUIRED')
+        self.assertEqual(build_preview(**args)['status'], 'BROKER_SELL_EXCEEDS_HOLDINGS')
+
+    def test_sells_split_by_ownership_without_funding_buys(self):
+        args = self.make(broker_holdings=dict(account_revision='r', positions=[
+            dict(broker='HSBC', security_id='a', quantity=3),
+            dict(broker='USMART', security_id='a', quantity=2)]))
+        args['snapshot']['account']['holdings'] = [dict(security_id='a', quantity=5)]
+        args['snapshot']['difference']['new_orders'].append(
+            dict(side='SELL', security_id='a', quantity=4, limit_price='500'))
+        result = build_preview(**args)
+        self.assertEqual([(r['broker'], r['quantity']) for r in result['planned_broker_sells']], [('HSBC',3),('USMART',1)])
+        self.assertEqual(result['proposed_transfer_credit_usd'], '5672/25')
+        self.assertFalse(result['unfilled_sale_proceeds_included'])
+
+    def test_sell_only_not_blocked_by_transfer_reserve(self):
+        args = self.make(hsbc_minimum_cash='1300', broker_holdings=dict(account_revision='r', positions=[
+            dict(broker='HSBC', security_id='a', quantity=2)]))
+        args['snapshot']['account']['holdings'] = [dict(security_id='a', quantity=2)]
+        args['snapshot']['difference']['new_orders'][0]['side'] = 'SELL'
+        result = build_preview(**args)
+        self.assertEqual(result['status'], 'FUNDING_PLAN_ONLY')
+        self.assertEqual(result['proposed_transfer_credit_usd'], '0')
+        self.assertEqual(result['planned_usmart_buys'], [])

@@ -17,6 +17,7 @@ def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
     if verification.get('api_advice_passed') is not True:
         return pending
     account = snapshot['account']
+    positions = []
     # Explicit revision-bound ownership; transfers never create duplicate positions.
     if account['orders']:
         return dict(status='BROKER_HOLDINGS_MAPPING_REQUIRED', executable=False)
@@ -46,11 +47,27 @@ def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
     if Fraction(hsbc_cash) + Fraction(usmart_cash) != Fraction(account['available_cash']):
         return dict(status='BROKER_CASH_TOTAL_MISMATCH', executable=False)
     orders = snapshot['difference']['new_orders']
-    if any(order['side'] != 'BUY' for order in orders):
-        return dict(status='BROKER_HOLDINGS_MAPPING_REQUIRED', executable=False)
     tickers = {row['security_id']: row['ticker'] for row in snapshot['rows']}
+    inventory = {(row['broker'], row['security_id']): row['quantity'] for row in positions}
+    sells = []
+    for order in orders:
+        if order['side'] == 'BUY':
+            continue
+        if order['side'] != 'SELL' or type(order['quantity']) is not int or order['quantity'] <= 0:
+            return dict(status='INVALID_BROKER_ORDER', executable=False)
+        remaining = order['quantity']
+        for broker in ('HSBC', 'USMART'):
+            key = (broker, order['security_id'])
+            quantity = min(remaining, inventory.get(key, 0))
+            if quantity:
+                sells.append(dict(broker=broker, symbol=tickers[order['security_id']],
+                                  quantity=quantity, limit_price=order['limit_price']))
+                inventory[key] -= quantity
+                remaining -= quantity
+        if remaining:
+            return dict(status='BROKER_SELL_EXCEEDS_HOLDINGS', executable=False)
     buys = [dict(symbol=tickers[order['security_id']], quantity=order['quantity'],
-                 limit_price=order['limit_price']) for order in orders]
+                 limit_price=order['limit_price']) for order in orders if order['side'] == 'BUY']
     result = plan_usmart_funding(
         hsbc_cash=hsbc_cash, usmart_cash=usmart_cash, buys=buys,
         other_fee_reserve=other_fee_reserve,
@@ -58,7 +75,7 @@ def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
         hsbc_waiver_exhausted=hsbc_waiver_exhausted,
         hsbc_minimum_cash=hsbc_minimum_cash)
     original_buys = buys
-    if Fraction(hsbc_cash) < Fraction(hsbc_minimum_cash):
+    if buys and Fraction(hsbc_cash) < Fraction(hsbc_minimum_cash) and Fraction(result['proposed_transfer_credit_usd']) > 0:
         return dict(status='HSBC_MINIMUM_RESERVE_NOT_MET', executable=False)
     if result['status'] == 'INSUFFICIENT_TOTAL_CASH':
         buys = fit_integer_buys(buys=buys,
@@ -73,6 +90,8 @@ def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
                   quote_valid_until=snapshot['quote_valid_until'],
                   execution_session=snapshot['execution_session'],
                   planned_usmart_buys=buys, planned_hsbc_buys=[],
+                  planned_broker_sells=sells, unfilled_sale_proceeds_included=False,
+                  sell_fees_included=False,
                   original_strategy_buys=original_buys,
                   budget_reduced=buys != original_buys,
                   requires_reprice_after_transfer=True,
