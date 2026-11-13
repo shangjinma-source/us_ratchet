@@ -63,6 +63,31 @@ class FundingHttpTests(unittest.TestCase):
         self.assertEqual(build.call_args.kwargs['broker_holdings'], mapping)
         self.assertFalse(response.json()['account_written'])
 
+    def test_real_budget_calculator_uses_confirmed_split(self):
+        self.body['hsbc_cash'] = '5000'
+        self.coordinator.broker_cash_service = SimpleNamespace(read=lambda: dict(
+            status='CONFIRMED_BROKER_CASH_SPLIT', account_revision='a',
+            document={'balances': {'HSBC': {'available_cash':'5000'}, 'USMART': {'available_cash':'0'}}}))
+        self.coordinator.snapshot = lambda: dict(account=dict(holdings=[], orders=[], available_cash='5000', revision='a'),
+            difference=dict(new_orders=[dict(side='BUY',security_id='stock',quantity=20,limit_price='100')]),
+            rows=[dict(security_id='stock',ticker='TEST')], proposal_id='p',target_id='t',
+            quote_valid_until='future-fixture',execution_session='fixture')
+        with patch('scripts.verify_roa_live_advice.review', return_value={'api_advice_passed':True}):
+            response = self.client.post('/api/strategy-roa/funding-preview', json=self.body)
+        from fractions import Fraction
+        self.assertEqual(response.status_code, 200)
+        result=response.json()
+        self.assertEqual(result['planned_usmart_buys'][0]['quantity'],20)
+        self.assertEqual(Fraction(result['proposed_transfer_credit_usd']),Fraction('2026.88'))
+        self.assertEqual(Fraction(result['hsbc_remaining_if_funded_usd']),Fraction('2973.12'))
+        self.assertFalse(result['orders_created'])
+
+    def test_unconfirmed_split_does_not_reach_market_or_budget(self):
+        self.coordinator.broker_cash_service = SimpleNamespace(read=lambda: {'status':'BROKER_CASH_CONFIRMATION_REQUIRED'})
+        response=self.client.post('/api/strategy-roa/funding-preview',json=self.body)
+        self.assertEqual(response.json()['status'],'BROKER_CASH_CONFIRMATION_REQUIRED')
+        self.assertEqual(self.reads,0)
+
     def test_invalid_mapping_rejected_before_account_read(self):
         for quantity in [True, 0, -1, 1.5, '12']:
             mapping = dict(account_revision='a', positions=[
