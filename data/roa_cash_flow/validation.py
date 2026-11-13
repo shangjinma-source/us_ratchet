@@ -5,9 +5,10 @@ from hashlib import sha256
 import json
 from core.strategy_account_ledger import apply_event
 from .audit import audit_cash_changes
+from core.broker_transfer_cash_reconciliation import reconcile_transfer_cash
 
 
-def validate_classification(*, baseline, current, document, now, existing=None):
+def validate_classification(*, baseline, current, document, now, existing=None, transfer_context=None):
     def require(ok, message):
         if not ok:raise ValueError(message)
     def instant(value):
@@ -33,7 +34,14 @@ def validate_classification(*, baseline, current, document, now, existing=None):
         require(type(value)in(str,int),'EXACT_AMOUNT_REQUIRED')
         return F(value)
     difference=exact(document['net_change'])
-    require(difference==F(rows[0]['unexplained_net_change']),'NET_CHANGE_MISMATCH')
+    expected_change=F(rows[0]['unexplained_net_change'])
+    if transfer_context is not None:
+        reconciliation=reconcile_transfer_cash(baseline_account=baseline,
+            current_account=current,now=now,**transfer_context)
+        require(not reconciliation['unlinked_transfer_events'],'UNLINKED_TRANSFER_EVENTS')
+        residuals={r['cash_event_id']:r['residual_cash_change'] for r in reconciliation['rows']}
+        expected_change=F(residuals[document['cash_event_id']])
+    require(difference==expected_change,'NET_CHANGE_MISMATCH')
     items=document['items'];require(type(items)is list and bool(items),'ITEMS_REQUIRED')
     total=F(0);external=F(0);blocked=False;ids=set()
     for item in items:
