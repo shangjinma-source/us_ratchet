@@ -5,14 +5,14 @@ from fractions import Fraction
 import json
 from pathlib import Path
 
-from core.broker_transfer_plan import plan_usmart_funding, fit_integer_buys
+from core.broker_transfer_plan import plan_usmart_funding, fit_integer_buys, plan_mixed_funding
 from scripts.verify_roa_live_advice import capture
 
 
 def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
                   other_fee_reserve, transfer_fee_reserve,
                   hsbc_waiver_exhausted, hsbc_minimum_cash='1300',
-                  broker_holdings=None):
+                  broker_holdings=None, hsbc_quota=None, now=None):
     pending = dict(status='WAIT_VERIFIED_ADVICE', executable=False)
     if verification.get('api_advice_passed') is not True:
         return pending
@@ -68,6 +68,25 @@ def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
             return dict(status='BROKER_SELL_EXCEEDS_HOLDINGS', executable=False)
     buys = [dict(symbol=tickers[order['security_id']], quantity=order['quantity'],
                  limit_price=order['limit_price']) for order in orders if order['side'] == 'BUY']
+    if hsbc_waiver_exhausted is not True:
+        from core.broker_quota import free_buy_budget
+        allowance = free_buy_budget(hsbc_quota, account_revision=account['revision'],
+                                    now=now or datetime.now(timezone.utc))
+        # Sell limit prices are lower bounds, not upper bounds on turnover.
+        # Reconfirm the remaining allowance after HSBC sells actually settle.
+        if any(row['broker'] == 'HSBC' for row in sells):
+            return dict(status='QUOTA_RECONFIRM_AFTER_HSBC_SELLS', executable=False,
+                        planned_broker_sells=sells)
+        result = plan_mixed_funding(hsbc_cash=hsbc_cash, usmart_cash=usmart_cash,
+            buys=buys, hsbc_free_buy_budget_usd=allowance,
+            other_fee_reserve=other_fee_reserve, transfer_fee_reserve=transfer_fee_reserve,
+            hsbc_minimum_cash=hsbc_minimum_cash)
+        result.update(account_revision=account['revision'], proposal_id=snapshot['proposal_id'],
+            target_id=snapshot['target_id'], quote_valid_until=snapshot['quote_valid_until'],
+            execution_session=snapshot['execution_session'], planned_broker_sells=sells,
+            original_strategy_buys=buys, unfilled_sale_proceeds_included=False,
+            sell_fees_included=False, quota_budget_usd=str(allowance))
+        return result
     result = plan_usmart_funding(
         hsbc_cash=hsbc_cash, usmart_cash=usmart_cash, buys=buys,
         other_fee_reserve=other_fee_reserve,

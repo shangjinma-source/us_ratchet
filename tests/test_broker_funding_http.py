@@ -88,6 +88,26 @@ class FundingHttpTests(unittest.TestCase):
         self.assertEqual(response.json()['status'],'BROKER_CASH_CONFIRMATION_REQUIRED')
         self.assertEqual(self.reads,0)
 
+    def test_mixed_http_real_budget_and_stale_quota(self):
+        self.coordinator.snapshot = lambda: dict(account=dict(holdings=[], orders=[], available_cash='1000',revision='a'),
+            difference=dict(new_orders=[dict(side='BUY',security_id='stock',quantity=2,limit_price='100')]),
+            rows=[dict(security_id='stock',ticker='TEST')], proposal_id='p',target_id='t',
+            quote_valid_until='future-fixture',execution_session='fixture')
+        quota = dict(account_revision='a',month=self.body['quota_month'],
+            observed_at=datetime.now(ZoneInfo('Asia/Hong_Kong')).isoformat(),
+            remaining_hkd='8000',hkd_per_usd_budget='8',turnover_reserve_hkd='0')
+        body = dict(self.body,hsbc_waiver_exhausted=False,hsbc_quota=quota)
+        with patch('scripts.verify_roa_live_advice.review',return_value={'api_advice_passed':True}):
+            response = self.client.post('/api/strategy-roa/funding-preview',json=body)
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.json()['planned_hsbc_buys'][0]['quantity'],2)
+            self.assertEqual(response.json()['planned_usmart_buys'],[])
+            self.assertFalse(response.json()['orders_created'])
+            quota['account_revision']='old'
+            response = self.client.post('/api/strategy-roa/funding-preview',json=body)
+            self.assertEqual(response.status_code,422)
+            self.assertEqual(response.json()['status'],'STALE_QUOTA_ACCOUNT')
+
     def test_invalid_mapping_rejected_before_account_read(self):
         for quantity in [True, 0, -1, 1.5, '12']:
             mapping = dict(account_revision='a', positions=[

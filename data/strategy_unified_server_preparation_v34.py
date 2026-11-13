@@ -10,7 +10,7 @@ from data.broker_transfer_composition import attach_transfers
 SOURCES={
  'core/broker_cash_allocation.py','data/broker_cash_service.py','api/broker_cash.py',
  'data/broker_transfer_composition.py','core/broker_internal_transfers.py','core/broker_transfer_store.py','api/broker_internal_transfers.py','web/broker_internal_transfers.js',
- 'core/usmart_standard_fees.py','core/broker_transfer_plan.py',
+ 'core/usmart_standard_fees.py','core/broker_transfer_plan.py','core/broker_quota.py',
  'scripts/preview_broker_transfer.py','scripts/verify_roa_live_advice.py',
  'core/strategy_fill_correction_store.py',
  'data/roa_display.py', 'api/strategy_latest_display_charts_v1.py', 'data/strategy_latest_display_charts_v1.py',

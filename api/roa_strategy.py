@@ -88,7 +88,7 @@ def create_router(*, coordinator):
             body = json.loads(raw)
             fields = {'hsbc_cash', 'usmart_cash', 'other_fee_reserve',
                       'transfer_fee_reserve', 'hsbc_waiver_exhausted', 'quota_month'}
-            require(type(body) is dict and fields <= set(body) <= fields | {'broker_holdings'}, 'BODY_FIELDS')
+            require(type(body) is dict and fields <= set(body) <= fields | {'broker_holdings', 'hsbc_quota'}, 'BODY_FIELDS')
             if 'broker_holdings' in body:
                 mapping = body['broker_holdings']
                 require(type(mapping) is dict and set(mapping) == {'account_revision', 'positions'}, 'BROKER_HOLDINGS_INVALID')
@@ -100,7 +100,8 @@ def create_router(*, coordinator):
                     require(type(position['quantity']) is int and 0 < position['quantity'] <= 1000000000, 'BROKER_HOLDINGS_INVALID')
             for field in fields - {'hsbc_waiver_exhausted', 'quota_month'}:
                 require(type(body[field]) is str and re.fullmatch(r'(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?', body[field]), 'INVALID_BUDGET_AMOUNT')
-            require(body['hsbc_waiver_exhausted'] is True, 'HSBC_FREE_QUOTA_PRIORITY_NOT_YET_SUPPORTED')
+            require(type(body['hsbc_waiver_exhausted']) is bool, 'INVALID_QUOTA_STATE')
+            require(not body['hsbc_waiver_exhausted'] or 'hsbc_quota' not in body, 'CONFLICTING_QUOTA_STATE')
             from zoneinfo import ZoneInfo
             now = datetime.now(timezone.utc)
             require(body['quota_month'] == now.astimezone(ZoneInfo('Asia/Hong_Kong')).strftime('%Y-%m'), 'QUOTA_MONTH_MISMATCH')
