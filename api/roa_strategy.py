@@ -1,6 +1,7 @@
 """Explicitly mounted ROA HTTP orchestration with cash durability semantics."""
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, FileResponse
@@ -72,5 +73,48 @@ def create_router(*, coordinator):
         except Exception as error:
             result=coordinator.unavailable_snapshot(error)
             return JSONResponse(result,status_code=503,headers={'Cache-Control':'no-store'})
+
+    @router.post('/api/strategy-roa/funding-preview')
+    async def funding_preview(request: Request):
+        # Read-only calculation. Does not confirm balances, transfer or order.
+        try:
+            from scripts.preview_broker_transfer import build_preview
+            from scripts.verify_roa_live_advice import review
+            require(not request.query_params, 'UNSUPPORTED_PARAMETERS')
+            raw = bytearray()
+            async for part in request.stream():
+                raw.extend(part)
+                require(len(raw) <= 2048, 'BODY_TOO_LARGE')
+            body = json.loads(raw)
+            fields = {'hsbc_cash', 'usmart_cash', 'other_fee_reserve',
+                      'transfer_fee_reserve', 'hsbc_waiver_exhausted', 'quota_month'}
+            require(type(body) is dict and set(body) == fields, 'BODY_FIELDS')
+            for field in fields - {'hsbc_waiver_exhausted', 'quota_month'}:
+                require(type(body[field]) is str and re.fullmatch(r'(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?', body[field]), 'INVALID_BUDGET_AMOUNT')
+            require(body['hsbc_waiver_exhausted'] is True, 'HSBC_FREE_QUOTA_PRIORITY_NOT_YET_SUPPORTED')
+            from zoneinfo import ZoneInfo
+            now = datetime.now(timezone.utc)
+            require(body['quota_month'] == now.astimezone(ZoneInfo('Asia/Hong_Kong')).strftime('%Y-%m'), 'QUOTA_MONTH_MISMATCH')
+            def calculate():
+                before = coordinator.account_service.read()
+                snapshot = coordinator.snapshot()
+                after = coordinator.account_service.read()
+                config = dict(active=True, strategy_kind='ROA_DEFENSIVE_V1',
+                              strategy_epoch=coordinator.lifecycle.epoch,
+                              account_id=coordinator.account_service.account_id)
+                checked = review(before, config, snapshot, after, now=datetime.now(timezone.utc))
+                arguments = {key: value for key, value in body.items() if key != 'quota_month'}
+                result = build_preview(verification=checked, snapshot=snapshot, **arguments)
+                result.update(generated_at=datetime.now(timezone.utc).isoformat(),
+                              quota_month=body['quota_month'],
+                              reserve_assumptions=dict(other_fee_usd=body['other_fee_reserve'],
+                                                       transfer_fee_usd=body['transfer_fee_reserve']),
+                              account_written=False, orders_created=False)
+                return result
+            return JSONResponse(await run_in_threadpool(calculate), headers={'Cache-Control':'no-store'})
+        except Exception as error:
+            reason = str(error) if isinstance(error, ValueError) and re.fullmatch('[A-Z][A-Z0-9_]{0,99}', str(error)) else 'FUNDING_PREVIEW_UNAVAILABLE'
+            return JSONResponse(dict(status=reason, executable=False, account_written=False,
+                                     orders_created=False), status_code=422, headers={'Cache-Control':'no-store'})
 
     return router

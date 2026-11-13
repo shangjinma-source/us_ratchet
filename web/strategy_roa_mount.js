@@ -23,6 +23,46 @@ function mount(container,dependencies){
  label.appendChild(input);const save=element('button','更新现金并查看建议');save.type='submit';form.appendChild(label);form.appendChild(save);cashPanel.appendChild(form);
  const status=element('div',undefined,'daily-status'),summary=element('div',undefined,'monthly-table-scroll');
  for(const n of [title,cashPanel,status,summary])section.appendChild(n);container.replaceChildren(section);
+ const funding=element('details'),fundingTitle=element('summary','券商资金规划'),fundingForm=element('form'),fundingResult=element('p');
+ funding.appendChild(fundingTitle);
+ funding.appendChild(element('p','统一规划总资金。此处只估算转账，不保存现金、不下单；到账后重新刷新建议。'));
+ const fundingInputs={};
+ for(const [key,text,value] of [['usmart','盈立当前可用现金 USD','0'],['other','其他费用预算 USD','25'],['transfer','转账费用预算 USD','0']]){
+  const field=element('label',text),control=element('input');control.value=value;control.inputMode='decimal';control.required=true;field.appendChild(control);fundingForm.appendChild(field);fundingInputs[key]=control;
+ }
+ const quotaLabel=element('label','已核实汇丰本月免费额度用尽'),quota=element('input');quota.type='checkbox';quotaLabel.appendChild(quota);fundingForm.appendChild(quotaLabel);
+ const fundingButton=element('button','计算转账预算');fundingButton.type='submit';fundingForm.appendChild(fundingButton);
+ funding.appendChild(fundingForm);funding.appendChild(fundingResult);section.appendChild(funding);
+ let fundingGeneration=0,fundingBusy=false,fundingPlan=null,fundingTimer=null;
+ const budgetAmount=value=>{if(!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(value))throw Error('请填写有效美元金额');return Math.round(Number(value)*100);};
+ const fundingSubmit=async event=>{
+  event.preventDefault();if(fundingBusy)return;
+  const current=controller.getState(),token=++fundingGeneration;
+  fundingPlan=null;
+  try{
+   if(current.busy||current.error||!current.advice?.executable)throw Error('请先刷新有效建议');
+   if(!quota.checked)throw Error('汇丰仍有免费额度时应优先使用；该分配功能正在接入');
+   const total=budgetAmount(cashText(current.account.available_cash)),usmart=budgetAmount(fundingInputs.usmart.value);
+   if(usmart>total)throw Error('盈立余额不能超过总可用现金');
+   budgetAmount(fundingInputs.other.value);budgetAmount(fundingInputs.transfer.value);
+   fundingBusy=true;fundingButton.disabled=true;fundingResult.textContent='正在核对当前账户和建议…';
+   const body={hsbc_cash:((total-usmart)/100).toFixed(2),usmart_cash:fundingInputs.usmart.value,other_fee_reserve:fundingInputs.other.value,transfer_fee_reserve:fundingInputs.transfer.value,hsbc_waiver_exhausted:true,quota_month:new Date(now()+8*3600000).toISOString().slice(0,7)};
+   const result=await options.request('/api/strategy-roa/funding-preview',body);
+   const latest=controller.getState();
+   if(disposed||token!==fundingGeneration)return;
+   if(latest.busy||latest.error||latest.account?.revision!==result.account_revision||!latest.advice?.executable||latest.advice?.proposal_id!==result.proposal_id)throw Error('账户或建议已变化，请刷新后重新计算');
+   if(result.status!=='FUNDING_PLAN_ONLY')throw Error(result.status==='INSUFFICIENT_TOTAL_CASH'?'总现金不足以覆盖全部目标和费用':'当前条件不支持转账预览，请核对账户与建议');
+   if(!(Date.parse(result.quote_valid_until)>now()))throw Error('报价已过期，请重新计算');
+   fundingPlan=result;
+   fundingResult.textContent='本次预算：盈立买入 '+result.planned_usmart_buys.length+' 只，汇丰买入 0 只；转账到账金额 '+legacyUi.dollars(result.proposed_transfer_credit_usd)+'，汇丰预计剩余 '+legacyUi.dollars(result.hsbc_remaining_if_funded_usd)+'。费用预算不代表实际费用，到账后重新核价。';
+   if(fundingTimer!==null)clearTimer(fundingTimer);
+   fundingTimer=setTimer(()=>{fundingPlan=null;fundingResult.textContent+=' 该预算已过期，仅供参考。';},Math.max(1,Date.parse(result.quote_valid_until)-now()));
+  }catch(error){fundingResult.textContent=error.responseBody?.status?'当前无法生成资金预算，请核对条件后重试。':error.message;}
+  finally{fundingBusy=false;fundingButton.disabled=false;}
+ };
+ fundingForm.addEventListener('submit',fundingSubmit);
+ const fundingEdited=()=>{fundingGeneration++;fundingPlan=null;if(fundingTimer!==null){clearTimer(fundingTimer);fundingTimer=null;}fundingResult.textContent='条件已变化，请重新计算。';};
+ fundingForm.addEventListener('input',fundingEdited);
  let flowRevision=null,lastRecommended='[]',queuedReload=null,lastReloadKey=null,reloadScheduled=false;
  function flushAccountReload(){if(disposed||reloadScheduled||!queuedReload||!controller||controller.getState().busy)return;reloadScheduled=true;Promise.resolve().then(()=>{reloadScheduled=false;if(disposed||!queuedReload||controller.getState().busy)return;queuedReload=null;void controller.load();});}
  let controller,disposed=false,edited=false,locked=false,timer=null,lastAmount=null,lastRevision=null;
@@ -31,6 +71,9 @@ function mount(container,dependencies){
  Object.assign(reasons,{PENDING_ORDER:'已有未完成挂单，请先核对成交或撤单状态',WAIT_CLOSE_HISTORY_RECONCILIATION:'收盘持仓状态待核对，暂不生成新挂单',SNAPSHOT_UNAVAILABLE:'建议暂未读取成功，请刷新重试'});
  function draw(state){
   if(disposed)return;
+  if(fundingPlan&&(state.busy||state.error||state.account?.revision!==fundingPlan.account_revision||state.advice?.proposal_id!==fundingPlan.proposal_id)){
+   fundingPlan=null;fundingGeneration++;if(fundingTimer!==null){clearTimer(fundingTimer);fundingTimer=null;}fundingResult.textContent='账户或建议已更新，请重新计算转账预算。';
+  }
   if(timer!==null){clearTimer(timer);timer=null;}
   save.disabled=input.disabled=state.busy||locked;save.textContent=state.busy?'正在更新建议…':'更新现金并查看建议';
   const account=state.account,advice=state.advice;
@@ -105,8 +148,8 @@ function mount(container,dependencies){
  draw(controller.getState());
  return {...controller,ready:controller.load(),whenIdle:()=>lastWork,
   requestAccountReload(revision){if(disposed||!revision||revision===lastReloadKey)return;lastReloadKey=revision;queuedReload=revision;flushAccountReload();},
-  elements:{form,input,save,cashPanel,summary},setCapitalBusy(value){locked=!!value;draw(controller.getState());},
-  dispose(){disposed=true;if(lastRecommended!=='[]'){lastRecommended='[]';onRecommendedTickers([]);}if(timer!==null)clearTimer(timer);form.removeEventListener('submit',submit);input.removeEventListener('input',edit);doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);controller.accountInvalidated();}};
+  elements:{form,input,save,cashPanel,summary,fundingForm,fundingResult,fundingInputs,quota},setCapitalBusy(value){locked=!!value;draw(controller.getState());},
+  dispose(){disposed=true;fundingGeneration++;if(fundingTimer!==null)clearTimer(fundingTimer);fundingForm.removeEventListener('submit',fundingSubmit);fundingForm.removeEventListener('input',fundingEdited);if(lastRecommended!=='[]'){lastRecommended='[]';onRecommendedTickers([]);}if(timer!==null)clearTimer(timer);form.removeEventListener('submit',submit);input.removeEventListener('input',edit);doc.removeEventListener?.('visibilitychange',resume);doc.defaultView?.removeEventListener('focus',resume);controller.accountInvalidated();}};
 }
 const api={mount};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.StrategyRoaMount=api;
 })(typeof window!=='undefined'?window:globalThis);
