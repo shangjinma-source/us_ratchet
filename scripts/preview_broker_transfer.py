@@ -11,14 +11,38 @@ from scripts.verify_roa_live_advice import capture
 
 def build_preview(*, verification, snapshot, hsbc_cash, usmart_cash,
                   other_fee_reserve, transfer_fee_reserve,
-                  hsbc_waiver_exhausted, hsbc_minimum_cash='1300'):
+                  hsbc_waiver_exhausted, hsbc_minimum_cash='1300',
+                  broker_holdings=None):
     pending = dict(status='WAIT_VERIFIED_ADVICE', executable=False)
     if verification.get('api_advice_passed') is not True:
         return pending
     account = snapshot['account']
-    # First migration only. Never infer where an existing holding/order lives.
-    if account['holdings'] or account['orders']:
+    # Explicit revision-bound ownership; transfers never create duplicate positions.
+    if account['orders']:
         return dict(status='BROKER_HOLDINGS_MAPPING_REQUIRED', executable=False)
+    if account['holdings']:
+        if not isinstance(broker_holdings, dict):
+            return dict(status='BROKER_HOLDINGS_MAPPING_REQUIRED', executable=False)
+        if broker_holdings.get('account_revision') != account['revision']:
+            return dict(status='BROKER_HOLDINGS_REVISION_MISMATCH', executable=False)
+        totals = {}
+        seen = set()
+        positions = broker_holdings.get('positions')
+        if not isinstance(positions, list):
+            return dict(status='BROKER_HOLDINGS_INVALID', executable=False)
+        for row in positions:
+            if not isinstance(row, dict):
+                return dict(status='BROKER_HOLDINGS_INVALID', executable=False)
+            broker, security, quantity = row.get('broker'), row.get('security_id'), row.get('quantity')
+            if (broker not in ('HSBC', 'USMART') or not isinstance(security, str)
+                    or type(quantity) is not int or quantity <= 0
+                    or (broker, security) in seen):
+                return dict(status='BROKER_HOLDINGS_INVALID', executable=False)
+            seen.add((broker, security))
+            totals[security] = totals.get(security, 0) + quantity
+        expected = {row['security_id']: row['quantity'] for row in account['holdings']}
+        if totals != expected:
+            return dict(status='BROKER_HOLDINGS_TOTAL_MISMATCH', executable=False)
     if Fraction(hsbc_cash) + Fraction(usmart_cash) != Fraction(account['available_cash']):
         return dict(status='BROKER_CASH_TOTAL_MISMATCH', executable=False)
     orders = snapshot['difference']['new_orders']

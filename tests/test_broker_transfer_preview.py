@@ -47,3 +47,32 @@ class PreviewTests(unittest.TestCase):
     def test_minimum_already_unmet(self):
         result = build_preview(**self.make(hsbc_minimum_cash='1300'))
         self.assertEqual(result['status'],'HSBC_MINIMUM_RESERVE_NOT_MET')
+
+    def test_confirmed_holdings_allow_remaining_buy_preview(self):
+        args = self.make(broker_holdings=dict(account_revision='r', positions=[
+            dict(broker='HSBC', security_id='a', quantity=1)]))
+        args['snapshot']['account']['holdings'] = [dict(security_id='a', quantity=1)]
+        result = build_preview(**args)
+        self.assertEqual(result['status'], 'FUNDING_PLAN_ONLY')
+        self.assertEqual(result['planned_usmart_buys'][0]['quantity'], 2)
+        self.assertFalse(result['executable'])
+
+    def test_mapping_cannot_duplicate_or_use_stale_holdings(self):
+        cases = [
+            ('old', [dict(broker='HSBC', security_id='a', quantity=1)], 'BROKER_HOLDINGS_REVISION_MISMATCH'),
+            ('r', [dict(broker='HSBC', security_id='a', quantity=1), dict(broker='USMART', security_id='a', quantity=1)], 'BROKER_HOLDINGS_TOTAL_MISMATCH'),
+            ('r', [dict(broker='HSBC', security_id='a', quantity=True)], 'BROKER_HOLDINGS_INVALID'),
+            ('r', None, 'BROKER_HOLDINGS_INVALID'),
+        ]
+        for revision, positions, expected in cases:
+            with self.subTest(expected=expected):
+                args = self.make(broker_holdings=dict(account_revision=revision, positions=positions))
+                args['snapshot']['account']['holdings'] = [dict(security_id='a', quantity=1)]
+                self.assertEqual(build_preview(**args)['status'], expected)
+
+    def test_existing_sell_does_not_fund_new_buys(self):
+        args = self.make(broker_holdings=dict(account_revision='r', positions=[
+            dict(broker='HSBC', security_id='a', quantity=1)]))
+        args['snapshot']['account']['holdings'] = [dict(security_id='a', quantity=1)]
+        args['snapshot']['difference']['new_orders'][0]['side'] = 'SELL'
+        self.assertEqual(build_preview(**args)['status'], 'BROKER_HOLDINGS_MAPPING_REQUIRED')

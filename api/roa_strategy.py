@@ -84,11 +84,20 @@ def create_router(*, coordinator):
             raw = bytearray()
             async for part in request.stream():
                 raw.extend(part)
-                require(len(raw) <= 2048, 'BODY_TOO_LARGE')
+                require(len(raw) <= 8192, 'BODY_TOO_LARGE')
             body = json.loads(raw)
             fields = {'hsbc_cash', 'usmart_cash', 'other_fee_reserve',
                       'transfer_fee_reserve', 'hsbc_waiver_exhausted', 'quota_month'}
-            require(type(body) is dict and set(body) == fields, 'BODY_FIELDS')
+            require(type(body) is dict and fields <= set(body) <= fields | {'broker_holdings'}, 'BODY_FIELDS')
+            if 'broker_holdings' in body:
+                mapping = body['broker_holdings']
+                require(type(mapping) is dict and set(mapping) == {'account_revision', 'positions'}, 'BROKER_HOLDINGS_INVALID')
+                require(type(mapping['account_revision']) is str and 0 < len(mapping['account_revision']) <= 128, 'BROKER_HOLDINGS_INVALID')
+                require(type(mapping['positions']) is list and len(mapping['positions']) <= 100, 'BROKER_HOLDINGS_INVALID')
+                for position in mapping['positions']:
+                    require(type(position) is dict and set(position) == {'broker', 'security_id', 'quantity'}, 'BROKER_HOLDINGS_INVALID')
+                    require(position['broker'] in ('HSBC', 'USMART') and type(position['security_id']) is str and 0 < len(position['security_id']) <= 128, 'BROKER_HOLDINGS_INVALID')
+                    require(type(position['quantity']) is int and 0 < position['quantity'] <= 1000000000, 'BROKER_HOLDINGS_INVALID')
             for field in fields - {'hsbc_waiver_exhausted', 'quota_month'}:
                 require(type(body[field]) is str and re.fullmatch(r'(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?', body[field]), 'INVALID_BUDGET_AMOUNT')
             require(body['hsbc_waiver_exhausted'] is True, 'HSBC_FREE_QUOTA_PRIORITY_NOT_YET_SUPPORTED')

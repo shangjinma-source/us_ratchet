@@ -51,6 +51,23 @@ class FundingHttpTests(unittest.TestCase):
         self.assertEqual(build.call_args.kwargs['usmart_cash'], '0')
         review.assert_called_once()
 
+    def test_holdings_mapping_forwarded_without_account_write(self):
+        mapping = dict(account_revision='a', positions=[
+            dict(broker='HSBC', security_id='security:a', quantity=12)])
+        with patch('scripts.verify_roa_live_advice.review', return_value={'api_advice_passed': True}), patch('scripts.preview_broker_transfer.build_preview', return_value={'status':'FUNDING_PLAN_ONLY','executable':False}) as build:
+            response = self.client.post('/api/strategy-roa/funding-preview', json=dict(self.body, broker_holdings=mapping))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(build.call_args.kwargs['broker_holdings'], mapping)
+        self.assertFalse(response.json()['account_written'])
+
+    def test_invalid_mapping_rejected_before_account_read(self):
+        for quantity in [True, 0, -1, 1.5, '12']:
+            mapping = dict(account_revision='a', positions=[
+                dict(broker='HSBC', security_id='security:a', quantity=quantity)])
+            response = self.client.post('/api/strategy-roa/funding-preview', json=dict(self.body, broker_holdings=mapping))
+            self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.reads, 0)
+
 
 if __name__ == '__main__':
     unittest.main()
