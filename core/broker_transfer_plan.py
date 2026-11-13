@@ -8,6 +8,64 @@ from fractions import Fraction
 from core.usmart_standard_fees import _amount, estimate_base_fee
 
 
+def plan_mixed_funding(*, hsbc_cash, usmart_cash, buys,
+                       hsbc_free_buy_budget_usd, other_fee_reserve,
+                       transfer_fee_reserve, hsbc_minimum_cash='1300'):
+    """Preview HSBC-first buys within an explicitly verified free-turnover budget.
+
+    Caller supplies a conservative USD BUY allowance after pending/sell turnover
+    and FX buffers. This is not inferred from account capital or a monthly limit.
+    Keep strategy order priority; no cash from unfilled sells is included.
+    A transfer happens before the planned HSBC buys, so the transfer floor does
+    not incorrectly prevent investing the retained funds inside HSBC.
+    """
+    hsbc, usmart = _amount(hsbc_cash), _amount(usmart_cash)
+    allowance = _amount(hsbc_free_buy_budget_usd)
+    other = _amount(other_fee_reserve)
+    minimum = _amount(hsbc_minimum_cash)
+    # Reuse strict order validation before allocating, including duplicate checks.
+    plan_usmart_funding(hsbc_cash=hsbc, usmart_cash=usmart, buys=buys,
+                       other_fee_reserve=other, transfer_fee_reserve=transfer_fee_reserve,
+                       hsbc_waiver_exhausted=True)
+    hsbc_buys, remaining_buys = [], []
+    gross = Fraction(0)
+    for order in buys:
+        price = _amount(order['limit_price'])
+        available = max(Fraction(0), hsbc - other - gross)
+        quantity = min(order['quantity'], int(min(allowance, available) // price))
+        if quantity:
+            hsbc_buys.append(dict(order, quantity=quantity))
+            gross += quantity * price
+            allowance -= quantity * price
+        if quantity < order['quantity']:
+            remaining_buys.append(dict(order, quantity=order['quantity'] - quantity))
+    hsbc_spend = gross + (other if hsbc_buys else 0)
+    # After reserving local orders, enforce both total cash and the pre-buy
+    # transfer floor. Separate other-fee buffers are reserved for each broker.
+    effective_floor = max(Fraction(0), minimum - hsbc_spend)
+    arguments = dict(hsbc_cash=hsbc-hsbc_spend, usmart_cash=usmart,
+                     other_fee_reserve=other, transfer_fee_reserve=transfer_fee_reserve,
+                     hsbc_waiver_exhausted=True, hsbc_minimum_cash=effective_floor)
+    result = plan_usmart_funding(buys=remaining_buys, **arguments)
+    fitted = remaining_buys
+    if result['status'] == 'INSUFFICIENT_TOTAL_CASH':
+        fitted = fit_integer_buys(buys=remaining_buys,
+            available_cash=usmart + Fraction(result['maximum_transfer_credit_usd']),
+            other_fee_reserve=other)
+        result = plan_usmart_funding(buys=fitted, **arguments)
+    result.update(planned_hsbc_buys=hsbc_buys, planned_usmart_buys=fitted,
+                  hsbc_buy_budget_usd=str(hsbc_spend),
+                  hsbc_free_buy_budget_remaining_usd=str(allowance),
+                  hsbc_minimum_cash_usd=str(minimum),
+                  hsbc_cash_after_transfer_before_buys_usd=str(
+                      hsbc-Fraction(result['hsbc_debit_budget_usd'])),
+                  total_confirmed_cash_usd=str(hsbc+usmart),
+                  budget_reduced=fitted != remaining_buys,
+                  requires_reprice_after_transfer=True,
+                  scope='MIXED_FUNDING_PREVIEW_NOT_BROKER_ORDER_ROUTING')
+    return result
+
+
 def fit_integer_buys(*, buys, available_cash, other_fee_reserve):
     """Scale an unfunded BUY basket, then allocate at most one rounding share.
 
