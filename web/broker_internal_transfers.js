@@ -10,17 +10,21 @@ async function request(path,body){
 function mount({container,send=request,uuid=()=>crypto.randomUUID()}){
  const doc=container.ownerDocument||document,node=(tag,text)=>{const n=doc.createElement(tag);if(text)n.textContent=text;return n;};
  const panel=node('details'),title=node('summary','券商间转账记录'),status=node('p'),history=node('div');
+ panel.className='broker-transfer-panel';
+ const styles=node('style',`.broker-transfer-panel{margin-top:20px;border-top:1px solid #e1e8e4;padding-top:16px}.broker-transfer-panel summary{font-weight:600;cursor:pointer;font-size:16px}.broker-transfer-panel p{margin:12px 0;line-height:1.6}.broker-transfer-panel form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:20px 0 12px}.broker-transfer-panel label{display:flex;flex-direction:column;gap:6px;font-size:13px}.broker-transfer-panel [hidden]{display:none!important}.broker-transfer-panel input,.broker-transfer-panel select{width:100%;min-width:0;box-sizing:border-box;height:42px}.broker-transfer-panel .transfer-actions{grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap}.broker-transfer-panel .transfer-history{background:#f5f8f5;border-radius:8px;padding:1px 12px}`);
  const form=node('form'),kind=node('select'),direction=node('select'),pending=node('select'),amount=node('input'),fee=node('input'),at=node('input');
  const save=node('button','记录已发生的转账'),refresh=node('button','刷新记录');save.type='submit';refresh.type='button';
+ save.className='btn btn-primary';refresh.className='btn';history.className='transfer-history';
  const option=(select,value,label)=>{const o=node('option',label);o.value=value;select.append(o)};
  option(kind,'SENT','已转出');option(kind,'RECEIVED','已到账');
  option(direction,'HSBC','汇丰 → 盈立');option(direction,'USMART','盈立 → 汇丰');
  amount.inputMode='decimal';fee.inputMode='decimal';fee.value='0';at.type='datetime-local';at.step='1';
  const field=(label,input)=>{const wrapper=node('label',label);wrapper.append(input);return wrapper};
  const sourceField=field('方向 ',direction),pendingField=field('对应转账 ',pending),feeField=field('另行扣除的费用 USD ',fee);
- form.append(field('状态 ',kind),sourceField,pendingField,field('本金 USD ',amount),feeField,field('实际发生时间（本机时区） ',at),save);
- panel.append(title,node('p','这里只记账，不发起银行转账。在途资金不可用于买入；到账后仍需更新实际购买力。'),status,history,form,refresh);
- container.replaceChildren(panel);
+ const actions=node('div');actions.className='transfer-actions';actions.append(save,refresh);
+ form.append(field('状态 ',kind),sourceField,pendingField,field('本金 USD ',amount),feeField,field('实际发生时间（本机时区） ',at),actions);
+ panel.append(title,node('p','这里只记账，不发起银行转账。在途资金不可用于买入；到账后仍需更新实际购买力。'),status,history,form);
+ container.replaceChildren(styles,panel);
  let current=null,busy=false,attempt=null,disposed=false;
  function mode(){sourceField.hidden=feeField.hidden=kind.value!=='SENT';pendingField.hidden=kind.value!=='RECEIVED'}
  kind.onchange=mode;mode();
@@ -33,7 +37,7 @@ function mount({container,send=request,uuid=()=>crypto.randomUUID()}){
   for(const [id,row]of transfers){
    const names={HSBC:'汇丰',USMART:'盈立'};
    const label=names[row.source]+' → '+names[row.destination]+' · 本金 $'+row.principal;
-   history.append(node('p',label+' · 已到账 $'+row.received+' · 在途 $'+row.in_transit+' · '+row.sent_at));
+   history.append(node('p',label+' · 已到账 $'+row.received+' · 在途 $'+row.in_transit+' · '+new Date(row.sent_at).toLocaleString('zh-CN',{hour12:false})+'（本地时间）'));
    if(row.status==='IN_TRANSIT')option(pending,id,label+' · 待到账 $'+row.in_transit);
   }
  }
