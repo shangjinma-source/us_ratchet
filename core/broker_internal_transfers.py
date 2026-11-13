@@ -26,6 +26,15 @@ def _amount(value):
     return amount
 
 
+def _money(value):
+    """Decimal JSON strings, without floating-point rounding or fraction notation."""
+    cents = Fraction(value) * 100
+    if cents.denominator != 1:
+        raise ValueError('NONNEGATIVE_CENT_AMOUNT_REQUIRED')
+    whole, remainder = divmod(cents.numerator, 100)
+    return str(whole) if not remainder else f'{whole}.{remainder:02d}'
+
+
 def project_transfers(state):
     if state['revision'] != _revision(state['account_id'], state['events']):
         raise ValueError('TRANSFER_STATE_INTEGRITY')
@@ -34,16 +43,16 @@ def project_transfers(state):
         transfer_id = event['transfer_id']
         if event['kind'] == 'SENT':
             transfers[transfer_id] = dict(source=event['source'], destination=event['destination'],
-                principal=event['principal'], fee=event['fee'], received='0', sent_at=event['occurred_at'])
+                principal=_money(event['principal']), fee=_money(event['fee']), received='0', sent_at=event['occurred_at'])
         else:
             row = transfers[transfer_id]
-            row['received'] = str(Fraction(row['received']) + Fraction(event['amount']))
+            row['received'] = _money(Fraction(row['received']) + Fraction(event['amount']))
     for row in transfers.values():
-        row['in_transit'] = str(Fraction(row['principal']) - Fraction(row['received']))
+        row['in_transit'] = _money(Fraction(row['principal']) - Fraction(row['received']))
         row['status'] = 'RECEIVED' if Fraction(row['in_transit']) == 0 else 'IN_TRANSIT'
     return dict(transfers=transfers,
-        in_transit_usd=str(sum((Fraction(r['in_transit']) for r in transfers.values()), Fraction(0))),
-        confirmed_fees_usd=str(sum((Fraction(r['fee']) for r in transfers.values()), Fraction(0))),
+        in_transit_usd=_money(sum((Fraction(r['in_transit']) for r in transfers.values()), Fraction(0))),
+        confirmed_fees_usd=_money(sum((Fraction(r['fee']) for r in transfers.values()), Fraction(0))),
         external_capital_flow_usd='0', account_cash_mutated=False,
         in_transit_is_buying_power=False)
 

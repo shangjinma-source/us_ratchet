@@ -27,6 +27,19 @@ class InternalTransferTests(unittest.TestCase):
             self.assertFalse(result['in_transit_is_buying_power'])
         self.assertEqual(result['transfers']['t1']['status'],'RECEIVED')
 
+    def test_cent_amounts_remain_decimal_for_browser_and_cash_reconciliation(self):
+        state = create_transfers('isolated-test')
+        _, event = self.sent()
+        event.update(principal='600.25', fee='1.88')
+        state = apply_transfer_event(state, event, expected_revision=state['revision'], now=self.now)
+        state = self.receive(state, '200.10')
+        result = project_transfers(state)
+        self.assertEqual(result['in_transit_usd'], '400.15')
+        self.assertEqual(result['confirmed_fees_usd'], '1.88')
+        self.assertEqual(result['transfers']['t1']['received'], '200.10')
+        state = self.receive(state, '400.15', event_id='remaining')
+        self.assertEqual(project_transfers(state)['in_transit_usd'], '0')
+
     def test_idempotent_retry_never_duplicates_assets(self):
         state,event=self.sent()
         self.assertEqual(apply_transfer_event(state,event,expected_revision='old',now=self.now),state)
