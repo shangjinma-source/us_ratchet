@@ -1,5 +1,9 @@
 """Mount user-confirmed transfer facts beside, never inside, the account journal."""
 from pathlib import Path
+from datetime import datetime, timezone
+from core.broker_cash_allocation import BrokerCashAllocationStore
+from data.broker_cash_service import BrokerCashService
+from api.broker_cash import create_router as cash_router
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 from api.broker_internal_transfers import create_router
@@ -31,6 +35,14 @@ def attach_transfers(*, prepared, root, validate_sources, clock=None):
 
     store = GuardedStore(path, account.account_id, clock=clock)
     router = create_router(store=store)
+    allocation_path = account_path.with_name(account_path.name + '.broker-cash.sqlite3')
+    if any(p.is_symlink() for p in (allocation_path, *allocation_path.parents)):
+        raise ValueError('BROKER_CASH_STORE_PATH_INVALID')
+    cash_service = BrokerCashService(account_store=account.store, transfer_store=store,
+        allocation_store=BrokerCashAllocationStore(allocation_path), lock=prepared['roa_service'].lock,
+        clock=clock or (lambda: datetime.now(timezone.utc)), validate_sources=validate_sources)
+    prepared['roa_service'].broker_cash_service = cash_service
+    router.include_router(cash_router(service=cash_service))
 
     @router.get('/static/broker_internal_transfers.js')
     async def asset():

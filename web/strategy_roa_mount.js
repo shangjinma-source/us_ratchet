@@ -25,15 +25,15 @@ function mount(container,dependencies){
  for(const n of [title,cashPanel,status,summary])section.appendChild(n);container.replaceChildren(section);
  const funding=element('details'),fundingTitle=element('summary','券商资金规划'),fundingForm=element('form'),fundingResult=element('p');
  funding.appendChild(fundingTitle);
- funding.appendChild(element('p','汇丰预留至少 1,300 美元（1 万港币等值预算）。此处只估算转账；到账后重新刷新建议。'));
+ funding.appendChild(element('p','汇丰预留至少 1,300 美元（1 万港币等值预算）。填写两家实际余额并确认分配，仅计算转账预算，不转账、不下单。'));
  const fundingInputs={};
- for(const [key,text,value] of [['usmart','盈立当前可用现金 USD','0'],['other','其他费用预算 USD','25'],['transfer','转账费用预算 USD','0']]){
+ for(const [key,text,value] of [['hsbc','汇丰当前可用现金 USD',''],['usmart','盈立当前可用现金 USD','0'],['other','其他费用预算 USD','25'],['transfer','转账费用预算 USD','0']]){
   const field=element('label',text),control=element('input');control.value=value;control.inputMode='decimal';control.required=true;field.appendChild(control);fundingForm.appendChild(field);fundingInputs[key]=control;
  }
  const quotaLabel=element('label','已核实汇丰本月免费额度用尽'),quota=element('input');quota.type='checkbox';quotaLabel.appendChild(quota);fundingForm.appendChild(quotaLabel);
  const ownershipLabel=element('label','现有持仓全部在汇丰（首次转入盈立前确认）'),ownership=element('input');ownership.type='checkbox';ownership.checked=false;ownershipLabel.appendChild(ownership);fundingForm.appendChild(ownershipLabel);
  let ownershipRevision=null;
- const fundingButton=element('button','计算转账预算');fundingButton.type='submit';fundingForm.appendChild(fundingButton);
+ const fundingButton=element('button','确认余额并计算预算');fundingButton.type='submit';fundingForm.appendChild(fundingButton);
  funding.appendChild(fundingForm);funding.appendChild(fundingResult);section.appendChild(funding);
  let fundingGeneration=0,fundingBusy=false,fundingPlan=null,fundingTimer=null;
  const budgetAmount=value=>{if(!/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/.test(value))throw Error('请填写有效美元金额');return Math.round(Number(value)*100);};
@@ -45,11 +45,19 @@ function mount(container,dependencies){
    if(current.busy||current.error||!current.advice?.executable)throw Error('请先刷新有效建议');
    if(!quota.checked)throw Error('汇丰仍有免费额度时应优先使用；该分配功能正在接入');
    if(current.account.holdings?.length&&!ownership.checked)throw Error('请确认现有持仓全部在汇丰；已有盈立持仓时暂不支持此预览');
-   const total=budgetAmount(cashText(current.account.available_cash)),usmart=budgetAmount(fundingInputs.usmart.value);
+   const total=budgetAmount(cashText(current.account.available_cash)),usmart=budgetAmount(fundingInputs.usmart.value),hsbc=budgetAmount(fundingInputs.hsbc.value);
    if(usmart>total)throw Error('盈立余额不能超过总可用现金');
+   if(hsbc+usmart!==total)throw Error('两家余额合计与当前总现金不一致，请先在上方更新总现金');
+   if(Number(current.account.reserved_cash||0)!==0)throw Error('存在挂单占款，请先核对或完成委托后再确认分账户余额');
    budgetAmount(fundingInputs.other.value);budgetAmount(fundingInputs.transfer.value);
    fundingBusy=true;fundingButton.disabled=true;fundingResult.textContent='正在核对当前账户和建议…';
-   const body={hsbc_cash:((total-usmart)/100).toFixed(2),usmart_cash:fundingInputs.usmart.value,other_fee_reserve:fundingInputs.other.value,transfer_fee_reserve:fundingInputs.transfer.value,hsbc_waiver_exhausted:true,quota_month:new Date(now()+8*3600000).toISOString().slice(0,7)};
+   const binding=await options.request('/api/strategy-account/broker-cash');
+   if(binding.account_revision!==current.account.revision)throw Error('账户已变化，请先刷新');
+   const observed=new Date(now()).toISOString();
+   const document={account_id:binding.account_id,account_revision:binding.account_revision,transfer_revision:binding.transfer_revision,
+    balances:{HSBC:{available_cash:fundingInputs.hsbc.value,reserved_cash:'0',observed_at:observed},USMART:{available_cash:fundingInputs.usmart.value,reserved_cash:'0',observed_at:observed}}};
+   await options.request('/api/strategy-account/broker-cash',{event_id:options.eventId?options.eventId():crypto.randomUUID(),document});
+   const body={hsbc_cash:(hsbc/100).toFixed(2),usmart_cash:fundingInputs.usmart.value,other_fee_reserve:fundingInputs.other.value,transfer_fee_reserve:fundingInputs.transfer.value,hsbc_waiver_exhausted:true,quota_month:new Date(now()+8*3600000).toISOString().slice(0,7)};
    if(current.account.holdings?.length)body.broker_holdings={account_revision:current.account.revision,positions:current.account.holdings.map(row=>({broker:'HSBC',security_id:row.security_id,quantity:row.quantity}))};
    const result=await options.request('/api/strategy-roa/funding-preview',body);
    const latest=controller.getState();

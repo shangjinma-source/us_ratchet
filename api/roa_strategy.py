@@ -105,12 +105,21 @@ def create_router(*, coordinator):
             now = datetime.now(timezone.utc)
             require(body['quota_month'] == now.astimezone(ZoneInfo('Asia/Hong_Kong')).strftime('%Y-%m'), 'QUOTA_MONTH_MISMATCH')
             def calculate():
+                cash_service = getattr(coordinator, 'broker_cash_service', None)
+                require(cash_service is not None, 'BROKER_CASH_CONFIRMATION_REQUIRED')
+                cash_split = cash_service.read()
+                require(cash_split['status'] == 'CONFIRMED_BROKER_CASH_SPLIT', 'BROKER_CASH_CONFIRMATION_REQUIRED')
+                from fractions import Fraction
+                for broker, field in [('HSBC', 'hsbc_cash'), ('USMART', 'usmart_cash')]:
+                    require(Fraction(body[field]) == Fraction(cash_split['document']['balances'][broker]['available_cash']), 'BROKER_CASH_INPUT_CHANGED')
                 before = coordinator.account_service.read()
                 snapshot = coordinator.snapshot()
                 after = coordinator.account_service.read()
                 config = dict(active=True, strategy_kind='ROA_DEFENSIVE_V1',
                               strategy_epoch=coordinator.lifecycle.epoch,
                               account_id=coordinator.account_service.account_id)
+                require(cash_service.read() == cash_split, 'BROKER_CASH_CHANGED_DURING_PREVIEW')
+                require(before['account']['revision'] == cash_split['account_revision'], 'STALE_BROKER_CASH_BINDING')
                 checked = review(before, config, snapshot, after, now=datetime.now(timezone.utc))
                 arguments = {key: value for key, value in body.items() if key != 'quota_month'}
                 result = build_preview(verification=checked, snapshot=snapshot, **arguments)

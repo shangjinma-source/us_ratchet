@@ -17,6 +17,9 @@ class FundingHttpTests(unittest.TestCase):
         self.coordinator = SimpleNamespace(
             account_service=SimpleNamespace(read=read, account_id='a'),
             lifecycle=SimpleNamespace(epoch='e'), snapshot=lambda: {'status': 'WAIT'})
+        self.coordinator.broker_cash_service = SimpleNamespace(read=lambda: dict(
+            status='CONFIRMED_BROKER_CASH_SPLIT', account_revision='a',
+            document={'balances': {'HSBC': {'available_cash':'1000'}, 'USMART': {'available_cash':'0'}}}))
         app = FastAPI()
         app.include_router(create_router(coordinator=self.coordinator))
         self.client = TestClient(app)

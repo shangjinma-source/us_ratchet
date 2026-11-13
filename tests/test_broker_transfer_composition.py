@@ -1,3 +1,4 @@
+from threading import RLock
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,7 +21,7 @@ class TransferCompositionTests(unittest.TestCase):
             def gate():
                 if not permitted[0]:
                     raise ValueError('SOURCE_CHANGED')
-            prepared = dict(router=APIRouter(), roa_service=SimpleNamespace(account_service=account))
+            prepared = dict(router=APIRouter(), roa_service=SimpleNamespace(account_service=account, lock=RLock()))
             mounted = attach_transfers(prepared=prepared, root=root, validate_sources=gate,
                 clock=lambda: datetime(2026, 11, 15, tzinfo=timezone.utc))
             app = FastAPI(); app.include_router(mounted['router']); client = TestClient(app)
@@ -44,7 +45,7 @@ class TransferCompositionTests(unittest.TestCase):
             root = Path(directory)
             account = SimpleNamespace(account_id='isolated', store=SimpleNamespace(path=root/'wrong.sqlite3'))
             with self.assertRaisesRegex(ValueError, 'TRANSFER_STORE_PATH_INVALID'):
-                attach_transfers(prepared=dict(router=APIRouter(), roa_service=SimpleNamespace(account_service=account)),
+                attach_transfers(prepared=dict(router=APIRouter(), roa_service=SimpleNamespace(account_service=account, lock=RLock())),
                     root=root, validate_sources=lambda: None)
             self.assertEqual(list(root.iterdir()), [])
 
