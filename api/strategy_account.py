@@ -62,6 +62,39 @@ class StrategyAccountService:
                     valued_at=now.isoformat(),account_mutated=False,
                     public_actions_may_be_missing=True)
 
+    def scoped_fills(self, state, fills):
+        """Exclude explicitly archived, completed trade histories from public views.
+
+        The immutable cash/risk journal remains authoritative. Selection is bound
+        to original events and cannot hide an open position or part of a cycle.
+        Later trades in the same security remain visible.
+        """
+        path=self.store.path.with_name(self.store.path.stem+'.trade_scope.json')
+        if not path.exists():return fills,None
+        require(not path.is_symlink() and path.stat().st_size<=65536,'TRADE_SCOPE_INVALID')
+        raw=path.read_bytes();document=json.loads(raw)
+        require(type(document)is dict and set(document)=={'schema','account_id','archived_events'},'TRADE_SCOPE_INVALID')
+        require(document['schema']=='CLOSED_TRADE_ARCHIVE_V1' and document['account_id']==state['account_id'],'TRADE_SCOPE_ACCOUNT')
+        selected=document['archived_events']
+        require(type(selected)is dict and 0<len(selected)<=1000,'TRADE_SCOPE_INVALID')
+        originals={r['payload']['event_id']:r['payload'] for r in state['events']}
+        by_id={f['fill_id']:f for f in fills}
+        require(set(selected)<=set(by_id),'TRADE_SCOPE_UNKNOWN_FILL')
+        for identifier,digest in selected.items():
+            require(digest==sha256(canonical(originals[identifier])).hexdigest(),'TRADE_SCOPE_FILL_CHANGED')
+        # Every archived security must be a complete prefix ending flat.
+        securities={by_id[key]['security_id'] for key in selected}
+        for sid in securities:
+            history=[f for f in fills if f['security_id']==sid]
+            cutoff=max(i for i,f in enumerate(history) if f['fill_id'] in selected)
+            require(all(f['fill_id'] in selected for f in history[:cutoff+1]),'TRADE_SCOPE_PARTIAL_HISTORY')
+            quantity=0
+            for fill in history[:cutoff+1]:
+                quantity+=fill['quantity']*(1 if fill['side']=='BUY' else -1)
+                require(quantity>=0,'TRADE_SCOPE_INVALID_POSITION')
+            require(quantity==0,'TRADE_SCOPE_OPEN_POSITION')
+        return [f for f in fills if f['fill_id'] not in selected],sha256(raw).hexdigest()
+
     def project(self,state):
         if state is None:return {'status':'NOT_INITIALIZED'}
         require(state['account_id']==self.account_id,'ACCOUNT_SCOPE_MISMATCH')
@@ -108,6 +141,8 @@ class StrategyAccountService:
                 executed_at=event['executed_at'],cash_delta=str(delta)))
             if history:
                 fills[-1].update(original_price=event['price'], price_corrections=history)
+        fills,scope_revision=self.scoped_fills(state,fills)
+        if scope_revision:account['trade_scope_revision']=scope_revision
         trade_results={}
         for fill in fills:
             sid=fill['security_id'];q=fill['quantity'];price=Fraction(fill['price'])
