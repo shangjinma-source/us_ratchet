@@ -6,7 +6,9 @@ from data.strategy_bounded_source_gate_v1 import _read_digest
 from core.strategy_account_ledger import require
 from data.roa_account_composition import attach_roa
 from data.roa_cash_flow.composition import attach_flow
+from data.broker_transfer_composition import attach_transfers
 SOURCES={
+ 'data/broker_transfer_composition.py','core/broker_internal_transfers.py','core/broker_transfer_store.py','api/broker_internal_transfers.py','web/broker_internal_transfers.js',
  'core/usmart_standard_fees.py','core/broker_transfer_plan.py',
  'scripts/preview_broker_transfer.py','scripts/verify_roa_live_advice.py',
  'core/strategy_fill_correction_store.py',
@@ -38,4 +40,5 @@ def build_unified_server_preparation_v34(*,root,configuration_path,configuration
  if config['roa'].get('cash_flow') is not None:
   from datetime import datetime, timezone
   result=attach_flow(prepared=result,root=root,configuration=config['roa']['cash_flow'],clock=clock or (lambda:datetime.now(timezone.utc)),validate_sources=gate)
+ result=attach_transfers(prepared=result,root=root,validate_sources=gate,clock=clock)
  gate();return dict(result,validate_code=gate)

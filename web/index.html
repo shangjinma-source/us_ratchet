@@ -344,7 +344,7 @@ input,select,textarea{font-family:inherit;border:1px solid #d5dfd8;border-radius
 
   <div class="page active" id="pageToday"></div>
   <section class="card" id="panelStrategyMonthlyTarget" hidden style="display:none"><div class="card-body" id="strategyMonthlyTarget"></div><div class="card-body preview-chart-grid" id="strategyMonthlyCharts"></div></section>
-  <div class="page" id="pageAccount"><div class="card"><div class="card-body"><div id="realStrategyAccount"></div><div id="strategyCashClassification"></div></div></div></div>
+  <div class="page" id="pageAccount"><div class="card"><div class="card-body"><div id="realStrategyAccount"></div><div id="strategyCashClassification"></div><div id="brokerInternalTransfers"></div></div></div></div>
   <div class="page" id="pageReview"></div>
   <div class="page" id="pageResearch" hidden></div>
   <div class="page" id="pageGuide" hidden></div>
@@ -5161,6 +5161,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 
+<script src="/static/broker_internal_transfers.js?v=20261114"></script><script>window.addEventListener("load",()=>{const container=document.getElementById("brokerInternalTransfers");if(container&&window.BrokerInternalTransfers)window.BrokerTransferPanel=window.BrokerInternalTransfers.mount({container});});</script>
 <script src="/static/strategy_cash_classification.js?v=565134764487"></script><script>window.addEventListener("load",()=>{const container=document.getElementById("strategyCashClassification");if(container&&window.StrategyCashClassification)window.CashClassificationPanel=window.StrategyCashClassification.mount({container});});</script>
 </body>
 </html>
