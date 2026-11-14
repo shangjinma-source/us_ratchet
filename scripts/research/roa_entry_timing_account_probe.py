@@ -8,14 +8,17 @@ from scripts.research.roa_entry_timing_event_probe import analyze, money
 ARMS = ('OPEN_REFERENCE', 'BUY_1030', 'BUY_1200', 'OPEN_MINUS_1PCT')
 
 
-def simulate(days, quantities, capital, arm, fee, touch=False, sell_start=1):
+def simulate(days, quantities, capital, arm, fee, touch=False, sell_start=1, reprice_unfilled=False):
     if sell_start not in (1, 60, 150):
         raise ValueError('UNSUPPORTED_SELL_TIME')
+    if reprice_unfilled and sell_start != 1:
+        raise ValueError('REPRICE_REQUIRES_OPEN_SELL')
     cash = capital
     holdings = {ticker: 0 for ticker in quantities}
     orders, fills, rejected = {}, [], []
     equity = [capital]
     minute_cash = []
+    repricings = []
     submitted = False
     start = {'OPEN_REFERENCE': 1, 'OPEN_MINUS_1PCT': 1, 'BUY_1030': 60, 'BUY_1200': 150}[arm]
     for day_index, day in enumerate(days):
@@ -41,6 +44,12 @@ def simulate(days, quantities, capital, arm, fee, touch=False, sell_start=1):
                         remaining -= reserved
                     orders[ticker] = (quantity, limit)
                 submitted = True
+            if day_index == 1 and reprice_unfilled and minute == 15:
+                for ticker, (quantity, old_limit) in list(orders.items()):
+                    new_limit = money(day[ticker][14 * 60][3])
+                    orders[ticker] = (quantity, new_limit)
+                    repricings.append(dict(ticker=ticker, minute=minute, old_limit=old_limit,
+                                           new_limit=new_limit, quantity=quantity))
             if minute < 385:
                 for ticker, (quantity, limit) in list(orders.items()):
                     o, high, low, close, volume = day[ticker][minute * 60]
@@ -76,7 +85,8 @@ def simulate(days, quantities, capital, arm, fee, touch=False, sell_start=1):
                 average_cash_pct=100 * sum(minute_cash) / len(minute_cash) / capital,
                 buy_count=len(bought), unbought=sorted(set(quantities) - bought),
                 remaining_holdings={ticker: q for ticker, q in holdings.items() if q},
-                fees=fee * len(fills), fills=fills, cash_rejected=rejected)
+                fees=fee * len(fills), fills=fills, cash_rejected=rejected,
+                reprice_unfilled=reprice_unfilled, repricings=repricings)
 
 
 def main():

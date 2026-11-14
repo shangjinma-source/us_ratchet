@@ -55,6 +55,25 @@ class TimingReplayTests(unittest.TestCase):
         self.assertEqual(sale['price'], 14)
         self.assertEqual(result['ending_cash'], 24)
 
+    def test_unfilled_sell_reprices_once_using_completed_minute(self):
+        buy=session((10,11,9,10,100))
+        sell=session((8,9,7,8,100));sell[0]=[10,10,8,9,100]
+        sell[14*60]=[8,8,8,8,100]
+        args=([{'A':buy},{'A':sell}],{'A':1},30,'OPEN_REFERENCE',1)
+        self.assertEqual(simulate(*args)['remaining_holdings'],{'A':1})
+        result=simulate(*args,reprice_unfilled=True)
+        sales=[fill for fill in result['fills'] if fill['side']=='SELL']
+        self.assertEqual(len(sales),1);self.assertEqual(sales[0]['minute'],15)
+        self.assertEqual(sales[0]['price'],8);self.assertEqual(result['fees'],2)
+        self.assertEqual(len(result['repricings']),1)
+        self.assertEqual(result['remaining_holdings'],{})
+
+    def test_completed_sell_is_not_replaced_or_charged_again(self):
+        result=simulate([{'A':session((10,11,9,10,100))},{'A':session((12,13,11,12,100))}],
+                        {'A':1},30,'OPEN_REFERENCE',1,reprice_unfilled=True)
+        self.assertEqual(result['repricings'],[])
+        self.assertEqual(len(result['fills']),2);self.assertEqual(result['fees'],2)
+
 
 if __name__ == '__main__':
     unittest.main()
