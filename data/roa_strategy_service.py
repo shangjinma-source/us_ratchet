@@ -10,6 +10,17 @@ from data.roa_cash_advice_coordinator import CashAdviceCoordinator
 from data.roa_target_account_bridge import preview_target_weights
 
 
+def unresolved_exit_ids(lifecycle_state, event, shares, risk_on):
+    """Display-only remaining exits; never creates a new execution window."""
+    candidates=set(lifecycle_state.get('missed_exits', []))
+    if event and event['phase']=='CLOSE':
+        candidates.update(event.get('pending', []))
+    if event and event['phase']=='OPEN' and event.get('risk_on') is False and risk_on is False and event.get('targets') is not None:
+        candidates.update(sid for sid,quantity in shares.items()
+                          if quantity>(event['targets'].get(sid,0)))
+    return {sid for sid in candidates if shares.get(sid,0)>0}
+
+
 class RoaStrategyService(CashAdviceCoordinator):
     def __init__(self, *, account_service, lifecycle, signal_provider, session_provider,
                  quote_provider, clock, execution_admission=None):
@@ -158,11 +169,12 @@ class RoaStrategyService(CashAdviceCoordinator):
             domain=set(signal['weights'])|{s for s,q in state['shares'].items() if q}
             waiting={r['security_id'] for r in result.get('difference',{}).get('waiting_cash',[])}
             pending={o['security_id'] for o in state['orders'].values() if o['status']=='OPEN'}
+            unresolved=unresolved_exit_ids(lifecycle_state,event,state['shares'],signal['risk_on']) if result['status']=='MISSED' else set()
             for sid in sorted(domain):
                 order=orders.get(sid) if result['executable'] else None
                 result['rows'].append(dict(security_id=sid,ticker=names.get(sid),held=state['shares'].get(sid,0),
                     target_quantity=(targets or {}).get(sid,0) if targets is not None else None,
                     side=order['side'] if order else 'WAIT' if not result['executable'] or sid in waiting or sid in pending else 'HOLD',quantity=order['quantity'] if order else None,
-                    limit_price=order['limit_price'] if order else None,reason='PENDING_ORDER' if sid in pending else 'WAIT_CASH' if sid in waiting else 'HOLD' if result['executable'] and not order else result['status']))
+                    limit_price=order['limit_price'] if order else None,reason='PENDING_ORDER' if sid in pending else 'MISSED_RISK_EXIT' if sid in unresolved else 'WAIT_CASH' if sid in waiting else 'HOLD' if result['executable'] and not order else result['status']))
             require(self.account_service.store.read()==state,'ACCOUNT_CHANGED_DURING_ADVICE')
             return deepcopy(result)

@@ -46,6 +46,7 @@ class MarketSwitchAccountFlowTests(unittest.TestCase):
                 fill('A','SELL',9,'8');cash('892')
                 lifecycle.close_observation(session='2026-11-06',shares={'B':9},closing_prices={'B':'10'})
                 self.assertIn('A',lifecycle.read()['stopped'])
+
                 signal.update(signal_id='bear',risk_on=False,signal_date='2026-11-06',execution_not_before_session='2026-11-09')
                 now[0]=datetime.fromisoformat('2026-11-09T13:00:00+00:00')
                 planned=snapshot()
@@ -82,5 +83,22 @@ class MarketSwitchAccountFlowTests(unittest.TestCase):
                 self.assertEqual([(o['security_id'],o['side'],o['quantity']) for o in on['difference']['new_orders']],[('B','BUY',9)])
                 self.assertEqual(account.store.read()['shares'],{'A':0,'B':0})
                 self.assertIn('A',lifecycle.read()['stopped'])
+
+                # A later defensive exit remains visibly unresolved after its day expires.
+                fill('B','BUY',9);cash('892')
+                lifecycle.close_observation(session='2026-11-10',shares={'B':9},closing_prices={'B':'10'})
+                signal.update(signal_id='bear-again',risk_on=False,signal_date='2026-11-10',execution_not_before_session='2026-11-11')
+                now[0]=datetime.fromisoformat('2026-11-11T14:31:00+00:00')
+                self.assertEqual(snapshot()['status'],'READY')
+                fill('B','SELL',4);cash('932')
+                lifecycle.close_observation(session='2026-11-11',shares={'B':5},closing_prices={'B':'10'})
+                signal.update(signal_id='bear-still',signal_date='2026-11-11',execution_not_before_session='2026-11-12')
+                now[0]=datetime.fromisoformat('2026-11-12T14:31:00+00:00')
+                missed=snapshot()
+                self.assertEqual(missed['status'],'MISSED')
+                self.assertFalse(missed['executable'])
+                row=next(row for row in missed['rows'] if row['security_id']=='B')
+                self.assertEqual((row['held'],row['target_quantity'],row['reason']),(5,0,'MISSED_RISK_EXIT'))
+                self.assertIsNone(row['limit_price']);self.assertIsNone(row['quantity'])
 
 if __name__=='__main__':unittest.main()
