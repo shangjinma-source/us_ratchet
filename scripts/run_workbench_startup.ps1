@@ -16,6 +16,12 @@ try {
     "$(Get-Date -Format o) RESULT=ready HOME=200 ROA_ACTIVE=true" | Add-Content -LiteralPath $Log
     exit 0
    }
+   $Pending = [ordered]@{
+    home_status = $HomepageResponse.StatusCode
+    active_is_true = ($Config.active -eq $true)
+    strategy_kind_matches = ($Config.strategy_kind -eq 'ROA_DEFENSIVE_V1')
+   } | ConvertTo-Json -Compress
+   "$(Get-Date -Format o) READINESS_PENDING=$Pending" | Add-Content -LiteralPath $Log
   } catch { "$(Get-Date -Format o) READINESS_RETRY=$($_.Exception.Message)" | Add-Content -LiteralPath $Log }
   Start-Sleep -Seconds 15
  } while((Get-Date) -lt $Deadline)
