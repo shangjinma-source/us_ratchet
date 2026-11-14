@@ -175,6 +175,10 @@ class RoaStrategyService(CashAdviceCoordinator):
                 result['rows'].append(dict(security_id=sid,ticker=names.get(sid),held=state['shares'].get(sid,0),
                     target_quantity=(targets or {}).get(sid,0) if targets is not None else None,
                     side=order['side'] if order else 'WAIT' if not result['executable'] or sid in waiting or sid in pending else 'HOLD',quantity=order['quantity'] if order else None,
-                    limit_price=order['limit_price'] if order else None,reason='PENDING_ORDER' if sid in pending else 'MISSED_RISK_EXIT' if sid in unresolved else 'WAIT_CASH' if sid in waiting else 'HOLD' if result['executable'] and not order else result['status']))
+                    limit_price=order['limit_price'] if order else None,
+                    price_context=dict(reference_kind=quotes['limits'][sid].get('reference_kind'),
+                        reference_price=quotes['limits'][sid].get('reference_price'),
+                        reference_at=quotes['limits'][sid].get('reference_at'),
+                        latest_price=quotes['marks'][sid]['price'],latest_at=quotes['marks'][sid]['observed_at']) if order else None,reason='PENDING_ORDER' if sid in pending else 'MISSED_RISK_EXIT' if sid in unresolved else 'WAIT_CASH' if sid in waiting else 'HOLD' if result['executable'] and not order else result['status']))
             require(self.account_service.store.read()==state,'ACCOUNT_CHANGED_DURING_ADVICE')
             return deepcopy(result)

@@ -170,6 +170,18 @@ function mount(container,dependencies){
    const noAction=!state.busy&&!state.error&&((row.side==='HOLD'&&advice?.executable===true)||(advice?.status==='HOLD'&&row.reason==='HOLD'));
    action.appendChild(element('strong',actionable?(row.side==='BUY'?'买入 ':'卖出 ')+row.quantity+' 股':noAction?'无需操作':'等待'));
    if(actionable)action.appendChild(element('small','限价 '+legacyUi.dollars(row.limit_price),'daily-secondary'));
+   if(actionable&&row.price_context){
+    const context=row.price_context;
+    const formatTime=value=>Number.isFinite(Date.parse(value))?new Date(value).toLocaleString('zh-CN',{hour12:false}):'时间未提供';
+    const referenceName=context.reference_kind==='SESSION_OPEN'?'当日开盘':context.reference_kind==='LATEST_QUOTE'?'最新报价':'未提供';
+    if(context.reference_price)action.appendChild(element('small','限价参考：'+referenceName+' '+legacyUi.dollars(context.reference_price)+' · '+formatTime(context.reference_at),'daily-secondary'));
+    if(context.latest_price){
+     const limit=Number(cashText(row.limit_price)),latest=Number(cashText(context.latest_price));
+     const gap=Number.isFinite(limit)&&Number.isFinite(latest)&&limit>0&&latest>0?(limit/latest-1)*100:null;
+     action.appendChild(element('small','报价 '+legacyUi.dollars(context.latest_price)+' · '+formatTime(context.latest_at)+(gap===null?'':' · 限价较报价 '+(gap>=0?'+':'')+gap.toFixed(2)+'%'),'daily-secondary'));
+    }
+    action.appendChild(element('small',row.side==='BUY'?'买入限价是最高接受价，不是保证成交价':'卖出限价是最低接受价，不是保证成交价','daily-secondary'));
+   }
    const prior=oldReference&&previous.rows.find(item=>item.security_id===row.security_id);
    if(!actionable&&prior&&['BUY','SELL'].includes(prior.side)&&prior.quantity>0&&prior.limit_price){
     action.appendChild(element('small','上次结果（仅供参考）：'+(prior.side==='BUY'?'买入':'卖出')+' '+prior.quantity+' 股 · 限价 '+legacyUi.dollars(prior.limit_price),'daily-secondary'));
