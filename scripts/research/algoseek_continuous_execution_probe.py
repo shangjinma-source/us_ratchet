@@ -36,7 +36,7 @@ def read_session(directory, day, symbol):
         data['v'].append(float(row['Volume']))
     payload = json.dumps(data).encode()
     checked = {side: inspect(payload, dict(date=day, side=side), allow_no_trade=True) for side in ('BUY', 'SELL')}
-    return dict(close=data['c'][-1], checked=checked, sha256=sha256(raw).hexdigest())
+    return dict(close=data['c'][-1], checked=checked, data=data, sha256=sha256(raw).hexdigest())
 
 
 def settle(cash, holdings, orders, fee):

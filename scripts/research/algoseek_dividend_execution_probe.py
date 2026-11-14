@@ -24,7 +24,7 @@ def pay(day, pending):
     return paid
 
 
-def replay(days, targets, sessions, marks, original, dividends, buy_rule, sell_rule, fee, initial_cash):
+def replay(days, targets, sessions, marks, original, dividends, buy_rule, sell_rule, fee, initial_cash, executor=None):
     cash, holdings, pending, ledger = initial_cash, {}, [], []
     peak, drawdown, paid_total = initial_cash, 0.0, 0.0
     prior_original = {}
@@ -37,7 +37,9 @@ def replay(days, targets, sessions, marks, original, dividends, buy_rule, sell_r
         if day == '2021-07-20':
             holdings['NVDA'] = holdings.get('NVDA', 0) * 4
         fills, unfilled = [], []
-        if day in targets:
+        if day in targets and executor is not None:
+            cash, fills, unfilled = executor(cash, holdings, targets[day], sessions[day], fee)
+        elif day in targets:
             orders = []
             for symbol in sorted(set(targets[day]) | set(holdings)):
                 change = targets[day].get(symbol, 0) - holdings.get(symbol, 0)
