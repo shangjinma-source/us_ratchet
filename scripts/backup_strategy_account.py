@@ -11,7 +11,7 @@ from api.strategy_account import StrategyAccountService
 from core.strategy_account_store import StrategyAccountStore
 
 
-def backup_account(database_path, output_directory, *, classification_path=None):
+def backup_account(database_path, output_directory, *, classification_path=None, lifecycle_path=None):
     source = Path(database_path).resolve(strict=True)
     output = Path(output_directory).absolute()
     store = StrategyAccountStore(source)
@@ -48,6 +48,21 @@ def backup_account(database_path, output_directory, *, classification_path=None)
             if scope_path.is_symlink():
                 raise ValueError('BACKUP_SCOPE_SYMLINK')
             scope_bytes = scope_path.read_bytes() if scope_path.exists() else None
+            lifecycle_bytes = None
+            lifecycle = None
+            if lifecycle_path is not None:
+                lifecycle = Path(lifecycle_path).absolute()
+                if (any(p.is_symlink() for p in (lifecycle, *lifecycle.parents))
+                        or not lifecycle.resolve().is_relative_to(source.parent)
+                        or not lifecycle.is_file()
+                        or lifecycle.name in {p.name for p in [source, *sidecars, service.corrections.path, scope_path]}):
+                    raise ValueError('BACKUP_LIFECYCLE_PATH_INVALID')
+                lifecycle_bytes = lifecycle.read_bytes()
+                document = json.loads(lifecycle_bytes)
+                from data.roa_execution_lifecycle import digest
+                if (document.get('sha256') != digest(document['state'])
+                        or document['state'].get('account_id') != state['account_id']):
+                    raise ValueError('BACKUP_LIFECYCLE_SCOPE_OR_HASH')
             expected = service.read()
             output.mkdir(parents=True, exist_ok=False)
             sources = [source]
@@ -69,6 +84,12 @@ def backup_account(database_path, output_directory, *, classification_path=None)
                 target = output/scope_path.name
                 target.write_bytes(scope_bytes)
                 files.append(dict(name=target.name, sha256=sha256(scope_bytes).hexdigest()))
+            if lifecycle_bytes is not None:
+                target = output/lifecycle.name
+                target.write_bytes(lifecycle_bytes)
+                files.append(dict(name=target.name,
+                    source_relative_path=lifecycle.relative_to(source.parent).as_posix(),
+                    sha256=sha256(lifecycle_bytes).hexdigest()))
             restored = StrategyAccountService(database_path=output/source.name, account_id=state['account_id'], resolver=None)
             if restored.read() != expected:
                 raise ValueError('BACKUP_PROJECTION_MISMATCH')
@@ -76,12 +97,15 @@ def backup_account(database_path, output_directory, *, classification_path=None)
                 raise ValueError('BACKUP_SIDECAR_CREATED_DURING_CAPTURE')
             if (scope_path.read_bytes() if scope_path.exists() else None) != scope_bytes:
                 raise ValueError('BACKUP_SCOPE_CHANGED_DURING_CAPTURE')
+            if lifecycle is not None and lifecycle.read_bytes() != lifecycle_bytes:
+                raise ValueError('BACKUP_LIFECYCLE_CHANGED_DURING_CAPTURE')
             manifest = dict(status='VERIFIED_ACCOUNT_BACKUP', created_at=datetime.now(timezone.utc).isoformat(),
                             account_revision=state['revision'], files=files,
                             correction_revision=expected['account']['fill_correction_revision'],
                             absent_broker_journals=[path.name for path in missing],
                             flow_classification_included=classification_path is not None,
-                            scope='Account journal, price amendments, trade display scope, internal transfers, broker cash allocations and transfer reconciliation; flow classifications only when explicitly supplied; not lifecycle or deployment configuration.')
+                            lifecycle_included=lifecycle_path is not None,
+                            scope='Account journal, price amendments, trade display scope, internal transfers, broker cash allocations and transfer reconciliation; flow classifications only when explicitly supplied; lifecycle only when explicitly supplied and unchanged during capture; not deployment configuration or proof of restore readiness.')
             (output/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
             return manifest
         finally:
@@ -93,5 +117,6 @@ if __name__ == '__main__':
     parser.add_argument('--database', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--classification', help='Explicit existing cash classification sidecar beside the account database')
+    parser.add_argument('--lifecycle', help='Explicit ROA lifecycle JSON within the account directory')
     arguments = parser.parse_args()
-    print(json.dumps(backup_account(arguments.database, arguments.output,classification_path=arguments.classification), indent=2))
+    print(json.dumps(backup_account(arguments.database, arguments.output,classification_path=arguments.classification,lifecycle_path=arguments.lifecycle), indent=2))

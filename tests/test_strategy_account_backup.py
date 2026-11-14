@@ -46,6 +46,49 @@ class BackupTests(unittest.TestCase):
                 backup_account(service.store.path,root/'invalid',classification_path=root/'missing.sqlite')
             self.assertFalse((root/'invalid').exists())
 
+    def test_lifecycle_preserved_and_invalid_hash_rejected(self):
+        import json
+        from data.roa_execution_lifecycle import digest
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            service=StrategyAccountService(database_path=root/'account.db',account_id='test',resolver=None)
+            service.initialize({'event_id':'init'})
+            life=root/'roa'/'lifecycle.json';life.parent.mkdir()
+            state=dict(account_id='test',version=3,pending=['held-risk-exit'])
+            life.write_text(json.dumps(dict(state=state,sha256=digest(state))))
+            original=life.read_bytes()
+            result=backup_account(service.store.path,root/'backup',lifecycle_path=life)
+            self.assertTrue(result['lifecycle_included'])
+            self.assertEqual((root/'backup'/'lifecycle.json').read_bytes(),original)
+            self.assertEqual(life.read_bytes(),original)
+            life.write_text(json.dumps(dict(state=state,sha256='incorrect')))
+            with self.assertRaisesRegex(ValueError,'BACKUP_LIFECYCLE_SCOPE_OR_HASH'):
+                backup_account(service.store.path,root/'invalid',lifecycle_path=life)
+            self.assertFalse((root/'invalid').exists())
+
+    def test_lifecycle_change_prevents_success_manifest(self):
+        import json
+        from unittest.mock import patch
+        from data.roa_execution_lifecycle import digest
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            service=StrategyAccountService(database_path=root/'account.db',account_id='test',resolver=None)
+            service.initialize({'event_id':'init'})
+            life=root/'lifecycle.json'
+            state=dict(account_id='test',version=1)
+            life.write_text(json.dumps(dict(state=state,sha256=digest(state))))
+            original_read=StrategyAccountService.read
+            def read_and_change(instance):
+                result=original_read(instance)
+                if instance.store.path.parent.name=='backup':
+                    changed=dict(account_id='test',version=2)
+                    life.write_text(json.dumps(dict(state=changed,sha256=digest(changed))))
+                return result
+            with patch.object(StrategyAccountService,'read',read_and_change):
+                with self.assertRaisesRegex(ValueError,'BACKUP_LIFECYCLE_CHANGED_DURING_CAPTURE'):
+                    backup_account(service.store.path,root/'backup',lifecycle_path=life)
+            self.assertFalse((root/'backup'/'manifest.json').exists())
+
     def test_absent_amendment_and_existing_destination(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
