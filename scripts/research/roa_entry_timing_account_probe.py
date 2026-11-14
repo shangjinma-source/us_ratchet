@@ -92,6 +92,8 @@ def simulate(days, quantities, capital, arm, fee, touch=False, sell_start=1, rep
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--directory', type=Path, required=True)
+    parser.add_argument('--compare-exit-timing', action='store_true',
+                        help='Compare frozen exits on the actual Nov 6/9 signal dates.')
     args = parser.parse_args()
     report_bytes = (args.directory / 'report.json').read_bytes()
     report = json.loads(report_bytes)
@@ -115,18 +117,23 @@ def main():
             hashes[path.name] = digest
     # Known at the first opening, identical across arms and both fee scenarios.
     capital = money(sum(q * money(days[0][ticker][0][0]) for ticker, q in quantities.items()) + 18 * len(quantities))
-    results = [simulate(days, quantities, capital, arm, fee, touch)
-               for fee in (0, 18) for touch in (False, True) for arm in ARMS]
+    exits = ((1, False), (60, False), (150, False), (1, True)) if args.compare_exit_timing else ((1, False),)
+    results = [simulate(days, quantities, capital, arm, fee, touch, sell_start, reprice)
+               for fee in (0, 18) for touch in (False, True) for arm in ARMS
+               for sell_start, reprice in exits]
     output = dict(status='TWO_SESSION_HYPOTHETICAL_ACCOUNT_REPLAY', input_report_sha256=sha256(report_bytes).hexdigest(),
                   sources=hashes, excluded=['ODFL: incomplete minute coverage'], results=results,
                   assumptions=['First-minute observations, not official opening-auction executions.',
                     'Opening orders submitted 09:31; delays submitted 10:30/12:00 using previous completed minute close.',
-                    'All orders expire 15:55; sell reference is next session first-minute open, submission 09:31.',
+                    'All orders expire 15:55; default sell uses next-session first-minute open at 09:31; exit_policies records overrides.',
                     'Fixed target shares and fully reserved cash; no borrowing, reinvestment or next-day replacement.',
                     'Fees are sensitivity scenarios, not inferred broker charges. No spread/queue/liquidity guarantee.',
                     'Drawdown uses minute-close marks over two sessions only; not full-cycle maximum drawdown.',
                     'Separate strategy stop rules are not modeled in this execution-only event replay.'])
-    (args.directory / 'account_replay.json').write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding='utf-8')
+    output['exit_policies'] = list(exits)
+    output['assumptions'].append('Optional exits use completed prior-minute prices; one reprice at 09:45 assumes immediate cancellation acknowledgement.')
+    output_name = 'actual_event_exit_replay.json' if args.compare_exit_timing else 'account_replay.json'
+    (args.directory / output_name).write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps([{k: value for k, value in row.items() if k not in ('fills',)}
                       for row in results if row['fill_model'] == 'STRICT_CROSS'], ensure_ascii=False))
 
