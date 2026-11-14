@@ -20,6 +20,20 @@ class ProbeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             inspect(json.dumps(self.sample()).encode(),dict(date='2021-06-02',side='BUY'))
 
+    def test_zero_trade_blank_bar_cannot_fill(self):
+        d=self.sample()
+        for k in ('o','h','l','c'): d[k][1]=None
+        d['v'][1]=0
+        r=inspect(json.dumps(d).encode(),dict(date='2021-06-01',side='BUY'),allow_no_trade=True)
+        self.assertEqual(r['arms'][0]['fill']['minute'],2)
+
+    def test_blank_reference_is_not_forward_filled(self):
+        d=self.sample()
+        for k in ('o','h','l','c'): d[k][59]=None
+        d['v'][59]=0
+        with self.assertRaises(ValueError):
+            inspect(json.dumps(d).encode(),dict(date='2021-06-01',side='BUY'),allow_no_trade=True)
+
     def test_missing_minutes_not_padded(self):
         d=self.sample();d['t'].pop()
         with self.assertRaises(ValueError):

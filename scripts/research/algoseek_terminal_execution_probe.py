@@ -18,7 +18,7 @@ def main():
         event = result['event']
         path = args.directory/'normalized'/(event['date'].replace('-','')+'_'+result['symbol']+'.json')
         raw = path.read_bytes()
-        checked = inspect(raw, event)
+        checked = inspect(raw, event, allow_no_trade=True)
         close = json.loads(raw)['c'][-1]
         quantity = float(event['quantity'])
         for fee in (0,18):

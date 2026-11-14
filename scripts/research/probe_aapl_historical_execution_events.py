@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from scripts.research.roa_entry_timing_event_probe import money
 
 
-def inspect(raw, event):
+def inspect(raw, event, allow_no_trade=False):
     data = json.loads(raw)
     opening = int(datetime.fromisoformat(event['date'] + 'T09:30:00').replace(tzinfo=ZoneInfo('America/New_York')).timestamp())
     if data.get('s') != 'ok' or data.get('t') != list(range(opening, opening + 390 * 60, 60)):
@@ -20,9 +20,13 @@ def inspect(raw, event):
         raise ValueError('COLUMN_LENGTH_MISMATCH')
     for i in range(390):
         o,h,l,c,v = [data[k][i] for k in ('o','h','l','c','v')]
+        if allow_no_trade and all(x is None for x in (o,h,l,c)) and v == 0:
+            continue
         if not all(math.isfinite(x) for x in (o,h,l,c,v)) or not 0 < l <= min(o,c) <= max(o,c) <= h or v < 0:
             raise ValueError('INVALID_BAR')
     ref = data['o'][0]
+    if ref is None or data['c'][-1] is None or any(data['c'][i] is None for i in (59,149)):
+        raise ValueError('MISSING_REQUIRED_REFERENCE')
     arms = []
     policies = [('OPEN_REFERENCE',1,1),('1030',60,1),('1200',150,1)]
     if event['side']=='BUY': policies.append(('OPEN_MINUS_1PCT',1,.99))
@@ -30,6 +34,8 @@ def inspect(raw, event):
         limit = money((ref if start==1 else data['c'][start-1])*multiplier)
         filled = None
         for i in range(start,385):
+            if data['v'][i] == 0:
+                continue
             crossed = data['l'][i] < limit if event['side']=='BUY' else data['h'][i] > limit
             if crossed and data['v'][i]>0:
                 price = min(data['o'][i],limit) if event['side']=='BUY' else max(data['o'][i],limit)

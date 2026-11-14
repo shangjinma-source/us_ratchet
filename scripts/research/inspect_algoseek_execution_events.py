@@ -36,10 +36,11 @@ def main():
                     raise ValueError('IDENTITY_MISMATCH')
                 stamp = datetime.fromisoformat(event['date']+'T'+row['TimeBarStart']).replace(tzinfo=ZoneInfo('America/New_York'))
                 data['t'].append(int(stamp.timestamp()))
+                no_trade = all(not row[k] for k in ('FirstTradePrice','HighTradePrice','LowTradePrice','LastTradePrice')) and row['Volume']=='0' and row['TotalTrades']=='0' and row['FinraVolume']=='0'
                 for key, column in [('o','FirstTradePrice'),('h','HighTradePrice'),('l','LowTradePrice'),('c','LastTradePrice'),('v','Volume')]:
-                    data[key].append(float(row[column]))
+                    data[key].append(None if no_trade and key!='v' else float(row[column]))
             normalized = json.dumps(data).encode()
-            checked = inspect(normalized, event)
+            checked = inspect(normalized, event, allow_no_trade=True)
             result.update(status='VALID_MINUTE_STRUCTURE_NOT_COORDINATE_CERTIFIED', csv_sha256=sha256(raw).hexdigest(),
                           rows=len(rows), first_trade=data['o'][0], close=data['c'][-1])
             normalized_directory = args.directory/'normalized'
