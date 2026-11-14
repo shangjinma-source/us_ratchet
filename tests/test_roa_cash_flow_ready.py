@@ -36,8 +36,17 @@ class ReadyTests(unittest.TestCase):
     def cash(event,amount):
      result=client.post('/api/strategy-roa/cash-save-and-preview',json=dict(expected_revision=account.store.read()['revision'],event=dict(event_id=event,kind='CASH_CONFIRM',amount=amount,cash_basis='TOTAL_UNINVESTED')))
      self.assertEqual(result.status_code,200);self.assertTrue(result.json()['cash_saved']);self.assertEqual(result.json()['status'],'READY',result.text);return result.json()
+    initial=client.get('/api/strategy-roa/snapshot').json()
+    self.assertEqual(initial['status'],'READY')
+    initial_target=initial['target_quantities']['sid']
+    self.assertEqual(initial_target,9)
     now[0]=datetime(2026,11,6,14,31,10,tzinfo=timezone.utc)
-    result=cash('deposit','1100');target=result['target_quantities']['sid'];self.assertGreater(target,4)
+    result=cash('deposit','1100');target=result['target_quantities']['sid']
+    # Current policy freezes an existing allocation, even after a real cash increase.
+    # This is not evidence that newly deposited money has been allocated.
+    self.assertEqual(result['account']['available_cash'],'1100')
+    self.assertEqual(target,initial_target)
+    self.assertEqual(result['rows'][0]['quantity'],initial_target)
     result=cash('withdraw','1000');self.assertEqual(result['target_quantities']['sid'],target)
     audit=client.get('/api/strategy-account/cash-classification').json()
     for row in audit['unresolved']:
