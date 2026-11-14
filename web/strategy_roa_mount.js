@@ -140,8 +140,11 @@ function mount(container,dependencies){
   const market=advice?.market_signal;
   if(!state.busy&&!state.error&&typeof market?.risk_on==='boolean'&&
      /^\d{4}-\d{2}-\d{2}$/.test(market.signal_date)&&/^\d{4}-\d{2}-\d{2}$/.test(market.execution_session)){
-   status.textContent=market.signal_date+' 收盘信号：'+(market.risk_on?'配置股票':'防御持币')+
-    ' · '+market.execution_session+' 执行计划（不代表已成交） · '+status.textContent;
+   const event=advice?.execution_event;
+   const eventDate=event?.session||market.execution_session;
+   const separate=event&&event.session!==market.execution_session;
+   status.textContent=market.signal_date+' 最新收盘信号：'+(market.risk_on?'配置股票':'防御持币')+
+    ' · '+eventDate+' '+(separate?'历史执行计划':'执行计划')+'（不代表已成交） · '+status.textContent;
   }
   if(advice?.late_execution===true&&!state.busy&&!state.error&&!currentHold)status.textContent=(advice.limit_reference==='SESSION_OPEN'?'延迟执行 · 目标及限价参考今日开盘价，不保证成交。':'延迟执行 · 开盘价计算目标，当前报价计算限价；不代表按开盘回测成交。')+status.textContent;
   if(state.error&&state.cashSaved===true)status.textContent='现金已保存；'+status.textContent;

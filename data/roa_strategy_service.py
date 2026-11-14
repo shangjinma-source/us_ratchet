@@ -87,15 +87,20 @@ class RoaStrategyService(CashAdviceCoordinator):
             targets=deepcopy(event.get('targets')) if event else None
             result=dict(strategy_kind='ROA_DEFENSIVE_V1',strategy_epoch=self.lifecycle.epoch,
                 account_revision=state['revision'],account=account,status=view['status'],phase=view['phase'],
-                executable=False,advice_ready=True,signal_date=signal['signal_date'],execution_session=session,
+                executable=False,advice_ready=True,
+                signal_date=event['signal_date'] if event else signal['signal_date'],
+                execution_session=event['session'] if event else session,
                 target_id=None,proposal_id=None,target_quantities=targets,quote_valid_until=None,
                 valid_from=event['valid_from'] if event else None,valid_until=event['valid_until'] if event else None,
                 rows=[],orders_created=False,execution_assumption='MANUAL_EXECUTION_NOT_GUARANTEED_HISTORICAL_OPEN_CLOSE')
             # This is the signal's intended allocation, not a claim that trades filled.
             result['market_signal']=dict(risk_on=signal['risk_on'],signal_date=signal['signal_date'],
                 execution_session=session,event_reason=event['reason'] if event else None)
-            result['late_execution']=bool(late_authorized and event and event['phase']=='OPEN' and now>=standard_open_until)
-            result['standard_open_valid_until']=standard_open_until.isoformat()
+            result['execution_event']=({key:event[key] for key in ('event_id','signal_date','session','phase','reason','risk_on')} if event else None)
+            event_open_until=(timestamp(self.session_provider(event['session'])['open_at'])+
+                timedelta(seconds=self.admission['open_window_seconds'])) if event and admitted else standard_open_until
+            result['late_execution']=bool(late_authorized and event and event['session']==session and event['phase']=='OPEN' and now>=event_open_until)
+            result['standard_open_valid_until']=event_open_until.isoformat()
             if result['late_execution']:
                 result['execution_assumption']='USER_AUTHORIZED_LATE_EXECUTION_NOT_BACKTEST_VALIDATED'
             if view['status']=='WINDOW_OPEN' and not admitted:result['status']='WAIT_EXECUTION_ADMISSION'

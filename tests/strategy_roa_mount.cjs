@@ -13,12 +13,13 @@ const doc=new Node('document',null);doc.createElement=tag=>new Node(tag,doc);doc
 const text=n=>[n.textContent||'',...n.children.map(text)].join(' ');
 const actions=n=>[n.tag==='strong'?(n.textContent||''):'',...n.children.map(actions)].join(' ');
 (async()=>{
+ let event=null;
  let time=Date.parse('2026-11-06T14:31:00Z'),mode='PENDING_OPEN',pending=null,writeCount=0,timer;
  const account={revision:'a'.repeat(64),cash_confirmation_valid:true,available_cash:'100001/100',holdings:[]};
  const request=async(path,body)=>{
   if(path.endsWith('cash-save-and-preview'))writeCount++;
   return {strategy_kind:'ROA_DEFENSIVE_V1',strategy_epoch:'test',account_revision:account.revision,account,
-   market_signal:{risk_on:false,signal_date:'2026-11-06',execution_session:'2026-11-09'},
+   execution_event:event,market_signal:{risk_on:false,signal_date:'2026-11-06',execution_session:'2026-11-09'},
    status:mode,late_execution:mode==='READY',limit_reference:'SESSION_OPEN',phase:'OPEN',executable:mode==='READY',advice_ready:true,cash_saved:body?true:undefined,
    target_id:'b'.repeat(64),proposal_id:'c'.repeat(64),valid_from:'2026-11-06T14:30:00Z',valid_until:'2026-11-06T21:00:00Z',quote_valid_until:'2026-11-06T14:32:00Z',
    rows:[{security_id:'A',ticker:'AAA',held:0,target_quantity:mode==='READY'?5:null,side:'BUY',quantity:5,limit_price:'100',reason:mode==='HOLD'?'HOLD':'阶段测试'}]};
@@ -47,6 +48,11 @@ const actions=n=>[n.tag==='strong'?(n.textContent||''):'',...n.children.map(acti
  assert.ok(!actions(container).includes('买入 5 股'));
  mode='WAIT_ACCOUNT_RESERVATIONS';await app.refresh();
  assert.ok(text(container).includes('挂单占用与现金不一致'));
+ assert.ok(!actions(container).includes('买入 5 股'));
+ mode='MISSED';event={session:'2026-11-06',signal_date:'2026-11-05',phase:'OPEN'};await app.refresh();
+ assert.ok(text(container).includes('2026-11-06 历史执行计划'));
+ assert.ok(!text(container).includes('2026-11-09 执行计划'));
+ assert.ok(text(container).includes('2026-11-06 最新收盘信号'));
  assert.ok(!actions(container).includes('买入 5 股'));
  app.dispose();console.log('PASS: pre-open plan, one cash button, actionable row, expiry redraw');
 })().catch(e=>{console.error(e);process.exitCode=1;});
