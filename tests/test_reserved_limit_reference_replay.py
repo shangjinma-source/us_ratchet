@@ -10,6 +10,20 @@ def session(fill_minute=None):
 
 
 class ReservationsTests(unittest.TestCase):
+    def test_mixed_policy_uses_current_buy_and_open_sell(self):
+        buy, sell = session(60), session()
+        buy['data']['c'][59] = 90
+        buy['data']['o'][60] = 89
+        buy['data']['l'][60] = 88
+        sell['data']['c'][59] = 110
+        held = {'ZZZ': 1}
+        _, fills, _ = execute(100, held, {'AAA': 1}, {'AAA': buy, 'ZZZ': sell}, 0, start=60, policy='BUY_CURRENT_SELL_OPEN')
+        by_symbol = {row['symbol']: row for row in fills}
+        self.assertEqual(by_symbol['AAA']['limit'], 90)
+        self.assertEqual(by_symbol['AAA']['reference'], 'LATEST_COMPLETED')
+        self.assertEqual(by_symbol['ZZZ']['limit'], 100)
+        self.assertEqual(by_symbol['ZZZ']['reference'], 'OPEN')
+
     def test_unfilled_order_keeps_reservation(self):
         cash, fills, unfilled = execute(100, {}, {'AAA': 1, 'BBB': 1}, {'AAA': session(), 'BBB': session(60)}, 0, start=60, policy='OPEN')
         self.assertEqual(cash, 100)

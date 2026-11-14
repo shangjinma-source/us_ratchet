@@ -11,7 +11,7 @@ from scripts.research.limit_reference_comparison import simulate
 
 
 def execute(cash, holdings, target, sessions, fee, *, start, policy):
-    if policy not in ('OPEN', 'LATEST', 'FAVORABLE'):
+    if policy not in ('OPEN', 'LATEST', 'FAVORABLE', 'BUY_CURRENT_SELL_OPEN'):
         raise ValueError('UNKNOWN_REFERENCE_POLICY')
     available, orders, unfilled = cash, [], []
     # Freeze quantities from available cash at submission, before any future fills.
@@ -24,7 +24,8 @@ def execute(cash, holdings, target, sessions, fee, *, start, policy):
         opening = simulate(data, side, start, 'OPEN')
         current = simulate(data, side, start, 'LATEST_COMPLETED')
         favorable = current['limit'] < opening['limit'] if side == 'BUY' else current['limit'] > opening['limit']
-        choice = current if policy == 'LATEST' or policy == 'FAVORABLE' and favorable else opening
+        use_current = policy == 'LATEST' or policy == 'FAVORABLE' and favorable or policy == 'BUY_CURRENT_SELL_OPEN' and side == 'BUY'
+        choice = current if use_current else opening
         requested = abs(change)
         quantity = min(requested, max(0, int((available - fee) / choice['limit']))) if side == 'BUY' else requested
         reservation = quantity * choice['limit'] + fee if side == 'BUY' and quantity else 0
@@ -61,6 +62,7 @@ def main():
     parser.add_argument('--directory', type=Path, required=True)
     parser.add_argument('--book', type=Path, required=True)
     parser.add_argument('--qcom-july-review', action='store_true', help='Explicit conditional issuer-announcement coverage for QCOM July 2 through August 2, 2021 only.')
+    parser.add_argument('--adsk-no-dividend-review', action='store_true', help='ADSK fiscal 2022 annual report no-cash-dividend evidence, May 4 to July 1 only.')
     args = parser.parse_args()
     raw = args.book.read_bytes()
     book = loads(raw.decode())
@@ -78,11 +80,13 @@ def main():
     sessions = {day: {symbol: read_session(args.directory, day, symbol) for symbol in symbols} for day in event_days}
     dividends = [row['event'] for row in book['dividend_ledger']['events'].values()]
     reviewed = [('QCOM', '2021-07-02', '2021-08-02')] if args.qcom_july_review else []
-    if reviewed and any(row['security_id'] == 'research:security:qcom' and '2021-07-02' <= row['ex_date'] <= '2021-08-02' for row in dividends):
+    if args.adsk_no_dividend_review:
+        reviewed.append(('ADSK', '2021-05-04', '2021-07-01'))
+    if any(row['security_id'] == 'research:security:' + symbol.lower() and first <= row['ex_date'] <= last for symbol, first, last in reviewed for row in dividends):
         raise ValueError('REVIEW_CONTRADICTED_BY_DIVIDEND_EVENT')
     results = []
     for start in (60, 150):
-        for policy in ('OPEN', 'LATEST', 'FAVORABLE'):
+        for policy in ('OPEN', 'LATEST', 'FAVORABLE', 'BUY_CURRENT_SELL_OPEN'):
             for fee in (0, 18):
                 try:
                     result = replay(days, targets, sessions, marks, original, dividends, policy, policy, fee,
@@ -112,9 +116,11 @@ def main():
                      'Targets frozen; inherited dividend coverage checked; gross dividends at payment close.',
                      'Strict minute crossing proxy, not actual bid/ask, queue or auction executions.',
                      '2021-01-04 to 2021-12-01 only; not a full-year or bear-market strategy validation.'], runs=results)
-    filename = 'reserved_limit_reference_qcom_review.json' if reviewed else 'reserved_limit_reference_replay.json'
+    if args.adsk_no_dividend_review:
+        output['review_sources'].append('https://www.sec.gov/Archives/edgar/data/769397/000076939722000019/adsk-20220131.htm')
+    filename = 'reserved_limit_reference_mixed_review.json' if args.adsk_no_dividend_review else 'reserved_limit_reference_qcom_review.json' if reviewed else 'reserved_limit_reference_replay.json'
     (args.directory / filename).write_text(json.dumps(output, indent=2), encoding='utf-8')
-    print(json.dumps([{key: value for key, value in run.items() if key != 'ledger'} for run in results if run['fee']==18], indent=2))
+    print(json.dumps([{key: value for key, value in run.items() if key not in ('ledger', 'provisional_exposure_audit')} for run in results if run['fee']==18], indent=2))
 
 
 if __name__ == '__main__':
