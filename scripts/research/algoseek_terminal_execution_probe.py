@@ -38,7 +38,7 @@ def main():
                     better=sum(r['advantage_bps']>1e-6 for r in subset),worse=sum(r['advantage_bps']< -1e-6 for r in subset)))
     output = dict(scope='Independent 2021 events, same-day close valuation; not portfolio return.',
         limitations=['No cross-event holdings/cash or opportunity path.', 'Strict-cross fill proxy; no queue or partial fills.',
-                    '18 USD flat fee sensitivity, not monthly Trade25 model.', 'Missing CPRT events excluded for every arm.'],
+                    '18 USD flat fee sensitivity, not monthly Trade25 model.', 'Zero-trade minutes cannot fill orders.'],
         rows=rows,summary=summaries)
     (args.directory/'terminal_execution.json').write_text(json.dumps(output,indent=2),encoding='utf-8')
     print(json.dumps([s for s in summaries if s['rule'] in ('1030','1200')],indent=2))
