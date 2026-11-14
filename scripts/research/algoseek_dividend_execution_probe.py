@@ -24,7 +24,7 @@ def pay(day, pending):
     return paid
 
 
-def replay(days, targets, sessions, marks, original, dividends, buy_rule, sell_rule, fee, initial_cash, executor=None):
+def replay(days, targets, sessions, marks, original, dividends, buy_rule, sell_rule, fee, initial_cash, executor=None, exposure_audit=None, reviewed_no_dividend_windows=()):
     cash, holdings, pending, ledger = initial_cash, {}, [], []
     peak, drawdown, paid_total = initial_cash, 0.0, 0.0
     prior_original = {}
@@ -32,7 +32,11 @@ def replay(days, targets, sessions, marks, original, dividends, buy_rule, sell_r
         # Inherit source coverage only when every opening exposure existed in the old book.
         for symbol, quantity in holdings.items():
             if quantity and not prior_original.get('research:security:' + symbol.lower(), 0):
-                raise ValueError('DIVIDEND_COVERAGE_EXTENSION:' + day + ':' + symbol)
+                if any(symbol == ticker and first <= day <= last for ticker, first, last in reviewed_no_dividend_windows):
+                    continue
+                if exposure_audit is None:
+                    raise ValueError('DIVIDEND_COVERAGE_EXTENSION:' + day + ':' + symbol)
+                exposure_audit.append(dict(date=day, symbol=symbol, quantity=quantity))
         accrue(dividends, day, holdings, pending)
         if day == '2021-07-20':
             holdings['NVDA'] = holdings.get('NVDA', 0) * 4

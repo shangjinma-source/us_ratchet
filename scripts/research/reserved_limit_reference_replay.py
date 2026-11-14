@@ -60,6 +60,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--directory', type=Path, required=True)
     parser.add_argument('--book', type=Path, required=True)
+    parser.add_argument('--qcom-july-review', action='store_true', help='Explicit conditional issuer-announcement coverage for QCOM July 2 through August 2, 2021 only.')
     args = parser.parse_args()
     raw = args.book.read_bytes()
     book = loads(raw.decode())
@@ -76,29 +77,43 @@ def main():
     symbols = sorted(set().union(*(set(target) for target in targets.values())))
     sessions = {day: {symbol: read_session(args.directory, day, symbol) for symbol in symbols} for day in event_days}
     dividends = [row['event'] for row in book['dividend_ledger']['events'].values()]
+    reviewed = [('QCOM', '2021-07-02', '2021-08-02')] if args.qcom_july_review else []
+    if reviewed and any(row['security_id'] == 'research:security:qcom' and '2021-07-02' <= row['ex_date'] <= '2021-08-02' for row in dividends):
+        raise ValueError('REVIEW_CONTRADICTED_BY_DIVIDEND_EVENT')
     results = []
     for start in (60, 150):
         for policy in ('OPEN', 'LATEST', 'FAVORABLE'):
             for fee in (0, 18):
                 try:
                     result = replay(days, targets, sessions, marks, original, dividends, policy, policy, fee,
-                                    float(book['initial_cash']), executor=partial(execute, start=start, policy=policy))
+                                    float(book['initial_cash']), executor=partial(execute, start=start, policy=policy),
+                                    reviewed_no_dividend_windows=reviewed)
                     result['status'] = 'COMPLETE_CONDITIONAL_RESEARCH'
                 except ValueError as error:
                     if not str(error).startswith('DIVIDEND_COVERAGE_EXTENSION:'):
                         raise
                     result = dict(buy_rule=policy, sell_rule=policy, fee=fee,
                                   status='NEEDS_EXTENDED_DIVIDEND_COVERAGE', reason=str(error))
+                    exposure = []
+                    # Diagnostic trace only: never publish return figures without coverage.
+                    replay(days, targets, sessions, marks, original, dividends, policy, policy, fee,
+                           float(book['initial_cash']), executor=partial(execute, start=start, policy=policy),
+                           exposure_audit=exposure)
+                    result['provisional_exposure_audit'] = exposure
                 result['submission_minute'] = start
                 results.append(result)
     output = dict(book_sha256=sha256(raw).hexdigest(),
+        conditional_no_dividend_windows=reviewed,
+        review_sources=['https://investor.qualcomm.com/news-events/press-releases/news-details/2021/Qualcomm-Announces-Quarterly-Cash-Dividend-04-14-2021/default.aspx',
+                        'https://investor.qualcomm.com/news-events/press-releases/news-details/2021/Qualcomm-Announces-Quarterly-Cash-Dividend-07-14-2021/default.aspx'] if reviewed else [],
         source_hashes={day: {symbol: value['sha256'] for symbol, value in values.items()} for day, values in sessions.items()},
         assumptions=['All orders submitted together; buy reservations use limit plus fee, alphabetical priority.',
                      'Same-session future sells and price-improvement refunds do not fund new orders; no automatic retries.',
                      'Targets frozen; inherited dividend coverage checked; gross dividends at payment close.',
                      'Strict minute crossing proxy, not actual bid/ask, queue or auction executions.',
                      '2021-01-04 to 2021-12-01 only; not a full-year or bear-market strategy validation.'], runs=results)
-    (args.directory / 'reserved_limit_reference_replay.json').write_text(json.dumps(output, indent=2), encoding='utf-8')
+    filename = 'reserved_limit_reference_qcom_review.json' if reviewed else 'reserved_limit_reference_replay.json'
+    (args.directory / filename).write_text(json.dumps(output, indent=2), encoding='utf-8')
     print(json.dumps([{key: value for key, value in run.items() if key != 'ledger'} for run in results if run['fee']==18], indent=2))
 
 
