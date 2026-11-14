@@ -43,6 +43,18 @@ class TimingReplayTests(unittest.TestCase):
         self.assertEqual(simulate(*args, touch=False)['buy_count'], 0)
         self.assertEqual(simulate(*args, touch=True)['buy_count'], 1)
 
+    def test_delayed_sell_uses_prior_close_and_cannot_sell_early(self):
+        buy = session((10, 11, 9, 10, 100))
+        sell = session((12, 13, 11, 12, 100))
+        sell[59 * 60] = [14, 14, 14, 14, 100]
+        sell[60 * 60] = [13, 15, 12, 13, 100]
+        result = simulate([{'A': buy}, {'A': sell}], {'A': 1}, 20,
+                          'OPEN_REFERENCE', 0, sell_start=60)
+        sale = [fill for fill in result['fills'] if fill['side'] == 'SELL'][0]
+        self.assertEqual(sale['minute'], 60)
+        self.assertEqual(sale['price'], 14)
+        self.assertEqual(result['ending_cash'], 24)
+
 
 if __name__ == '__main__':
     unittest.main()

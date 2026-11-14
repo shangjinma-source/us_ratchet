@@ -8,7 +8,9 @@ from scripts.research.roa_entry_timing_event_probe import analyze, money
 ARMS = ('OPEN_REFERENCE', 'BUY_1030', 'BUY_1200', 'OPEN_MINUS_1PCT')
 
 
-def simulate(days, quantities, capital, arm, fee, touch=False):
+def simulate(days, quantities, capital, arm, fee, touch=False, sell_start=1):
+    if sell_start not in (1, 60, 150):
+        raise ValueError('UNSUPPORTED_SELL_TIME')
     cash = capital
     holdings = {ticker: 0 for ticker in quantities}
     orders, fills, rejected = {}, [], []
@@ -20,7 +22,7 @@ def simulate(days, quantities, capital, arm, fee, touch=False):
         orders = {}
         submitted = False
         for minute in range(390):
-            submit_minute = start if day_index == 0 else 1
+            submit_minute = start if day_index == 0 else sell_start
             if minute == submit_minute and not submitted:
                 # Fixed ticker priority, with all outstanding orders fully reserved.
                 remaining = cash
@@ -29,7 +31,7 @@ def simulate(days, quantities, capital, arm, fee, touch=False):
                     if not quantity:
                         continue
                     bars = day[ticker]
-                    reference = bars[0][0] if day_index == 1 or start == 1 else bars[(start - 1) * 60][3]
+                    reference = bars[0][0] if submit_minute == 1 else bars[(submit_minute - 1) * 60][3]
                     limit = money(reference * (.99 if day_index == 0 and arm == 'OPEN_MINUS_1PCT' else 1))
                     reserved = quantity * limit + fee
                     if day_index == 0 and reserved > remaining + 1e-8:
@@ -67,7 +69,7 @@ def simulate(days, quantities, capital, arm, fee, touch=False):
         peak = max(peak, value)
         drawdown = max(drawdown, 1 - value / peak)
     bought = {fill['ticker'] for fill in fills if fill['side'] == 'BUY'}
-    return dict(arm=arm, fee_per_order=fee, fill_model='TOUCH' if touch else 'STRICT_CROSS',
+    return dict(arm=arm, sell_start=sell_start, fee_per_order=fee, fill_model='TOUCH' if touch else 'STRICT_CROSS',
                 initial_capital=capital, ending_equity=equity[-1], ending_cash=cash,
                 net_profit=equity[-1] - capital, return_pct=100 * (equity[-1] / capital - 1),
                 sampled_minute_close_drawdown_pct=100 * drawdown,
